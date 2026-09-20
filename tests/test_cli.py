@@ -28,6 +28,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("usage: whatyouship", output.getvalue())
         self.assertIn("--version", output.getvalue())
         self.assertIn("lint", output.getvalue())
+        self.assertIn("compare", output.getvalue())
 
     def test_version(self) -> None:
         """Verify that ``--version`` prints the package version and exits."""
@@ -267,6 +268,81 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(output.getvalue(), "unsigned-pe-binary | warning | app.dat | Unsigned PE executable.\n")
+
+    def test_compare_directories_prints_summary_and_changed_paths(self) -> None:
+        """Compare directories and omit unchanged paths from detail lists."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old = root / "old"
+            new = root / "new"
+            old.mkdir()
+            new.mkdir()
+            for directory, names in (
+                (old, {"removed.txt": b"old", "changed.txt": b"old", "same.txt": b"same"}),
+                (new, {"added.txt": b"new", "changed.txt": b"new", "same.txt": b"same"}),
+            ):
+                for name, content in names.items():
+                    (directory / name).write_bytes(content)
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main(["compare", str(old), str(new)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(output.getvalue().splitlines(), [
+                f"Old: {old}",
+                f"New: {new}",
+                "Added: 1",
+                "Removed: 1",
+                "Changed: 1",
+                "Unchanged: 1",
+                "",
+                "Added files:",
+                "  added.txt",
+                "",
+                "Removed files:",
+                "  removed.txt",
+                "",
+                "Changed files:",
+                "  changed.txt",
+            ])
+
+    def test_compare_uses_msi_inspector_for_msi_input(self) -> None:
+        """Use the existing MSI inspector when either input is an MSI."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old = root / "old.msi"
+            old.write_bytes(b"synthetic MSI data")
+            new = root / "new"
+            new.mkdir()
+            (new / "app.txt").write_bytes(b"new")
+            old_artifact = ReleaseArtifact(old, [ArtifactFile(Path("app.txt"), 3, "a" * 64)])
+            output = io.StringIO()
+
+            with (
+                patch("whatyouship.inspectors.MsiInspector") as inspector,
+                contextlib.redirect_stdout(output),
+            ):
+                inspector.return_value.inspect.return_value = old_artifact
+                result = main(["compare", str(old), str(new)])
+
+            self.assertEqual(result, 0)
+            inspector.return_value.inspect.assert_called_once_with(old)
+            self.assertIn("Changed: 1", output.getvalue())
+
+    def test_compare_rejects_invalid_new_artifact(self) -> None:
+        """Report a bad second input through argparse with a nonzero exit code."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            old = Path(temporary_directory) / "old"
+            old.mkdir()
+            new = Path(temporary_directory) / "missing"
+            error_output = io.StringIO()
+
+            with contextlib.redirect_stderr(error_output), self.assertRaises(SystemExit) as result:
+                main(["compare", str(old), str(new)])
+
+            self.assertEqual(result.exception.code, 2)
+            self.assertIn("Artifact does not exist", error_output.getvalue())
 
 
 if __name__ == "__main__":

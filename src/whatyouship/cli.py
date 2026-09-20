@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 
 from whatyouship import __version__
+from whatyouship.compare import compare_artifacts
 from whatyouship.inspectors import inspect_artifact
 from whatyouship.lint import LintEngine
 from whatyouship.rules.build_artifacts import BuildArtifactRule
@@ -30,12 +31,38 @@ def main(argv: list[str] | None = None) -> int:
     inspect_parser.add_argument("artifact", type=Path, help="Directory or MSI to inspect.")
     lint_parser = subparsers.add_parser("lint", help="Lint a release artifact.")
     lint_parser.add_argument("artifact", type=Path, help="Directory or MSI to lint.")
+    compare_parser = subparsers.add_parser("compare", help="Compare two release artifacts.")
+    compare_parser.add_argument("old_artifact", type=Path, help="Earlier directory or MSI.")
+    compare_parser.add_argument("new_artifact", type=Path, help="Later directory or MSI.")
 
     args = parser.parse_args(argv)
     try:
-        artifact = inspect_artifact(args.artifact)
+        if args.command == "compare":
+            old_artifact = inspect_artifact(args.old_artifact)
+            new_artifact = inspect_artifact(args.new_artifact)
+        else:
+            artifact = inspect_artifact(args.artifact)
     except (OSError, ValueError) as error:
         parser.error(str(error))
+
+    if args.command == "compare":
+        comparison = compare_artifacts(old_artifact, new_artifact)
+        print(f"Old: {old_artifact.source_path}")
+        print(f"New: {new_artifact.source_path}")
+        print(f"Added: {len(comparison.added)}")
+        print(f"Removed: {len(comparison.removed)}")
+        print(f"Changed: {len(comparison.changed)}")
+        print(f"Unchanged: {len(comparison.unchanged)}")
+        for label, paths in (
+            ("Added", comparison.added),
+            ("Removed", comparison.removed),
+            ("Changed", comparison.changed),
+        ):
+            if paths:
+                print(f"\n{label} files:")
+                for path in paths:
+                    print(f"  {path}")
+        return 0
 
     if args.command == "inspect":
         print(f"Source: {artifact.source_path}")
