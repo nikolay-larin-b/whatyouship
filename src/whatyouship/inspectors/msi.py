@@ -12,6 +12,7 @@ from pathlib import Path
 import pymsi
 from pymsi.msi.file import File
 
+from whatyouship.binary.pe import PeInspector
 from whatyouship.model import ArtifactFile, ReleaseArtifact
 
 
@@ -56,6 +57,7 @@ class MsiInspector:
                 }
 
                 files = []
+                binary_inspector = PeInspector()
                 for file in msi.files.values():
                     payload = file.resolve().decompress()
                     files.append(
@@ -63,6 +65,7 @@ class MsiInspector:
                             relative_path=self._installation_path(file, target_names),
                             size_bytes=len(payload),
                             sha256=hashlib.sha256(payload).hexdigest(),
+                            binary=binary_inspector.inspect(payload),
                         )
                     )
         except Exception as error:

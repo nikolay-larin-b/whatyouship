@@ -9,17 +9,37 @@ from typing import Literal
 
 
 @dataclass
+class BinaryMetadata:
+    """Describe identified binary properties without format-specific fields.
+
+    :param format: Binary file format.
+    :param architecture: Target architecture.
+    :param kind: Executable, library, or other binary kind.
+    :param file_version: Embedded file version, when available.
+    :param product_version: Embedded product version, when available.
+    """
+
+    format: str
+    architecture: str
+    kind: str
+    file_version: str | None = None
+    product_version: str | None = None
+
+
+@dataclass
 class ArtifactFile:
     """Describe one file contained in a release artifact.
 
     :param relative_path: Path relative to the root of the release artifact.
     :param size_bytes: File size in bytes.
     :param sha256: SHA-256 digest of the file contents.
+    :param binary: Identified binary metadata, when available.
     """
 
     relative_path: Path
     size_bytes: int
     sha256: str
+    binary: BinaryMetadata | None = None
 
 
 @dataclass

@@ -6,6 +6,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.model import ReleaseArtifact
@@ -62,6 +63,19 @@ class DirectoryInspectorTests(unittest.TestCase):
 
             with self.assertRaises(NotADirectoryError):
                 DirectoryInspector().inspect(file)
+
+    def test_binary_parse_failure_keeps_other_files(self) -> None:
+        """Keep the artifact intact when one PE candidate cannot be parsed."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "broken.exe").write_bytes(b"MZbroken")
+            (root / "readme.txt").write_bytes(b"text")
+
+            with patch("whatyouship.binary.pe.lief.PE.parse", side_effect=RuntimeError("bad PE")):
+                artifact = DirectoryInspector().inspect(root)
+
+            self.assertEqual([file.relative_path for file in artifact.files], [Path("broken.exe"), Path("readme.txt")])
+            self.assertTrue(all(file.binary is None for file in artifact.files))
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 from whatyouship.inspectors.msi import MsiInspector
+from whatyouship.model import BinaryMetadata
 
 
 class MsiInspectorTests(unittest.TestCase):
@@ -45,6 +46,7 @@ class MsiInspectorTests(unittest.TestCase):
             package_context = MagicMock()
             package_context.__enter__ = Mock(return_value=package)
             package_context.__exit__ = Mock(return_value=False)
+            binary_metadata = BinaryMetadata("PE", "x86_64", "executable")
 
             with (
                 patch("whatyouship.inspectors.msi.pymsi.Package", return_value=package_context),
@@ -52,6 +54,10 @@ class MsiInspectorTests(unittest.TestCase):
                     "whatyouship.inspectors.msi.pymsi.Msi",
                     return_value=SimpleNamespace(files={"second": second, "first": first}),
                 ) as msi_factory,
+                patch(
+                    "whatyouship.inspectors.msi.PeInspector.inspect",
+                    side_effect=[None, binary_metadata],
+                ),
             ):
                 artifact = MsiInspector().inspect(source)
 
@@ -62,6 +68,8 @@ class MsiInspectorTests(unittest.TestCase):
                 [Path("Application/BIN/Long Name.ilk"), Path("Application/README.TXT")],
             )
             self.assertEqual([file.size_bytes for file in artifact.files], [3, 0])
+            self.assertEqual(artifact.files[0].binary, binary_metadata)
+            self.assertIsNone(artifact.files[1].binary)
             self.assertEqual(
                 [file.sha256 for file in artifact.files],
                 [hashlib.sha256(b"abc").hexdigest(), hashlib.sha256(b"").hexdigest()],

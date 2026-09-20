@@ -44,6 +44,17 @@ def main(argv: list[str] | None = None) -> int:
         print("Relative path | Size (bytes) | SHA-256")
         for file in artifact.files:
             print(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")
+            if file.binary is not None:
+                details = [
+                    file.binary.format,
+                    f"Architecture: {file.binary.architecture}",
+                    f"Kind: {file.binary.kind}",
+                ]
+                if file.binary.file_version is not None:
+                    details.append(f"File version: {file.binary.file_version}")
+                if file.binary.product_version is not None:
+                    details.append(f"Product version: {file.binary.product_version}")
+                print("  Binary: " + " | ".join(details))
         return 0
 
     findings = LintEngine([BuildArtifactRule()]).run(artifact)

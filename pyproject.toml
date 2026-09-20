@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "Nikolay Larin", email = "nikolay.larin@gmail.com"}]
 license = "MIT"
-dependencies = ["pymsi==0.0.0rc1"]
+dependencies = ["pymsi==0.0.0rc1", "lief>=1.0,<2"]
 
 [project.scripts]
 whatyouship = "whatyouship.cli:main"

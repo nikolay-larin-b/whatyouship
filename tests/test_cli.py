@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from whatyouship import __version__
 from whatyouship.cli import main
-from whatyouship.model import ArtifactFile, ReleaseArtifact
+from whatyouship.model import ArtifactFile, BinaryMetadata, ReleaseArtifact
 
 
 class CliTests(unittest.TestCase):
@@ -202,6 +202,38 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result, 0)
             inspector.return_value.inspect.assert_called_once_with(source)
             self.assertIn("build-artifact-extension | warning | App/build.obj", output.getvalue())
+
+    def test_inspect_prints_binary_metadata(self) -> None:
+        """Show identified PE metadata below its file entry."""
+        source = Path("release")
+        artifact = ReleaseArtifact(
+            source_path=source,
+            files=[
+                ArtifactFile(
+                    relative_path=Path("app.exe"),
+                    size_bytes=3,
+                    sha256="a" * 64,
+                    binary=BinaryMetadata(
+                        format="PE",
+                        architecture="x86_64",
+                        kind="executable",
+                        file_version="1.2.3.4",
+                        product_version="5.6.7.8",
+                    ),
+                )
+            ],
+        )
+        output = io.StringIO()
+
+        with patch("whatyouship.cli.inspect_artifact", return_value=artifact), contextlib.redirect_stdout(output):
+            result = main(["inspect", str(source)])
+
+        self.assertEqual(result, 0)
+        self.assertIn(
+            "  Binary: PE | Architecture: x86_64 | Kind: executable | "
+            "File version: 1.2.3.4 | Product version: 5.6.7.8\n",
+            output.getvalue(),
+        )
 
 
 if __name__ == "__main__":
