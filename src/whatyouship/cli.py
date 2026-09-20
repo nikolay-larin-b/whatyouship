@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 
 from whatyouship import __version__
-from whatyouship.inspectors.directory import DirectoryInspector
+from whatyouship.inspectors import inspect_artifact
 from whatyouship.lint import LintEngine
 from whatyouship.rules.build_artifacts import BuildArtifactRule
 
@@ -25,15 +25,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    inspect_parser = subparsers.add_parser("inspect", help="Inspect a directory artifact.")
-    inspect_parser.add_argument("directory", type=Path, help="Directory to inspect.")
-    lint_parser = subparsers.add_parser("lint", help="Lint a directory artifact.")
-    lint_parser.add_argument("directory", type=Path, help="Directory to lint.")
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect a release artifact.")
+    inspect_parser.add_argument("artifact", type=Path, help="Directory or MSI to inspect.")
+    lint_parser = subparsers.add_parser("lint", help="Lint a release artifact.")
+    lint_parser.add_argument("artifact", type=Path, help="Directory or MSI to lint.")
 
     args = parser.parse_args(argv)
     try:
-        artifact = DirectoryInspector().inspect(args.directory)
-    except OSError as error:
+        artifact = inspect_artifact(args.artifact)
+    except (OSError, ValueError) as error:
         parser.error(str(error))
 
     if args.command == "inspect":

@@ -8,9 +8,11 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from whatyouship import __version__
 from whatyouship.cli import main
+from whatyouship.model import ArtifactFile, ReleaseArtifact
 
 
 class CliTests(unittest.TestCase):
@@ -59,8 +61,8 @@ class CliTests(unittest.TestCase):
                 ],
             )
 
-    def test_inspect_rejects_missing_directory(self) -> None:
-        """Report a missing directory through argparse with exit code two."""
+    def test_inspect_rejects_missing_artifact(self) -> None:
+        """Report a missing artifact through argparse with exit code two."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             missing = Path(temporary_directory) / "missing"
             error_output = io.StringIO()
@@ -69,10 +71,10 @@ class CliTests(unittest.TestCase):
                 main(["inspect", str(missing)])
 
             self.assertEqual(result.exception.code, 2)
-            self.assertIn("Directory does not exist", error_output.getvalue())
+            self.assertIn("Artifact does not exist", error_output.getvalue())
 
-    def test_inspect_rejects_file_path(self) -> None:
-        """Report a regular file through argparse with exit code two."""
+    def test_inspect_rejects_unsupported_file(self) -> None:
+        """Report an unsupported file type through argparse."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             file = Path(temporary_directory) / "file.txt"
             file.write_bytes(b"data")
@@ -82,7 +84,7 @@ class CliTests(unittest.TestCase):
                 main(["inspect", str(file)])
 
             self.assertEqual(result.exception.code, 2)
-            self.assertIn("Path is not a directory", error_output.getvalue())
+            self.assertIn("Unsupported artifact type", error_output.getvalue())
 
     def test_lint_prints_build_artifact_findings(self) -> None:
         """Print rule ID, severity, path, and description for each finding."""
@@ -119,7 +121,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertEqual(output.getvalue(), "No findings.\n")
 
-    def test_lint_rejects_missing_directory(self) -> None:
+    def test_lint_rejects_missing_artifact(self) -> None:
         """Report a missing lint input with a nonzero exit code."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             missing = Path(temporary_directory) / "missing"
@@ -129,7 +131,77 @@ class CliTests(unittest.TestCase):
                 main(["lint", str(missing)])
 
             self.assertEqual(result.exception.code, 2)
-            self.assertIn("Directory does not exist", error_output.getvalue())
+            self.assertIn("Artifact does not exist", error_output.getvalue())
+
+    def test_lint_rejects_unsupported_file(self) -> None:
+        """Report an unsupported artifact type for linting."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "release.zip"
+            source.write_bytes(b"data")
+            error_output = io.StringIO()
+
+            with contextlib.redirect_stderr(error_output), self.assertRaises(SystemExit) as result:
+                main(["lint", str(source)])
+
+            self.assertEqual(result.exception.code, 2)
+            self.assertIn("Unsupported artifact type", error_output.getvalue())
+
+    def test_inspect_rejects_invalid_msi(self) -> None:
+        """Report an invalid MSI without a traceback."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "invalid.msi"
+            source.write_bytes(b"not an MSI")
+            error_output = io.StringIO()
+
+            with contextlib.redirect_stderr(error_output), self.assertRaises(SystemExit) as result:
+                main(["inspect", str(source)])
+
+            self.assertEqual(result.exception.code, 2)
+            self.assertIn("Unable to inspect MSI", error_output.getvalue())
+
+    def test_inspect_uses_msi_inspector(self) -> None:
+        """Route MSI files to the MSI inspector for inspect output."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "release.MSI"
+            source.write_bytes(b"synthetic MSI data")
+            artifact = ReleaseArtifact(
+                source_path=source,
+                files=[ArtifactFile(Path("App/readme.txt"), 3, "a" * 64)],
+            )
+            output = io.StringIO()
+
+            with (
+                patch("whatyouship.inspectors.MsiInspector") as inspector,
+                contextlib.redirect_stdout(output),
+            ):
+                inspector.return_value.inspect.return_value = artifact
+                result = main(["inspect", str(source)])
+
+            self.assertEqual(result, 0)
+            inspector.return_value.inspect.assert_called_once_with(source)
+            self.assertIn("App/readme.txt | 3 |", output.getvalue())
+
+    def test_lint_uses_msi_inspector(self) -> None:
+        """Apply the existing lint rule to files from an MSI artifact."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "release.msi"
+            source.write_bytes(b"synthetic MSI data")
+            artifact = ReleaseArtifact(
+                source_path=source,
+                files=[ArtifactFile(Path("App/build.obj"), 3, "a" * 64)],
+            )
+            output = io.StringIO()
+
+            with (
+                patch("whatyouship.inspectors.MsiInspector") as inspector,
+                contextlib.redirect_stdout(output),
+            ):
+                inspector.return_value.inspect.return_value = artifact
+                result = main(["lint", str(source)])
+
+            self.assertEqual(result, 0)
+            inspector.return_value.inspect.assert_called_once_with(source)
+            self.assertIn("build-artifact-extension | warning | App/build.obj", output.getvalue())
 
 
 if __name__ == "__main__":
