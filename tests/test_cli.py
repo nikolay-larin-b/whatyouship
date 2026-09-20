@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from whatyouship import __version__
 from whatyouship.cli import main
-from whatyouship.model import ArtifactFile, BinaryMetadata, ReleaseArtifact
+from whatyouship.model import ArtifactFile, BinaryMetadata, ReleaseArtifact, SignatureMetadata
 
 
 class CliTests(unittest.TestCase):
@@ -234,6 +234,39 @@ class CliTests(unittest.TestCase):
             "File version: 1.2.3.4 | Product version: 5.6.7.8\n",
             output.getvalue(),
         )
+
+    def test_inspect_prints_signature_metadata(self) -> None:
+        """Show signature validity, signer subject, and timestamp."""
+        artifact = ReleaseArtifact(
+            Path("release"),
+            [ArtifactFile(Path("app.exe"), 1, "a" * 64, binary=BinaryMetadata(
+                "PE", "x86_64", "executable",
+                signature=SignatureMetadata(True, True, "CN=Example Publisher", True),
+            ))],
+        )
+        output = io.StringIO()
+
+        with patch("whatyouship.cli.inspect_artifact", return_value=artifact), contextlib.redirect_stdout(output):
+            result = main(["inspect", "release"])
+
+        self.assertEqual(result, 0)
+        self.assertIn("Signature: valid | Signer: CN=Example Publisher | Timestamp: present", output.getvalue())
+
+    def test_lint_reports_unsigned_pe(self) -> None:
+        """Run the unsigned PE rule through the CLI."""
+        artifact = ReleaseArtifact(
+            Path("release"),
+            [ArtifactFile(Path("app.dat"), 1, "a" * 64, binary=BinaryMetadata(
+                "PE", "x86_64", "executable", signature=SignatureMetadata(False),
+            ))],
+        )
+        output = io.StringIO()
+
+        with patch("whatyouship.cli.inspect_artifact", return_value=artifact), contextlib.redirect_stdout(output):
+            result = main(["lint", "release"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(output.getvalue(), "unsigned-pe-binary | warning | app.dat | Unsigned PE executable.\n")
 
 
 if __name__ == "__main__":

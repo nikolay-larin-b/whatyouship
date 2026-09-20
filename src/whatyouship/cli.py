@@ -10,6 +10,7 @@ from whatyouship import __version__
 from whatyouship.inspectors import inspect_artifact
 from whatyouship.lint import LintEngine
 from whatyouship.rules.build_artifacts import BuildArtifactRule
+from whatyouship.rules.unsigned_pe import UnsignedPeRule
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,9 +56,26 @@ def main(argv: list[str] | None = None) -> int:
                 if file.binary.product_version is not None:
                     details.append(f"Product version: {file.binary.product_version}")
                 print("  Binary: " + " | ".join(details))
+                if file.binary.signature is not None:
+                    signature = file.binary.signature
+                    if signature.present is None:
+                        print("  Signature: unknown")
+                    elif not signature.present:
+                        print("  Signature: absent")
+                    else:
+                        validity = (
+                            "unknown" if signature.valid is None else
+                            "valid" if signature.valid else "invalid"
+                        )
+                        details = [validity]
+                        if signature.signer is not None:
+                            details.append(f"Signer: {signature.signer}")
+                        if signature.timestamp is not None:
+                            details.append(f"Timestamp: {'present' if signature.timestamp else 'absent'}")
+                        print("  Signature: " + " | ".join(details))
         return 0
 
-    findings = LintEngine([BuildArtifactRule()]).run(artifact)
+    findings = LintEngine([BuildArtifactRule(), UnsignedPeRule()]).run(artifact)
     if not findings:
         print("No findings.")
     else:

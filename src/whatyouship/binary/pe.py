@@ -7,7 +7,7 @@ from pathlib import Path
 
 import lief
 
-from whatyouship.model import BinaryMetadata
+from whatyouship.model import BinaryMetadata, SignatureMetadata
 
 
 _ARCHITECTURES = {
@@ -31,7 +31,7 @@ def _fixed_version(high: int, low: int) -> str:
 
 
 class PeInspector:
-    """Identify PE files and read basic header and version metadata."""
+    """Identify PE files and read header, version, and signature metadata."""
 
     def inspect(self, source: Path | bytes | memoryview) -> BinaryMetadata | None:
         """Inspect a path or in-memory payload when it contains a PE file.
@@ -72,6 +72,7 @@ class PeInspector:
                 kind=kind,
                 file_version=file_version,
                 product_version=product_version,
+                signature=self._signature(binary),
             )
         except Exception:
             return None
@@ -114,3 +115,39 @@ class PeInspector:
             except Exception:
                 pass
         return file_version, product_version
+
+    def _signature(self, binary: lief.PE.Binary) -> SignatureMetadata:
+        """Read embedded Authenticode signature information.
+
+        :param binary: Parsed PE binary.
+        :returns: Signature state, including unknown values on read failures.
+        """
+        try:
+            signatures = list(binary.signatures)
+        except Exception:
+            return SignatureMetadata(present=None)
+        if not signatures:
+            return SignatureMetadata(present=False, valid=None, timestamp=None)
+
+        valid: bool | None = None
+        signer: str | None = None
+        timestamp: bool | None = None
+        for signature in signatures:
+            try:
+                verified = binary.verify_signature(signature) == lief.PE.Signature.VERIFICATION_FLAGS.OK
+                valid = verified if valid is None else valid or verified
+            except Exception:
+                pass
+            try:
+                for signer_info in signature.signers:
+                    if signer is None and signer_info.cert is not None:
+                        subject = signer_info.cert.subject
+                        signer = subject.decode(errors="replace") if isinstance(subject, bytes) else str(subject)
+                    has_timestamp = any(
+                        isinstance(attribute, (lief.PE.PKCS9CounterSignature, lief.PE.MsCounterSign))
+                        for attribute in signer_info.unauthenticated_attributes
+                    )
+                    timestamp = has_timestamp if timestamp is None else timestamp or has_timestamp
+            except Exception:
+                pass
+        return SignatureMetadata(present=True, valid=valid, signer=signer, timestamp=timestamp)

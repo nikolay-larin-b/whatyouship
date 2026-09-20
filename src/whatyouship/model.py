@@ -9,6 +9,22 @@ from typing import Literal
 
 
 @dataclass
+class SignatureMetadata:
+    """Describe a binary signature without assuming a specific format.
+
+    :param present: Whether an embedded signature is present, or ``None`` if unknown.
+    :param valid: Whether signature verification succeeded, or ``None`` if unknown.
+    :param signer: Signer certificate subject, when available.
+    :param timestamp: Whether a timestamp is present, or ``None`` if unknown.
+    """
+
+    present: bool | None
+    valid: bool | None = None
+    signer: str | None = None
+    timestamp: bool | None = None
+
+
+@dataclass
 class BinaryMetadata:
     """Describe identified binary properties without format-specific fields.
 
@@ -17,6 +33,7 @@ class BinaryMetadata:
     :param kind: Executable, library, or other binary kind.
     :param file_version: Embedded file version, when available.
     :param product_version: Embedded product version, when available.
+    :param signature: Embedded signature metadata, when available.
     """
 
     format: str
@@ -24,6 +41,7 @@ class BinaryMetadata:
     kind: str
     file_version: str | None = None
     product_version: str | None = None
+    signature: SignatureMetadata | None = None
 
 
 @dataclass

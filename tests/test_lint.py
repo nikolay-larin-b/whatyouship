@@ -7,8 +7,9 @@ import unittest
 from pathlib import Path
 
 from whatyouship.lint import LintEngine
-from whatyouship.model import ArtifactFile, Finding, ReleaseArtifact
+from whatyouship.model import ArtifactFile, BinaryMetadata, Finding, ReleaseArtifact, SignatureMetadata
 from whatyouship.rules.build_artifacts import BuildArtifactRule
+from whatyouship.rules.unsigned_pe import UnsignedPeRule
 
 
 class _FixedRule:
@@ -70,6 +71,28 @@ class LintTests(unittest.TestCase):
         self.assertTrue(all(finding.rule_id == "build-artifact-extension" for finding in findings))
         self.assertTrue(all(finding.severity == "warning" for finding in findings))
         self.assertTrue(all("Suspicious build artifact extension" in finding.message for finding in findings))
+
+    def test_unsigned_pe_rule_uses_binary_type(self) -> None:
+        """Flag unsigned PE executables and DLLs regardless of filename."""
+        files = [
+            ArtifactFile(Path(name), 1, "0" * 64, binary=binary)
+            for name, binary in [
+                ("app.dat", BinaryMetadata("PE", "x86_64", "executable", signature=SignatureMetadata(False))),
+                ("library.bin", BinaryMetadata("PE", "x86_64", "dll", signature=SignatureMetadata(False))),
+                ("fake.exe", None),
+                ("signed.dll", BinaryMetadata("PE", "x86_64", "dll", signature=SignatureMetadata(True, True))),
+                ("unknown.exe", BinaryMetadata("PE", "x86_64", "executable", signature=SignatureMetadata(True, None))),
+                ("unreadable.exe", BinaryMetadata("PE", "x86_64", "executable", signature=SignatureMetadata(None))),
+                ("other.exe", BinaryMetadata("ELF", "x86_64", "executable", signature=SignatureMetadata(False))),
+            ]
+        ]
+        artifact = ReleaseArtifact(Path("release"), files)
+
+        findings = UnsignedPeRule().check(artifact)
+
+        self.assertEqual([finding.relative_path for finding in findings], [Path("app.dat"), Path("library.bin")])
+        self.assertTrue(all(finding.rule_id == "unsigned-pe-binary" for finding in findings))
+        self.assertTrue(all(finding.severity == "warning" for finding in findings))
 
 
 if __name__ == "__main__":

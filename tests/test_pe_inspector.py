@@ -59,6 +59,7 @@ class PeInspectorTests(unittest.TestCase):
         self.assertEqual(from_path.kind, "executable")
         self.assertIsNone(from_path.file_version)
         self.assertIsNone(from_path.product_version)
+        self.assertFalse(from_path.signature.present)
 
     def test_identifies_dll(self) -> None:
         """Distinguish a generated DLL from an executable."""
@@ -166,6 +167,87 @@ class PeInspectorTests(unittest.TestCase):
         self.assertIsNone(PeInspector().inspect(b"plain text"))
         with patch("whatyouship.binary.pe.lief.PE.parse", side_effect=RuntimeError("bad PE")):
             self.assertIsNone(PeInspector().inspect(b"MZbroken"))
+
+    def test_reads_signed_pe_metadata(self) -> None:
+        """Read verification result, signer subject, and timestamp presence."""
+        signer = SimpleNamespace(
+            cert=SimpleNamespace(subject="CN=Example Publisher"),
+            unauthenticated_attributes=[Mock(spec=lief.PE.PKCS9CounterSignature)],
+        )
+        signature = SimpleNamespace(signers=[signer])
+        header = Mock()
+        header.machine = lief.PE.Header.MACHINE_TYPES.AMD64
+        header.has_characteristic.side_effect = [False, True]
+        binary = SimpleNamespace(
+            header=header,
+            has_resources=False,
+            signatures=[signature],
+            verify_signature=Mock(return_value=lief.PE.Signature.VERIFICATION_FLAGS.OK),
+        )
+
+        with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
+            metadata = PeInspector().inspect(b"MZsynthetic")
+
+        self.assertIsNotNone(metadata)
+        self.assertTrue(metadata.signature.present)
+        self.assertTrue(metadata.signature.valid)
+        self.assertEqual(metadata.signature.signer, "CN=Example Publisher")
+        self.assertTrue(metadata.signature.timestamp)
+        binary.verify_signature.assert_called_once_with(signature)
+
+    def test_signature_verification_failure_preserves_pe_metadata(self) -> None:
+        """Keep PE properties when signature verification raises an error."""
+        signer = SimpleNamespace(cert=None, unauthenticated_attributes=[])
+        header = Mock()
+        header.machine = lief.PE.Header.MACHINE_TYPES.AMD64
+        header.has_characteristic.side_effect = [False, True]
+        binary = SimpleNamespace(
+            header=header,
+            has_resources=False,
+            signatures=[SimpleNamespace(signers=[signer])],
+            verify_signature=Mock(side_effect=RuntimeError("verification failed")),
+        )
+
+        with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
+            metadata = PeInspector().inspect(b"MZsynthetic")
+
+        self.assertIsNotNone(metadata)
+        self.assertEqual(metadata.kind, "executable")
+        self.assertTrue(metadata.signature.present)
+        self.assertIsNone(metadata.signature.valid)
+        self.assertFalse(metadata.signature.timestamp)
+
+    def test_invalid_signature_is_reported(self) -> None:
+        """Keep a present signature distinct from a valid signature."""
+        header = Mock()
+        header.machine = lief.PE.Header.MACHINE_TYPES.AMD64
+        header.has_characteristic.side_effect = [False, True]
+        binary = SimpleNamespace(
+            header=header,
+            has_resources=False,
+            signatures=[SimpleNamespace(signers=[])],
+            verify_signature=Mock(return_value=lief.PE.Signature.VERIFICATION_FLAGS.BAD_DIGEST),
+        )
+
+        with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
+            metadata = PeInspector().inspect(b"MZsynthetic")
+
+        self.assertIsNotNone(metadata)
+        self.assertTrue(metadata.signature.present)
+        self.assertFalse(metadata.signature.valid)
+
+    def test_signature_read_error_does_not_mark_pe_unsigned(self) -> None:
+        """Treat an inaccessible signature list as unknown."""
+        header = Mock()
+        header.machine = lief.PE.Header.MACHINE_TYPES.AMD64
+        header.has_characteristic.side_effect = [False, True]
+        binary = SimpleNamespace(header=header, has_resources=False)
+
+        with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
+            metadata = PeInspector().inspect(b"MZsynthetic")
+
+        self.assertIsNotNone(metadata)
+        self.assertIsNone(metadata.signature.present)
 
 
 if __name__ == "__main__":
