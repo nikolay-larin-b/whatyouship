@@ -11,5 +11,8 @@ Development rules:
 - Add dependencies only when necessary; prefer the Python standard library when it is sufficient.
 - Communication with the user may be in Russian.
 - Write all project code, comments, docstrings, README content, documentation, error messages, and other user-facing project text in English.
+- Start Python files with the copyright notice for Nikolay Larin and the `SPDX-License-Identifier: MIT` marker; add a module docstring.
+- Document classes and functions with Sphinx-compatible docstrings. Use reStructuredText fields for parameters, return values, and raised exceptions when applicable.
+- Add type annotations to every new function and method, including tests: annotate parameters other than `self` and `cls`, and always annotate return values.
 - Do not make Git commits.
 - Do not publish packages or upload anything to PyPI.

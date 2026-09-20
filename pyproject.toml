@@ -4,12 +4,15 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "WhatYouShip"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Know what you ship. Know what you install."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "Nikolay Larin", email = "nikolay.larin@gmail.com"}]
 license = "MIT"
+
+[project.scripts]
+whatyouship = "whatyouship.cli:main"
 
 [tool.flit.module]
 name = "whatyouship"
