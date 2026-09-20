@@ -296,6 +296,7 @@ class CliTests(unittest.TestCase):
                 "Removed: 1",
                 "Changed: 1",
                 "Unchanged: 1",
+                "Semantic differences: 0",
                 "",
                 "Added files:",
                 "  added.txt",
@@ -343,6 +344,33 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(result.exception.code, 2)
             self.assertIn("Artifact does not exist", error_output.getvalue())
+
+    def test_compare_highlights_signed_to_unsigned_regression(self) -> None:
+        """Show the signature regression outside the digest change list."""
+        path = Path("app.exe")
+        old = ReleaseArtifact(Path("old"), [ArtifactFile(
+            path, 1, "a", binary=BinaryMetadata(
+                "PE", "x86_64", "executable", signature=SignatureMetadata(True, True),
+            ),
+        )])
+        new = ReleaseArtifact(Path("new"), [ArtifactFile(
+            path, 1, "b", binary=BinaryMetadata(
+                "PE", "x86_64", "executable", signature=SignatureMetadata(False),
+            ),
+        )])
+        output = io.StringIO()
+
+        with patch("whatyouship.cli.inspect_artifact", side_effect=[old, new]), contextlib.redirect_stdout(output):
+            result = main(["compare", "old", "new"])
+
+        self.assertEqual(result, 0)
+        self.assertIn("Changed files:\n  app.exe", output.getvalue())
+        self.assertIn("Semantic differences: 1", output.getvalue())
+        self.assertIn(
+            "app.exe | Signature: signed (valid) -> unsigned "
+            "[POTENTIALLY DANGEROUS: signed -> unsigned]",
+            output.getvalue(),
+        )
 
 
 if __name__ == "__main__":

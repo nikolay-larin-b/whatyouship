@@ -53,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Removed: {len(comparison.removed)}")
         print(f"Changed: {len(comparison.changed)}")
         print(f"Unchanged: {len(comparison.unchanged)}")
+        print(f"Semantic differences: {len(comparison.semantic_differences)}")
         for label, paths in (
             ("Added", comparison.added),
             ("Removed", comparison.removed),
@@ -62,6 +63,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n{label} files:")
                 for path in paths:
                     print(f"  {path}")
+        if comparison.semantic_differences:
+            print("\nSemantic differences:")
+            for difference in comparison.semantic_differences:
+                warning = (
+                    " [POTENTIALLY DANGEROUS: signed -> unsigned]"
+                    if difference.potentially_dangerous else ""
+                )
+                print(
+                    f"  {difference.relative_path} | {difference.field}: "
+                    f"{difference.old_value} -> {difference.new_value}{warning}"
+                )
         return 0
 
     if args.command == "inspect":
