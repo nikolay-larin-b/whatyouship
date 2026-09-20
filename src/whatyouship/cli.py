@@ -8,6 +8,8 @@ from pathlib import Path
 
 from whatyouship import __version__
 from whatyouship.inspectors.directory import DirectoryInspector
+from whatyouship.lint import LintEngine
+from whatyouship.rules.build_artifacts import BuildArtifactRule
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,6 +27,8 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a directory artifact.")
     inspect_parser.add_argument("directory", type=Path, help="Directory to inspect.")
+    lint_parser = subparsers.add_parser("lint", help="Lint a directory artifact.")
+    lint_parser.add_argument("directory", type=Path, help="Directory to lint.")
 
     args = parser.parse_args(argv)
     try:
@@ -32,13 +36,25 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as error:
         parser.error(str(error))
 
-    print(f"Source: {artifact.source_path}")
-    print(f"Files: {len(artifact.files)}")
-    print(f"Total size: {sum(file.size_bytes for file in artifact.files)} bytes")
-    print()
-    print("Relative path | Size (bytes) | SHA-256")
-    for file in artifact.files:
-        print(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")
+    if args.command == "inspect":
+        print(f"Source: {artifact.source_path}")
+        print(f"Files: {len(artifact.files)}")
+        print(f"Total size: {sum(file.size_bytes for file in artifact.files)} bytes")
+        print()
+        print("Relative path | Size (bytes) | SHA-256")
+        for file in artifact.files:
+            print(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")
+        return 0
+
+    findings = LintEngine([BuildArtifactRule()]).run(artifact)
+    if not findings:
+        print("No findings.")
+    else:
+        for finding in findings:
+            print(
+                f"{finding.rule_id} | {finding.severity} | "
+                f"{finding.relative_path} | {finding.message}"
+            )
     return 0
 
 

@@ -5,6 +5,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 @dataclass
@@ -31,3 +32,19 @@ class ReleaseArtifact:
 
     source_path: Path
     files: list[ArtifactFile] = field(default_factory=list)
+
+
+@dataclass
+class Finding:
+    """Describe a condition reported by a lint rule.
+
+    :param rule_id: Identifier of the rule that reported the finding.
+    :param severity: Severity of the finding.
+    :param relative_path: Path of the affected file within the artifact.
+    :param message: Short description of the condition.
+    """
+
+    rule_id: str
+    severity: Literal["warning"]
+    relative_path: Path
+    message: str

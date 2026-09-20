@@ -25,6 +25,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 0)
         self.assertIn("usage: whatyouship", output.getvalue())
         self.assertIn("--version", output.getvalue())
+        self.assertIn("lint", output.getvalue())
 
     def test_version(self) -> None:
         """Verify that ``--version`` prints the package version and exits."""
@@ -82,6 +83,53 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(result.exception.code, 2)
             self.assertIn("Path is not a directory", error_output.getvalue())
+
+    def test_lint_prints_build_artifact_findings(self) -> None:
+        """Print rule ID, severity, path, and description for each finding."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "z.obj").write_bytes(b"object")
+            (root / "a.ILK").write_bytes(b"linker")
+            (root / "symbols.pdb").write_bytes(b"symbols")
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main(["lint", str(root)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                output.getvalue().splitlines(),
+                [
+                    "build-artifact-extension | warning | a.ILK | Suspicious build artifact extension: .ilk.",
+                    "build-artifact-extension | warning | z.obj | Suspicious build artifact extension: .obj.",
+                ],
+            )
+
+    def test_lint_reports_no_findings(self) -> None:
+        """Report a clean artifact without listing files."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "library.lib").write_bytes(b"library")
+            (root / "symbols.pdb").write_bytes(b"symbols")
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main(["lint", str(root)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(output.getvalue(), "No findings.\n")
+
+    def test_lint_rejects_missing_directory(self) -> None:
+        """Report a missing lint input with a nonzero exit code."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            missing = Path(temporary_directory) / "missing"
+            error_output = io.StringIO()
+
+            with contextlib.redirect_stderr(error_output), self.assertRaises(SystemExit) as result:
+                main(["lint", str(missing)])
+
+            self.assertEqual(result.exception.code, 2)
+            self.assertIn("Directory does not exist", error_output.getvalue())
 
 
 if __name__ == "__main__":

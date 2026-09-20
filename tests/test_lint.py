@@ -1,0 +1,76 @@
+# Copyright (c) 2026 Nikolay Larin
+# SPDX-License-Identifier: MIT
+
+"""Tests for the lint engine and build artifact rule."""
+
+import unittest
+from pathlib import Path
+
+from whatyouship.lint import LintEngine
+from whatyouship.model import ArtifactFile, Finding, ReleaseArtifact
+from whatyouship.rules.build_artifacts import BuildArtifactRule
+
+
+class _FixedRule:
+    """Return one predetermined finding for engine tests."""
+
+    def __init__(self, finding: Finding) -> None:
+        """Store the finding returned by this rule.
+
+        :param finding: Finding to return when the rule runs.
+        """
+        self.finding = finding
+
+    def check(self, artifact: ReleaseArtifact) -> list[Finding]:
+        """Return the stored finding.
+
+        :param artifact: Artifact supplied by the engine.
+        :returns: A list containing the stored finding.
+        """
+        return [self.finding]
+
+
+class LintTests(unittest.TestCase):
+    """Verify rule application and build artifact detection."""
+
+    def test_engine_collects_findings_from_all_rules(self) -> None:
+        """Collect findings from each rule in the supplied order."""
+        first = Finding("first", "warning", Path("a"), "First finding.")
+        second = Finding("second", "warning", Path("b"), "Second finding.")
+        artifact = ReleaseArtifact(source_path=Path("release"))
+
+        findings = LintEngine([_FixedRule(first), _FixedRule(second)]).run(artifact)
+
+        self.assertEqual(findings, [first, second])
+
+    def test_build_artifact_rule_flags_only_listed_extensions(self) -> None:
+        """Flag suspicious extensions while leaving .lib and .pdb alone."""
+        names = [
+            "one.ilk",
+            "two.obj",
+            "three.iobj",
+            "four.ipdb",
+            "five.tlog",
+            "six.lastbuildstate",
+            "seven.ILK",
+            "library.lib",
+            "symbols.pdb",
+        ]
+        artifact = ReleaseArtifact(
+            source_path=Path("release"),
+            files=[ArtifactFile(Path(name), 1, "0" * 64) for name in names],
+        )
+
+        findings = LintEngine([BuildArtifactRule()]).run(artifact)
+
+        self.assertEqual(
+            [finding.relative_path for finding in findings],
+            [Path(name) for name in names[:7]],
+        )
+        self.assertTrue(all(finding.rule_id == "build-artifact-extension" for finding in findings))
+        self.assertTrue(all(finding.severity == "warning" for finding in findings))
+        self.assertTrue(all("Suspicious build artifact extension" in finding.message for finding in findings))
+
+
+if __name__ == "__main__":
+    unittest.main()
