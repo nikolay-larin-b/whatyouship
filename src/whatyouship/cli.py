@@ -9,7 +9,7 @@ from pathlib import Path
 from whatyouship import __version__
 from whatyouship.compare import compare_artifacts
 from whatyouship.inspectors import inspect_artifact
-from whatyouship.lint import LintEngine
+from whatyouship.lint import LintEngine, compare_findings
 from whatyouship.rules.build_artifacts import BuildArtifactRule
 from whatyouship.rules.unsigned_pe import UnsignedPeRule
 
@@ -31,6 +31,9 @@ def main(argv: list[str] | None = None) -> int:
     inspect_parser.add_argument("artifact", type=Path, help="Directory or MSI to inspect.")
     lint_parser = subparsers.add_parser("lint", help="Lint a release artifact.")
     lint_parser.add_argument("artifact", type=Path, help="Directory or MSI to lint.")
+    lint_parser.add_argument(
+        "--baseline", type=Path, help="Previous directory or MSI for finding comparison."
+    )
     compare_parser = subparsers.add_parser("compare", help="Compare two release artifacts.")
     compare_parser.add_argument("old_artifact", type=Path, help="Earlier directory or MSI.")
     compare_parser.add_argument("new_artifact", type=Path, help="Later directory or MSI.")
@@ -42,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
             new_artifact = inspect_artifact(args.new_artifact)
         else:
             artifact = inspect_artifact(args.artifact)
+            if args.command == "lint" and args.baseline is not None:
+                baseline_artifact = inspect_artifact(args.baseline)
     except (OSError, ValueError) as error:
         parser.error(str(error))
 
@@ -114,7 +119,24 @@ def main(argv: list[str] | None = None) -> int:
                         print("  Signature: " + " | ".join(details))
         return 0
 
-    findings = LintEngine([BuildArtifactRule(), UnsignedPeRule()]).run(artifact)
+    engine = LintEngine([BuildArtifactRule(), UnsignedPeRule()])
+    findings = engine.run(artifact)
+    if args.baseline is not None:
+        baseline_findings = engine.run(baseline_artifact)
+        comparison = compare_findings(baseline_findings, findings)
+        print(f"New: {len(comparison.new)}")
+        print(f"Existing: {len(comparison.existing)}")
+        print(f"Resolved: {len(comparison.resolved)}")
+        if comparison.new:
+            print("\nNew findings:")
+            for finding in comparison.new:
+                print(
+                    f"{finding.rule_id} | {finding.severity} | "
+                    f"{finding.relative_path} | {finding.message}"
+                )
+        else:
+            print("No new findings.")
+        return 0
     if not findings:
         print("No findings.")
     else:

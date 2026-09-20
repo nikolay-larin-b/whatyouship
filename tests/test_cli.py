@@ -269,6 +269,93 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(output.getvalue(), "unsigned-pe-binary | warning | app.dat | Unsigned PE executable.\n")
 
+    def test_lint_baseline_reports_new_existing_and_resolved(self) -> None:
+        """Show only new findings in detail when comparing directories."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            baseline = root / "previous"
+            current = root / "current"
+            baseline.mkdir()
+            current.mkdir()
+            for name in ("existing.obj", "resolved.ilk"):
+                (baseline / name).write_bytes(b"data")
+            for name in ("existing.obj", "new.tlog"):
+                (current / name).write_bytes(b"data")
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main(["lint", str(current), "--baseline", str(baseline)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(output.getvalue().splitlines(), [
+                "New: 1",
+                "Existing: 1",
+                "Resolved: 1",
+                "",
+                "New findings:",
+                "build-artifact-extension | warning | new.tlog | Suspicious build artifact extension: .tlog.",
+            ])
+
+    def test_lint_baseline_reports_no_new_findings(self) -> None:
+        """Summarize existing findings without listing them."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            baseline = root / "previous"
+            current = root / "current"
+            baseline.mkdir()
+            current.mkdir()
+            (baseline / "existing.obj").write_bytes(b"old")
+            (current / "existing.obj").write_bytes(b"new")
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main(["lint", str(current), "--baseline", str(baseline)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                output.getvalue(),
+                "New: 0\nExisting: 1\nResolved: 0\nNo new findings.\n",
+            )
+
+    def test_lint_baseline_rejects_missing_artifact(self) -> None:
+        """Report an invalid baseline with a nonzero exit code."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            current = Path(temporary_directory) / "current"
+            current.mkdir()
+            missing = Path(temporary_directory) / "missing"
+            error_output = io.StringIO()
+
+            with contextlib.redirect_stderr(error_output), self.assertRaises(SystemExit) as result:
+                main(["lint", str(current), "--baseline", str(missing)])
+
+            self.assertEqual(result.exception.code, 2)
+            self.assertIn("Artifact does not exist", error_output.getvalue())
+
+    def test_lint_baseline_uses_msi_inspector(self) -> None:
+        """Inspect MSI baselines through the existing artifact routing."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            baseline = root / "previous.msi"
+            baseline.write_bytes(b"synthetic MSI data")
+            current = root / "current"
+            current.mkdir()
+            (current / "new.obj").write_bytes(b"data")
+            previous_artifact = ReleaseArtifact(
+                baseline, [ArtifactFile(Path("resolved.ilk"), 4, "a" * 64)]
+            )
+            output = io.StringIO()
+
+            with (
+                patch("whatyouship.inspectors.MsiInspector") as inspector,
+                contextlib.redirect_stdout(output),
+            ):
+                inspector.return_value.inspect.return_value = previous_artifact
+                result = main(["lint", str(current), "--baseline", str(baseline)])
+
+            self.assertEqual(result, 0)
+            inspector.return_value.inspect.assert_called_once_with(baseline)
+            self.assertIn("New: 1\nExisting: 0\nResolved: 1", output.getvalue())
+
     def test_compare_directories_prints_summary_and_changed_paths(self) -> None:
         """Compare directories and omit unchanged paths from detail lists."""
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -6,7 +6,7 @@
 import unittest
 from pathlib import Path
 
-from whatyouship.lint import LintEngine
+from whatyouship.lint import LintEngine, compare_findings
 from whatyouship.model import ArtifactFile, BinaryMetadata, Finding, ReleaseArtifact, SignatureMetadata
 from whatyouship.rules.build_artifacts import BuildArtifactRule
 from whatyouship.rules.unsigned_pe import UnsignedPeRule
@@ -43,6 +43,33 @@ class LintTests(unittest.TestCase):
         findings = LintEngine([_FixedRule(first), _FixedRule(second)]).run(artifact)
 
         self.assertEqual(findings, [first, second])
+
+    def test_compares_findings_by_rule_and_relative_path(self) -> None:
+        """Classify findings without considering severity or message changes."""
+        previous = [
+            Finding("rule-a", "warning", Path("shared.obj"), "Earlier message."),
+            Finding("rule-a", "warning", Path("removed.obj"), "Resolved finding."),
+            Finding("rule-b", "warning", Path("same-path.obj"), "Different rule."),
+        ]
+        current = [
+            Finding("rule-a", "warning", Path("new.obj"), "New finding."),
+            Finding("rule-a", "warning", Path("shared.obj"), "Updated message."),
+            Finding("rule-a", "warning", Path("same-path.obj"), "Different rule."),
+        ]
+
+        comparison = compare_findings(previous, current)
+
+        self.assertEqual(comparison.existing, [current[1]])
+        self.assertEqual(comparison.new, [current[0], current[2]])
+        self.assertEqual(comparison.resolved, [previous[1], previous[2]])
+
+    def test_compares_empty_findings(self) -> None:
+        """Return empty groups when neither artifact has findings."""
+        comparison = compare_findings([], [])
+
+        self.assertEqual(comparison.existing, [])
+        self.assertEqual(comparison.new, [])
+        self.assertEqual(comparison.resolved, [])
 
     def test_build_artifact_rule_flags_only_listed_extensions(self) -> None:
         """Flag suspicious extensions while leaving .lib and .pdb alone."""
