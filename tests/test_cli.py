@@ -270,7 +270,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "unsigned-pe-binary | warning | app.dat | Unsigned PE executable.\n")
 
     def test_lint_baseline_reports_new_existing_and_resolved(self) -> None:
-        """Show only new findings in detail when comparing directories."""
+        """Show new and resolved findings without listing existing ones."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             baseline = root / "previous"
@@ -294,6 +294,9 @@ class CliTests(unittest.TestCase):
                 "",
                 "New findings:",
                 "build-artifact-extension | warning | new.tlog | Suspicious build artifact extension: .tlog.",
+                "",
+                "Resolved findings:",
+                "build-artifact-extension | warning | resolved.ilk | Suspicious build artifact extension: .ilk.",
             ])
 
     def test_lint_baseline_reports_no_new_findings(self) -> None:
@@ -316,6 +319,31 @@ class CliTests(unittest.TestCase):
                 output.getvalue(),
                 "New: 0\nExisting: 1\nResolved: 0\nNo new findings.\n",
             )
+
+    def test_lint_baseline_reports_resolved_without_new_findings(self) -> None:
+        """Keep the no-new message while listing resolved findings."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            baseline = root / "previous"
+            current = root / "current"
+            baseline.mkdir()
+            current.mkdir()
+            (baseline / "resolved.obj").write_bytes(b"old")
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main(["lint", str(current), "--baseline", str(baseline)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(output.getvalue().splitlines(), [
+                "New: 0",
+                "Existing: 0",
+                "Resolved: 1",
+                "No new findings.",
+                "",
+                "Resolved findings:",
+                "build-artifact-extension | warning | resolved.obj | Suspicious build artifact extension: .obj.",
+            ])
 
     def test_lint_baseline_rejects_missing_artifact(self) -> None:
         """Report an invalid baseline with a nonzero exit code."""

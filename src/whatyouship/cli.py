@@ -143,6 +143,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
         else:
             print("No new findings.")
+        if comparison.resolved:
+            print("\nResolved findings:")
+            for finding in comparison.resolved:
+                print(
+                    f"{finding.rule_id} | {finding.severity} | "
+                    f"{finding.relative_path} | {finding.message}"
+                )
         return 0
     if not findings:
         print("No findings.")
