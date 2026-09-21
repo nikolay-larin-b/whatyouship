@@ -5,14 +5,13 @@
 
 import hashlib
 import json
-import os
-import shutil
-import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 import platformdirs
+
+from whatyouship.inspectors.extraction_cache import ExtractionCache
 
 
 @dataclass(frozen=True)
@@ -51,37 +50,9 @@ class MsiPayloadCache:
         :raises OSError: If the cache cannot be written.
         :raises ValueError: If extraction does not produce a complete entry.
         """
-        entry = self._root / msi_sha256
-        cached = self._load(entry)
-        if cached is not None:
-            return cached
-
-        self._root.mkdir(parents=True, exist_ok=True)
-        temporary = Path(tempfile.mkdtemp(prefix=".tmp-", dir=self._root))
-        try:
-            self._write(temporary, extract())
-            if self._load(temporary) is None:
-                raise ValueError("Extracted MSI cache entry is incomplete")
-
-            cached = self._load(entry)
-            if cached is not None:
-                return cached
-            self._remove_invalid(entry)
-            try:
-                os.replace(temporary, entry)
-            except OSError:
-                cached = self._load(entry)
-                if cached is not None:
-                    return cached
-                raise
-
-            cached = self._load(entry)
-            if cached is None:
-                raise ValueError("Published MSI cache entry is incomplete")
-            return cached
-        finally:
-            if temporary.exists():
-                shutil.rmtree(temporary)
+        return ExtractionCache(self._root).load_or_populate(
+            msi_sha256, lambda entry: self._write(entry, extract()), self._load
+        )
 
     def _write(
         self, entry: Path, payloads: Iterable[tuple[Path, bytes]]
@@ -160,13 +131,3 @@ class MsiPayloadCache:
             return files
         except (OSError, ValueError, TypeError, KeyError):
             return None
-
-    def _remove_invalid(self, entry: Path) -> None:
-        """Remove an unusable entry before publishing its replacement.
-
-        :param entry: Entry path derived from the MSI digest.
-        """
-        if entry.is_symlink() or entry.is_file():
-            entry.unlink()
-        elif entry.is_dir():
-            shutil.rmtree(entry)

@@ -8,7 +8,7 @@ release artifacts. It aims to analyze what users actually receive, rather
 than source code or build configuration.
 
 The project is in an early stage of development. Currently available for
-directory and MSI artifacts:
+directory, MSI, and ZIP artifacts:
 
 * ``inspect <artifact>`` to show the files in a release artifact.
 * ``lint <artifact>`` to report release findings, including suspicious files and scope conflicts.
@@ -24,9 +24,9 @@ Binary inspection currently supports Windows executables and libraries.
 For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking
 is unsupported on Linux and macOS. ``lint`` reports unsigned artifacts and
-invalid artifact signatures when verification is supported. Directory artifact
-signatures are unsupported. Package and contained binary signatures are checked
-independently.
+invalid artifact signatures when verification is supported. Directory and ZIP
+artifact signatures are unsupported. Package and contained binary signatures
+are checked independently.
 
 MSI installation scope is inferred statically from the ``Property``,
 ``Directory``, ``Registry``, ``Component``, and explicit scope-setting
@@ -43,6 +43,11 @@ Extracted MSI files are cached by the MSI's SHA-256 in the user cache directory.
 Binary metadata is inspected again on each run.
 The cache hash identifies extracted content and does not verify the package's
 signature or authenticity.
+
+ZIP distributions are safely extracted into a separate versioned cache keyed by
+the ZIP file's SHA-256. Their extracted files use the same inspection, binary
+analysis, lint rules, and comparison logic as directories. ZIP artifact
+signatures are not checked.
 
 To configure lint rules for a product, provide a TOML file explicitly:
 
