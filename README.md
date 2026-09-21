@@ -15,6 +15,7 @@ The project is in an early stage of development. By default, the build artifact 
 For recognized binaries, `inspect` also reports architecture, executable or library kind, version metadata, and signature information when available. Binary inspection currently supports Windows executables and libraries.
 
 MSI paths follow the package's target directory layout; runtime directory properties are not resolved.
+Extracted MSI files are cached by the MSI's SHA-256 in the user cache directory. Binary metadata is inspected again on each run.
 
 To configure lint rules for a product, pass an explicit TOML file:
 

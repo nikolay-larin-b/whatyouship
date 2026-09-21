@@ -23,6 +23,8 @@ Binary inspection currently supports Windows executables and libraries.
 
 MSI paths follow the package's target directory layout; runtime directory
 properties are not resolved.
+Extracted MSI files are cached by the MSI's SHA-256 in the user cache directory.
+Binary metadata is inspected again on each run.
 
 To configure lint rules for a product, provide a TOML file explicitly:
 
