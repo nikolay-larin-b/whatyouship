@@ -82,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:
                     " [POTENTIALLY DANGEROUS: signed -> unsigned]"
                     if difference.potentially_dangerous else ""
                 )
+                if difference.warning_message is not None:
+                    warning += f" [WARNING: {difference.warning_message}]"
                 print(
                     f"  {difference.relative_path} | {difference.field}: "
                     f"{difference.old_value} -> {difference.new_value}{warning}"

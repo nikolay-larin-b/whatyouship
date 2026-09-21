@@ -3,10 +3,14 @@
 
 """Compare release artifact contents and PE metadata."""
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from whatyouship.model import BinaryMetadata, ReleaseArtifact
+from whatyouship.model import BinaryMetadata, ReleaseArtifact, Severity
+
+
+_VERSION_PATTERN = re.compile(r"\s*\d+(?:\s*[.,]\s*\d+)*\s*[.,]?\s*", re.ASCII)
 
 
 @dataclass
@@ -18,6 +22,8 @@ class SemanticDifference:
     :param old_value: Earlier value formatted for display.
     :param new_value: Later value formatted for display.
     :param potentially_dangerous: Whether the change is signed to unsigned.
+    :param severity: Severity of a version regression, when applicable.
+    :param warning_message: Explanation of a version regression, when applicable.
     """
 
     relative_path: Path
@@ -25,6 +31,8 @@ class SemanticDifference:
     old_value: str
     new_value: str
     potentially_dangerous: bool = False
+    severity: Severity | None = None
+    warning_message: str | None = None
 
 
 @dataclass
@@ -63,6 +71,41 @@ def _signature_state(binary: BinaryMetadata) -> str:
     return "signed (verification unknown)"
 
 
+def _version_components(value: str) -> tuple[int, ...] | None:
+    """Parse an unambiguous dotted or comma-separated numeric version.
+
+    :param value: Embedded version string.
+    :returns: Numeric components, or ``None`` if the value is ambiguous.
+    """
+    if _VERSION_PATTERN.fullmatch(value) is None:
+        return None
+    normalized = value.strip().rstrip(".,").strip()
+    return tuple(int(component.strip()) for component in re.split(r"[.,]", normalized))
+
+
+def _version_warning(old: str | None, new: str | None) -> str | None:
+    """Identify a missing or numerically lower new version.
+
+    :param old: Earlier version metadata.
+    :param new: Later version metadata.
+    :returns: Warning description, or ``None`` when no regression is known.
+    """
+    if old is None:
+        return None
+    if new is None:
+        return "version metadata removed"
+    old_components = _version_components(old)
+    new_components = _version_components(new)
+    if old_components is None or new_components is None:
+        return None
+    width = max(len(old_components), len(new_components))
+    if new_components + (0,) * (width - len(new_components)) < old_components + (0,) * (
+        width - len(old_components)
+    ):
+        return "version downgrade"
+    return None
+
+
 def _pe_differences(
     path: Path, old: BinaryMetadata, new: BinaryMetadata
 ) -> list[SemanticDifference]:
@@ -96,6 +139,11 @@ def _pe_differences(
         )
     for field_name, old_value, new_value in fields:
         if old_value != new_value:
+            warning_message = (
+                _version_warning(old_value, new_value)
+                if field_name in {"File version", "Product version"}
+                else None
+            )
             regression = (
                 field_name == "Signature"
                 and old.signature is not None
@@ -110,6 +158,8 @@ def _pe_differences(
                     old_value if old_value is not None else "unavailable",
                     new_value if new_value is not None else "unavailable",
                     potentially_dangerous=regression,
+                    severity="warning" if warning_message is not None else None,
+                    warning_message=warning_message,
                 )
             )
     return differences

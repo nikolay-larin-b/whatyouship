@@ -615,6 +615,30 @@ class CliTests(unittest.TestCase):
             output.getvalue(),
         )
 
+    def test_compare_labels_version_regressions_as_warnings(self) -> None:
+        """Show downgrade and missing metadata warnings in compare output."""
+        path = Path("app.exe")
+        old = ReleaseArtifact(Path("old"), [ArtifactFile(
+            path, 1, "a", BinaryMetadata("PE", "x86_64", "executable", "1.2.10", "2.0"),
+        )])
+        new = ReleaseArtifact(Path("new"), [ArtifactFile(
+            path, 1, "b", BinaryMetadata("PE", "x86_64", "executable", "1.2.9", None),
+        )])
+        output = io.StringIO()
+
+        with patch("whatyouship.cli.inspect_artifact", side_effect=[old, new]), contextlib.redirect_stdout(output):
+            result = main(["compare", "old", "new"])
+
+        self.assertEqual(result, 0)
+        self.assertIn(
+            "app.exe | File version: 1.2.10 -> 1.2.9 [WARNING: version downgrade]",
+            output.getvalue(),
+        )
+        self.assertIn(
+            "app.exe | Product version: 2.0 -> unavailable [WARNING: version metadata removed]",
+            output.getvalue(),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
