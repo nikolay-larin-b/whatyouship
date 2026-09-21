@@ -21,7 +21,7 @@ from whatyouship.model import (
     ReleaseArtifact, SignatureMetadata,
 )
 from whatyouship.report import CompareReport, LintReport
-from whatyouship.renderers.csv import LINT_COLUMNS, render_csv
+from whatyouship.renderers.csv import INSPECT_COLUMNS, LINT_COLUMNS, render_csv
 
 
 class ReportOutputTests(unittest.TestCase):
@@ -179,9 +179,12 @@ class ReportOutputTests(unittest.TestCase):
                 rows = list(csv.DictReader(stream))
 
         self.assertEqual(len(rows), 2)
+        self.assertEqual(tuple(rows[0]), INSPECT_COLUMNS)
+        self.assertNotIn("source_path", rows[0])
         self.assertEqual(rows[0]["relative_path"], 'name,"quoted".txt')
         self.assertEqual(rows[0]["size_bytes"], "4")
         self.assertIn('"name,""quoted"".txt"', raw)
+        self.assertNotIn(str(artifact), raw)
 
     def test_lint_csv_has_one_row_per_finding_and_quotes_message(self) -> None:
         """Preserve punctuation and newlines in CSV finding messages."""

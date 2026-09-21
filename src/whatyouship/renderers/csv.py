@@ -12,7 +12,7 @@ from whatyouship.report import CompareReport, InspectReport, LintReport, Report
 
 
 INSPECT_COLUMNS = (
-    "source_path", "relative_path", "size_bytes", "sha256", "binary_format",
+    "relative_path", "size_bytes", "sha256", "binary_format",
     "architecture", "binary_kind", "file_version", "product_version",
     "signature_present", "signature_valid", "signature_signer", "signature_timestamp",
 )
@@ -58,8 +58,7 @@ def render_csv(report: Report) -> str:
             binary = file.binary
             signature = binary.signature if binary is not None else None
             writer.writerow((
-                str(report.artifact.source_path), file.relative_path.as_posix(),
-                file.size_bytes, file.sha256,
+                file.relative_path.as_posix(), file.size_bytes, file.sha256,
                 binary.format if binary is not None else "",
                 binary.architecture if binary is not None else "",
                 binary.kind if binary is not None else "",
