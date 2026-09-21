@@ -9,7 +9,7 @@ from pathlib import Path
 from whatyouship.lint import LintEngine, compare_findings
 from whatyouship.model import ArtifactFile, BinaryMetadata, Finding, ReleaseArtifact, SignatureMetadata
 from whatyouship.rules.build_artifacts import BuildArtifactRule
-from whatyouship.rules.unsigned_pe import UnsignedPeRule
+from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
 
 class _FixedRule:
@@ -99,27 +99,31 @@ class LintTests(unittest.TestCase):
         self.assertTrue(all(finding.severity == "warning" for finding in findings))
         self.assertTrue(all("Suspicious build artifact extension" in finding.message for finding in findings))
 
-    def test_unsigned_pe_rule_uses_binary_type(self) -> None:
-        """Flag unsigned PE executables and DLLs regardless of filename."""
+    def test_unsigned_binary_rule_uses_binary_type(self) -> None:
+        """Flag unsigned executables and libraries regardless of filename."""
         files = [
             ArtifactFile(Path(name), 1, "0" * 64, binary=binary)
             for name, binary in [
                 ("app.dat", BinaryMetadata("PE", "x86_64", "executable", signature=SignatureMetadata(False))),
-                ("library.bin", BinaryMetadata("PE", "x86_64", "dll", signature=SignatureMetadata(False))),
+                ("library.bin", BinaryMetadata("PE", "x86_64", "library", signature=SignatureMetadata(False))),
                 ("fake.exe", None),
-                ("signed.dll", BinaryMetadata("PE", "x86_64", "dll", signature=SignatureMetadata(True, True))),
+                ("signed.dll", BinaryMetadata("PE", "x86_64", "library", signature=SignatureMetadata(True, True))),
                 ("unknown.exe", BinaryMetadata("PE", "x86_64", "executable", signature=SignatureMetadata(True, None))),
                 ("unreadable.exe", BinaryMetadata("PE", "x86_64", "executable", signature=SignatureMetadata(None))),
-                ("other.exe", BinaryMetadata("ELF", "x86_64", "executable", signature=SignatureMetadata(False))),
+                ("other.bin", BinaryMetadata("synthetic", "x86_64", "executable", signature=SignatureMetadata(False))),
             ]
         ]
         artifact = ReleaseArtifact(Path("release"), files)
 
-        findings = UnsignedPeRule().check(artifact)
+        findings = UnsignedBinaryRule().check(artifact)
 
-        self.assertEqual([finding.relative_path for finding in findings], [Path("app.dat"), Path("library.bin")])
-        self.assertTrue(all(finding.rule_id == "unsigned-pe-binary" for finding in findings))
+        self.assertEqual([finding.relative_path for finding in findings], [Path("app.dat"), Path("library.bin"), Path("other.bin")])
+        self.assertTrue(all(finding.rule_id == "unsigned-binary" for finding in findings))
         self.assertTrue(all(finding.severity == "warning" for finding in findings))
+        self.assertEqual(
+            [finding.message for finding in findings],
+            ["Unsigned executable.", "Unsigned library.", "Unsigned executable."],
+        )
 
 
 if __name__ == "__main__":

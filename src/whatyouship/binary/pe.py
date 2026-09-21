@@ -59,7 +59,7 @@ class PeInspector:
             machine = header.machine
             architecture = _ARCHITECTURES.get(machine, machine.name.lower())
             if header.has_characteristic(lief.PE.Header.CHARACTERISTICS.DLL):
-                kind = "dll"
+                kind = "library"
             elif header.has_characteristic(lief.PE.Header.CHARACTERISTICS.EXECUTABLE_IMAGE):
                 kind = "executable"
             else:

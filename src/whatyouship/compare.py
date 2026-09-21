@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Nikolay Larin
 # SPDX-License-Identifier: MIT
 
-"""Compare release artifact contents and PE metadata."""
+"""Compare release artifact contents and binary metadata."""
 
 import re
 from dataclasses import dataclass, field
@@ -15,7 +15,7 @@ _VERSION_PATTERN = re.compile(r"\s*\d+(?:\s*[.,]\s*\d+)*\s*[.,]?\s*", re.ASCII)
 
 @dataclass
 class SemanticDifference:
-    """Describe a PE metadata change at a shared relative path.
+    """Describe a binary metadata change at a shared relative path.
 
     :param relative_path: Path of the file in both artifacts.
     :param field: Name of the changed metadata field.
@@ -43,7 +43,7 @@ class ComparisonResult:
     :param removed: Paths found only in the old artifact.
     :param changed: Paths with different SHA-256 digests.
     :param unchanged: Paths with matching SHA-256 digests.
-    :param semantic_differences: PE metadata changes at shared paths.
+    :param semantic_differences: Binary metadata changes at shared paths.
     """
 
     added: list[Path] = field(default_factory=list)
@@ -106,14 +106,14 @@ def _version_warning(old: str | None, new: str | None) -> str | None:
     return None
 
 
-def _pe_differences(
+def _binary_differences(
     path: Path, old: BinaryMetadata, new: BinaryMetadata
 ) -> list[SemanticDifference]:
-    """Find requested PE metadata changes between two files.
+    """Find requested binary metadata changes between two files.
 
     :param path: Shared relative path.
-    :param old: Earlier PE metadata.
-    :param new: Later PE metadata.
+    :param old: Earlier binary metadata.
+    :param new: Later binary metadata.
     :returns: Differences in a stable field order.
     """
     differences = []
@@ -128,13 +128,13 @@ def _pe_differences(
             new.signature.signer if new.signature is not None else None,
         ),
     )
-    if old.kind != new.kind and {old.kind, new.kind} == {"executable", "dll"}:
+    if old.kind != new.kind and {old.kind, new.kind} == {"executable", "library"}:
         differences.append(
             SemanticDifference(
                 path,
                 "Type",
-                "EXE" if old.kind == "executable" else "DLL",
-                "EXE" if new.kind == "executable" else "DLL",
+                old.kind,
+                new.kind,
             )
         )
     for field_name, old_value, new_value in fields:
@@ -170,7 +170,7 @@ def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonR
 
     :param old: Earlier release artifact.
     :param new: Later release artifact.
-    :returns: Sorted path classifications and PE metadata differences.
+    :returns: Sorted path classifications and binary metadata differences.
     """
     old_files = {file.relative_path: file for file in old.files}
     new_files = {file.relative_path: file for file in new.files}
@@ -191,10 +191,9 @@ def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonR
         if (
             earlier.binary is not None
             and later.binary is not None
-            and earlier.binary.format == "PE"
-            and later.binary.format == "PE"
+            and earlier.binary.format == later.binary.format
         ):
             result.semantic_differences.extend(
-                _pe_differences(path, earlier.binary, later.binary)
+                _binary_differences(path, earlier.binary, later.binary)
             )
     return result

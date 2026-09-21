@@ -100,9 +100,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")
             if file.binary is not None:
                 details = [
-                    file.binary.format,
+                    file.binary.kind,
                     f"Architecture: {file.binary.architecture}",
-                    f"Kind: {file.binary.kind}",
                 ]
                 if file.binary.file_version is not None:
                     details.append(f"File version: {file.binary.file_version}")

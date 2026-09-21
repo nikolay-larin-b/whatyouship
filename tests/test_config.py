@@ -23,7 +23,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.build_artifacts.severity, "error")
         self.assertIn(".exp", config.build_artifacts.extensions)
         self.assertIn(".lib", config.build_artifacts.extensions)
-        self.assertEqual(config.unsigned_pe.severity, "warning")
+        self.assertEqual(config.unsigned_binary.severity, "warning")
 
     def test_partial_configuration_preserves_rule_defaults(self) -> None:
         """Use default settings for omitted rules and parameters."""
@@ -35,7 +35,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config.build_artifacts.severity, "error")
         self.assertIn(".obj", config.build_artifacts.extensions)
-        self.assertEqual(config.unsigned_pe, LintConfiguration().unsigned_pe)
+        self.assertEqual(config.unsigned_binary, LintConfiguration().unsigned_binary)
 
     def test_normalizes_extensions_and_disables_rules(self) -> None:
         """Normalize configured extensions and omit disabled rules."""
@@ -44,7 +44,7 @@ class ConfigTests(unittest.TestCase):
             path.write_text(
                 "[rules.build-artifact-extension]\n"
                 "extensions = ['.OBJ', '.LiB']\n"
-                "[rules.unsigned-pe-binary]\n"
+                "[rules.unsigned-binary]\n"
                 "enabled = false\n"
             )
 
@@ -78,8 +78,8 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unknown rule ID: unknown-rule"):
                 load_config(path)
 
-            path.write_text("[rules.unsigned-pe-binary]\nseverity = 'critical'\n")
-            with self.assertRaisesRegex(ValueError, "Invalid severity for rule 'unsigned-pe-binary'"):
+            path.write_text("[rules.unsigned-binary]\nseverity = 'critical'\n")
+            with self.assertRaisesRegex(ValueError, "Invalid severity for rule 'unsigned-binary'"):
                 load_config(path)
 
     def test_rejects_invalid_rule_settings(self) -> None:

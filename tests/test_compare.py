@@ -16,7 +16,7 @@ def _version_differences(
     old_product: str | None = None,
     new_product: str | None = None,
 ) -> list[SemanticDifference]:
-    """Compare version metadata for one PE file at a shared path.
+    """Compare version metadata for one binary at a shared path.
 
     :param old_file: Earlier file version.
     :param new_file: Later file version.
@@ -55,7 +55,7 @@ class CompareTests(unittest.TestCase):
             ArtifactFile(Path("b-added"), 1, "a"),
             ArtifactFile(Path("z-changed"), 1, "b"),
             ArtifactFile(Path("b-changed"), 1, "b"),
-            ArtifactFile(Path("same"), 2, "a", binary=BinaryMetadata("PE", "x86_64", "dll")),
+            ArtifactFile(Path("same"), 2, "a", binary=BinaryMetadata("PE", "x86_64", "library")),
         ])
 
         result = compare_artifacts(old, new)
@@ -67,14 +67,14 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(result.semantic_differences, [])
 
     def test_reports_pe_metadata_changes_separately_from_hashes(self) -> None:
-        """Report PE field changes and highlight a signed to unsigned regression."""
+        """Report binary field changes and highlight a signature regression."""
         path = Path("bin/app.exe")
         old_binary = BinaryMetadata(
             "PE", "x86", "executable", "1.0", "2.0",
             SignatureMetadata(True, True, "CN=Old Publisher"),
         )
         new_binary = BinaryMetadata(
-            "PE", "x86_64", "dll", "1.1", "2.1", SignatureMetadata(False),
+            "PE", "x86_64", "library", "1.1", "2.1", SignatureMetadata(False),
         )
         old = ReleaseArtifact(Path("old"), [ArtifactFile(path, 1, "a", old_binary)])
         new = ReleaseArtifact(Path("new"), [ArtifactFile(path, 1, "b", new_binary)])
@@ -85,7 +85,7 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(
             [(difference.field, difference.old_value, difference.new_value) for difference in result.semantic_differences],
             [
-                ("Type", "EXE", "DLL"),
+                ("Type", "executable", "library"),
                 ("Architecture", "x86", "x86_64"),
                 ("File version", "1.0", "1.1"),
                 ("Product version", "2.0", "2.1"),
@@ -122,7 +122,7 @@ class CompareTests(unittest.TestCase):
         self.assertFalse(any(difference.potentially_dangerous for difference in result.semantic_differences))
 
     def test_hash_only_change_has_no_semantic_difference(self) -> None:
-        """Keep a digest change separate when PE metadata is identical."""
+        """Keep a digest change separate when binary metadata is identical."""
         path = Path("app.exe")
         binary = BinaryMetadata("PE", "x86_64", "executable", signature=SignatureMetadata(True, True))
         old = ReleaseArtifact(Path("old"), [ArtifactFile(path, 1, "a", binary)])
@@ -132,6 +132,23 @@ class CompareTests(unittest.TestCase):
 
         self.assertEqual(result.changed, [path])
         self.assertEqual(result.semantic_differences, [])
+
+    def test_compares_binary_metadata_without_pe_specific_filter(self) -> None:
+        """Compare recognized binaries of the same format by generic metadata."""
+        path = Path("app.bin")
+        old = ReleaseArtifact(Path("old"), [ArtifactFile(
+            path, 1, "a", BinaryMetadata("synthetic", "x86", "executable"),
+        )])
+        new = ReleaseArtifact(Path("new"), [ArtifactFile(
+            path, 1, "b", BinaryMetadata("synthetic", "arm64", "library"),
+        )])
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            [(difference.field, difference.old_value, difference.new_value) for difference in differences],
+            [("Type", "executable", "library"), ("Architecture", "x86", "arm64")],
+        )
 
     def test_version_increase_is_an_ordinary_change(self) -> None:
         """Keep increasing file and product versions free of warnings."""
@@ -182,7 +199,7 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(differences[0].warning_message, "version downgrade")
 
     def test_disappearing_version_metadata_warns(self) -> None:
-        """Warn when either version field disappears from a newer PE."""
+        """Warn when either version field disappears from a newer binary."""
         differences = _version_differences("1.2", None, "3.4", None)
 
         self.assertEqual([difference.field for difference in differences], ["File version", "Product version"])

@@ -205,7 +205,7 @@ class CliTests(unittest.TestCase):
             self.assertIn("build-artifact-extension | warning | App/build.obj", output.getvalue())
 
     def test_inspect_prints_binary_metadata(self) -> None:
-        """Show identified PE metadata below its file entry."""
+        """Show identified binary metadata below its file entry."""
         source = Path("release")
         artifact = ReleaseArtifact(
             source_path=source,
@@ -231,10 +231,11 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIn(
-            "  Binary: PE | Architecture: x86_64 | Kind: executable | "
+            "  Binary: executable | Architecture: x86_64 | "
             "File version: 1.2.3.4 | Product version: 5.6.7.8\n",
             output.getvalue(),
         )
+        self.assertNotIn("PE", output.getvalue())
 
     def test_inspect_prints_signature_metadata(self) -> None:
         """Show signature validity, signer subject, and timestamp."""
@@ -253,8 +254,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertIn("Signature: valid | Signer: CN=Example Publisher | Timestamp: present", output.getvalue())
 
-    def test_lint_reports_unsigned_pe(self) -> None:
-        """Run the unsigned PE rule through the CLI."""
+    def test_lint_reports_unsigned_binary(self) -> None:
+        """Run the unsigned binary rule through the CLI."""
         artifact = ReleaseArtifact(
             Path("release"),
             [ArtifactFile(Path("app.dat"), 1, "a" * 64, binary=BinaryMetadata(
@@ -267,7 +268,7 @@ class CliTests(unittest.TestCase):
             result = main(["lint", "release"])
 
         self.assertEqual(result, 0)
-        self.assertEqual(output.getvalue(), "unsigned-pe-binary | warning | app.dat | Unsigned PE executable.\n")
+        self.assertEqual(output.getvalue(), "unsigned-binary | warning | app.dat | Unsigned executable.\n")
 
     def test_lint_baseline_reports_new_existing_and_resolved(self) -> None:
         """Show new and resolved findings without listing existing ones."""
@@ -420,7 +421,7 @@ class CliTests(unittest.TestCase):
             config = root / "rules.toml"
             config.write_text(
                 "[rules.build-artifact-extension]\nenabled = false\n"
-                "[rules.unsigned-pe-binary]\nenabled = false\n"
+                "[rules.unsigned-binary]\nenabled = false\n"
             )
             output = io.StringIO()
 
@@ -430,11 +431,11 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertEqual(output.getvalue(), "No findings.\n")
 
-    def test_lint_config_sets_unsigned_pe_severity(self) -> None:
-        """Apply the configured severity to unsigned PE findings."""
+    def test_lint_config_sets_unsigned_binary_severity(self) -> None:
+        """Apply the configured severity to unsigned binary findings."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             config = Path(temporary_directory) / "rules.toml"
-            config.write_text("[rules.unsigned-pe-binary]\nseverity = 'error'\n")
+            config.write_text("[rules.unsigned-binary]\nseverity = 'error'\n")
             artifact = ReleaseArtifact(
                 Path("release"),
                 [ArtifactFile(Path("app.exe"), 1, "a", binary=BinaryMetadata(
@@ -452,7 +453,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertEqual(
                 output.getvalue(),
-                "unsigned-pe-binary | error | app.exe | Unsigned PE executable.\n",
+                "unsigned-binary | error | app.exe | Unsigned executable.\n",
             )
 
     def test_lint_config_applies_to_baseline_and_current(self) -> None:
@@ -500,7 +501,7 @@ class CliTests(unittest.TestCase):
                 (None, "Configuration file does not exist"),
                 ("[rules.build-artifact-extension\n", "Invalid TOML"),
                 ("[rules.unknown]\nenabled = true\n", "Unknown rule ID"),
-                ("[rules.unsigned-pe-binary]\nseverity = 'critical'\n", "Invalid severity"),
+                ("[rules.unsigned-binary]\nseverity = 'critical'\n", "Invalid severity"),
             )
             for content, message in cases:
                 with self.subTest(message=message):

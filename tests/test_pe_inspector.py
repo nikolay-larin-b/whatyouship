@@ -66,7 +66,7 @@ class PeInspectorTests(unittest.TestCase):
         metadata = PeInspector().inspect(_make_pe("dll"))
 
         self.assertIsNotNone(metadata)
-        self.assertEqual(metadata.kind, "dll")
+        self.assertEqual(metadata.kind, "library")
 
     def test_directory_inspector_attaches_pe_metadata(self) -> None:
         """Attach PE metadata by content and skip a non-PE executable file."""

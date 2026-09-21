@@ -7,12 +7,12 @@ WhatYouShip is an open-source Python release linter for finished software releas
 Available actions for directory and MSI artifacts:
 
 - `inspect <artifact>` — show the files in a release artifact.
-- `lint <artifact>` — report suspicious build artifacts and unsigned PE binaries.
+- `lint <artifact>` — report suspicious build artifacts and unsigned binaries.
 - `compare <old-artifact> <new-artifact>` — compare two releases.
 
 The project is in an early stage of development. By default, the build artifact rule checks `.ilk`, `.obj`, `.iobj`, `.ipdb`, `.tlog`, and `.lastbuildstate` files.
 
-For PE files, `inspect` also reports architecture, executable or DLL kind, and embedded file and product versions when available.
+For recognized binaries, `inspect` also reports architecture, executable or library kind, version metadata, and signature information when available. Binary inspection currently supports Windows executables and libraries.
 
 MSI paths follow the package's target directory layout; runtime directory properties are not resolved.
 

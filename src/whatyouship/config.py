@@ -11,7 +11,7 @@ from typing import cast
 from whatyouship.lint import LintRule
 from whatyouship.model import Severity
 from whatyouship.rules.build_artifacts import DEFAULT_EXTENSIONS, BuildArtifactRule
-from whatyouship.rules.unsigned_pe import UnsignedPeRule
+from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
 
 @dataclass(frozen=True)
@@ -29,8 +29,8 @@ class BuildArtifactSettings:
 
 
 @dataclass(frozen=True)
-class UnsignedPeSettings:
-    """Configure the unsigned PE binary rule.
+class UnsignedBinarySettings:
+    """Configure the unsigned binary rule.
 
     :param enabled: Whether to run the rule.
     :param severity: Severity assigned to its findings.
@@ -45,11 +45,11 @@ class LintConfiguration:
     """Collect settings for the available lint rules.
 
     :param build_artifacts: Build artifact extension rule settings.
-    :param unsigned_pe: Unsigned PE binary rule settings.
+    :param unsigned_binary: Unsigned binary rule settings.
     """
 
     build_artifacts: BuildArtifactSettings = field(default_factory=BuildArtifactSettings)
-    unsigned_pe: UnsignedPeSettings = field(default_factory=UnsignedPeSettings)
+    unsigned_binary: UnsignedBinarySettings = field(default_factory=UnsignedBinarySettings)
 
     def rules(self) -> list[LintRule]:
         """Create the enabled lint rules in their usual order.
@@ -64,8 +64,8 @@ class LintConfiguration:
                     severity=self.build_artifacts.severity,
                 )
             )
-        if self.unsigned_pe.enabled:
-            rules.append(UnsignedPeRule(severity=self.unsigned_pe.severity))
+        if self.unsigned_binary.enabled:
+            rules.append(UnsignedBinaryRule(severity=self.unsigned_binary.severity))
         return rules
 
 
@@ -146,7 +146,7 @@ def load_config(path: Path) -> LintConfiguration:
     rules = data.get("rules", {})
     if not isinstance(rules, dict):
         raise ValueError("Configuration 'rules' must be a TOML table")
-    unknown_rules = set(rules) - {"build-artifact-extension", "unsigned-pe-binary"}
+    unknown_rules = set(rules) - {"build-artifact-extension", "unsigned-binary"}
     if unknown_rules:
         raise ValueError(f"Unknown rule ID: {', '.join(sorted(unknown_rules))}")
 
@@ -156,8 +156,8 @@ def load_config(path: Path) -> LintConfiguration:
         {"enabled", "severity", "extensions"},
     )
     unsigned_enabled, unsigned_severity, _ = _rule_settings(
-        "unsigned-pe-binary",
-        rules.get("unsigned-pe-binary", {}),
+        "unsigned-binary",
+        rules.get("unsigned-binary", {}),
         {"enabled", "severity"},
     )
     extensions = (
@@ -167,5 +167,5 @@ def load_config(path: Path) -> LintConfiguration:
     )
     return LintConfiguration(
         build_artifacts=BuildArtifactSettings(build_enabled, build_severity, extensions),
-        unsigned_pe=UnsignedPeSettings(unsigned_enabled, unsigned_severity),
+        unsigned_binary=UnsignedBinarySettings(unsigned_enabled, unsigned_severity),
     )

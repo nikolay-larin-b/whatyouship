@@ -15,6 +15,6 @@ extensions = [
     ".pdb",
 ]
 
-[rules.unsigned-pe-binary]
+[rules.unsigned-binary]
 enabled = true
-severity = "warning" # Report unsigned PE executables and DLLs as warnings.
+severity = "warning" # Report unsigned executables and libraries as warnings.
