@@ -57,3 +57,16 @@ To configure lint rules for a product, provide a TOML file explicitly:
 
 See the :download:`example configuration <../examples/whatyouship.toml>`
 for supported rule settings.
+
+Use ``-o`` or ``--output`` to save a report. The ``.txt``, ``.json``, and
+``.csv`` extensions select the format; without an output file, commands print
+text to stdout. CSV is available for ``inspect`` and ``lint`` only.
+
+.. code-block:: text
+
+   whatyouship inspect release.zip -o inspect.json
+   whatyouship lint release.zip --baseline previous.zip -o lint.csv
+   whatyouship compare previous.zip release.zip -o compare.txt
+
+JSON reports include ``schema_version`` (currently ``1``), ``tool_version``,
+and the report type.

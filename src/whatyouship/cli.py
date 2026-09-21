@@ -11,6 +11,35 @@ from whatyouship.compare import compare_artifacts
 from whatyouship.config import LintConfiguration, load_config
 from whatyouship.inspectors import inspect_artifact
 from whatyouship.lint import LintEngine, compare_findings
+from whatyouship.report import CompareReport, InspectReport, LintReport, Report
+from whatyouship.renderers import OutputFormat, render_report
+
+
+_OUTPUT_FORMATS: dict[str, OutputFormat] = {
+    ".txt": "text",
+    ".json": "json",
+    ".csv": "csv",
+}
+
+
+def _output_format(path: Path | None, command: str) -> OutputFormat:
+    """Select the output format from a requested file extension.
+
+    :param path: Output file, or ``None`` for console text.
+    :param command: CLI command being rendered.
+    :returns: Selected renderer format.
+    :raises ValueError: If the extension or command-format pair is unsupported.
+    """
+    if path is None:
+        return "text"
+    output_format = _OUTPUT_FORMATS.get(path.suffix.lower())
+    if output_format is None:
+        raise ValueError(
+            f"Unsupported output file extension: {path.suffix or '(none)'}"
+        )
+    if output_format == "csv" and command == "compare":
+        raise ValueError("CSV output is not supported for compare")
+    return output_format
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,8 +57,10 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a release artifact.")
     inspect_parser.add_argument("artifact", type=Path, help="Directory, MSI, or ZIP to inspect.")
+    inspect_parser.add_argument("-o", "--output", type=Path, help="Write a .txt, .json, or .csv report.")
     lint_parser = subparsers.add_parser("lint", help="Lint a release artifact.")
     lint_parser.add_argument("artifact", type=Path, help="Directory, MSI, or ZIP to lint.")
+    lint_parser.add_argument("-o", "--output", type=Path, help="Write a .txt, .json, or .csv report.")
     lint_parser.add_argument(
         "--baseline", type=Path, help="Previous directory, MSI, or ZIP for finding comparison."
     )
@@ -39,139 +70,45 @@ def main(argv: list[str] | None = None) -> int:
     compare_parser = subparsers.add_parser("compare", help="Compare two release artifacts.")
     compare_parser.add_argument("old_artifact", type=Path, help="Earlier directory, MSI, or ZIP.")
     compare_parser.add_argument("new_artifact", type=Path, help="Later directory, MSI, or ZIP.")
+    compare_parser.add_argument("-o", "--output", type=Path, help="Write a .txt or .json report.")
 
     args = parser.parse_args(argv)
     try:
+        output_format = _output_format(args.output, args.command)
         if args.command == "compare":
             old_artifact = inspect_artifact(args.old_artifact)
             new_artifact = inspect_artifact(args.new_artifact)
+            report: Report = CompareReport(
+                old_artifact, new_artifact, compare_artifacts(old_artifact, new_artifact)
+            )
         else:
             artifact = inspect_artifact(args.artifact)
-            if args.command == "lint" and args.baseline is not None:
-                baseline_artifact = inspect_artifact(args.baseline)
-            if args.command == "lint":
+            if args.command == "inspect":
+                report = InspectReport(artifact)
+            else:
+                baseline_artifact = (
+                    inspect_artifact(args.baseline) if args.baseline is not None else None
+                )
                 configuration = (
                     load_config(args.config)
                     if args.config is not None else LintConfiguration()
                 )
+                engine = LintEngine(configuration.rules())
+                findings = engine.run(artifact)
+                baseline_comparison = (
+                    compare_findings(engine.run(baseline_artifact), findings)
+                    if baseline_artifact is not None else None
+                )
+                report = LintReport(
+                    artifact, findings, baseline_artifact, baseline_comparison
+                )
+        rendered = render_report(report, output_format)
+        if args.output is None:
+            print(rendered, end="")
+        else:
+            args.output.write_text(rendered, encoding="utf-8")
     except (OSError, ValueError) as error:
         parser.error(str(error))
-
-    if args.command == "compare":
-        comparison = compare_artifacts(old_artifact, new_artifact)
-        print(f"Old: {old_artifact.source_path}")
-        print(f"New: {new_artifact.source_path}")
-        print(f"Added: {len(comparison.added)}")
-        print(f"Removed: {len(comparison.removed)}")
-        print(f"Changed: {len(comparison.changed)}")
-        print(f"Unchanged: {len(comparison.unchanged)}")
-        print(f"Semantic differences: {len(comparison.semantic_differences)}")
-        for label, paths in (
-            ("Added", comparison.added),
-            ("Removed", comparison.removed),
-            ("Changed", comparison.changed),
-        ):
-            if paths:
-                print(f"\n{label} files:")
-                for path in paths:
-                    print(f"  {path}")
-        if comparison.semantic_differences:
-            print("\nSemantic differences:")
-            for difference in comparison.semantic_differences:
-                warning = (
-                    " [POTENTIALLY DANGEROUS: signed -> unsigned]"
-                    if difference.potentially_dangerous else ""
-                )
-                if difference.warning_message is not None:
-                    warning += f" [WARNING: {difference.warning_message}]"
-                location = (
-                    "" if difference.relative_path == Path(".")
-                    else f"{difference.relative_path} | "
-                )
-                print(
-                    f"  {location}{difference.field}: "
-                    f"{difference.old_value} -> {difference.new_value}{warning}"
-                )
-        return 0
-
-    if args.command == "inspect":
-        print(f"Source: {artifact.source_path}")
-        print(f"Files: {len(artifact.files)}")
-        print(f"Total size: {sum(file.size_bytes for file in artifact.files)} bytes")
-        print("Artifact signature:")
-        print(f"  Status: {artifact.signature.status}")
-        if artifact.signature.signer is not None:
-            print(f"  Signer: {artifact.signature.signer}")
-        if artifact.signature.timestamp is not None:
-            print(f"  Timestamp: {artifact.signature.timestamp.isoformat()}")
-        if artifact.installation_scope is not None:
-            print(f"Installation scope: {artifact.installation_scope.kind}")
-        print()
-        print("Relative path | Size (bytes) | SHA-256")
-        for file in artifact.files:
-            print(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")
-            if file.binary is not None:
-                details = [
-                    file.binary.kind,
-                    f"Architecture: {file.binary.architecture}",
-                ]
-                if file.binary.file_version is not None:
-                    details.append(f"File version: {file.binary.file_version}")
-                if file.binary.product_version is not None:
-                    details.append(f"Product version: {file.binary.product_version}")
-                print("  Binary: " + " | ".join(details))
-                if file.binary.signature is not None:
-                    signature = file.binary.signature
-                    if signature.present is None:
-                        print("  Signature: unknown")
-                    elif not signature.present:
-                        print("  Signature: absent")
-                    else:
-                        validity = (
-                            "unknown" if signature.valid is None else
-                            "valid" if signature.valid else "invalid"
-                        )
-                        details = [validity]
-                        if signature.signer is not None:
-                            details.append(f"Signer: {signature.signer}")
-                        if signature.timestamp is not None:
-                            details.append(f"Timestamp: {'present' if signature.timestamp else 'absent'}")
-                        print("  Signature: " + " | ".join(details))
-        return 0
-
-    engine = LintEngine(configuration.rules())
-    findings = engine.run(artifact)
-    if args.baseline is not None:
-        baseline_findings = engine.run(baseline_artifact)
-        comparison = compare_findings(baseline_findings, findings)
-        print(f"New: {len(comparison.new)}")
-        print(f"Existing: {len(comparison.existing)}")
-        print(f"Resolved: {len(comparison.resolved)}")
-        if comparison.new:
-            print("\nNew findings:")
-            for finding in comparison.new:
-                print(
-                    f"{finding.rule_id} | {finding.severity} | "
-                    f"{finding.relative_path} | {finding.message}"
-                )
-        else:
-            print("No new findings.")
-        if comparison.resolved:
-            print("\nResolved findings:")
-            for finding in comparison.resolved:
-                print(
-                    f"{finding.rule_id} | {finding.severity} | "
-                    f"{finding.relative_path} | {finding.message}"
-                )
-        return 0
-    if not findings:
-        print("No findings.")
-    else:
-        for finding in findings:
-            print(
-                f"{finding.rule_id} | {finding.severity} | "
-                f"{finding.relative_path} | {finding.message}"
-            )
     return 0
 
 

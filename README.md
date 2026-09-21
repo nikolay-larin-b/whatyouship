@@ -31,3 +31,13 @@ whatyouship lint <artifact> --config examples/whatyouship.toml
 ```
 
 See the [example configuration](examples/whatyouship.toml) for supported rule settings.
+
+To save a report, use `-o` or `--output`; `.txt`, `.json`, and `.csv` select the format. Without an output file, commands print text to stdout. CSV is available for `inspect` and `lint` only.
+
+```text
+whatyouship inspect release.zip -o inspect.json
+whatyouship lint release.zip --baseline previous.zip -o lint.csv
+whatyouship compare previous.zip release.zip -o compare.txt
+```
+
+JSON reports include `schema_version` (currently `1`), `tool_version`, and the report type.
