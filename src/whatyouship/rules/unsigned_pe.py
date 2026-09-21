@@ -3,17 +3,24 @@
 
 """Report unsigned PE executables and libraries."""
 
-from whatyouship.model import Finding, ReleaseArtifact
+from whatyouship.model import Finding, ReleaseArtifact, Severity
 
 
 class UnsignedPeRule:
     """Report PE executables and DLLs without embedded signatures."""
 
+    def __init__(self, severity: Severity = "warning") -> None:
+        """Store the severity used by this rule.
+
+        :param severity: Severity of reported findings.
+        """
+        self._severity = severity
+
     def check(self, artifact: ReleaseArtifact) -> list[Finding]:
         """Find unsigned PE executables and DLLs.
 
         :param artifact: Artifact whose files should be checked.
-        :returns: One warning for each unsigned PE executable or DLL.
+        :returns: One finding for each unsigned PE executable or DLL.
         """
         findings = []
         for file in artifact.files:
@@ -28,7 +35,7 @@ class UnsignedPeRule:
                 findings.append(
                     Finding(
                         rule_id="unsigned-pe-binary",
-                        severity="warning",
+                        severity=self._severity,
                         relative_path=file.relative_path,
                         message=f"Unsigned PE {binary.kind}.",
                     )

@@ -11,10 +11,11 @@ The project is in an early stage of development. Currently available for
 directory and MSI artifacts:
 
 * ``inspect <artifact>`` to show the files in a release artifact.
-* ``lint <artifact>`` to warn about suspicious build artifact extensions.
+* ``lint <artifact>`` to report suspicious build artifacts and unsigned PE binaries.
+* ``compare <old-artifact> <new-artifact>`` to compare two releases.
 
-Linting currently checks only ``.ilk``, ``.obj``, ``.iobj``, ``.ipdb``,
-``.tlog``, and ``.lastbuildstate`` files.
+By default, the build artifact rule checks ``.ilk``, ``.obj``, ``.iobj``,
+``.ipdb``, ``.tlog``, and ``.lastbuildstate`` files.
 
 For PE files, ``inspect`` also reports architecture, executable or DLL kind,
 and embedded file and product versions when available.
@@ -22,6 +23,11 @@ and embedded file and product versions when available.
 MSI paths follow the package's target directory layout; runtime directory
 properties are not resolved.
 
-Planned actions:
+To configure lint rules for a product, provide a TOML file explicitly:
 
-* ``compare`` to highlight significant changes between two releases.
+.. code-block:: text
+
+   whatyouship lint <artifact> --config examples/whatyouship.toml
+
+See the :download:`example configuration <../examples/whatyouship.toml>`
+for supported rule settings.

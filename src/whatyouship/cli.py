@@ -8,10 +8,9 @@ from pathlib import Path
 
 from whatyouship import __version__
 from whatyouship.compare import compare_artifacts
+from whatyouship.config import LintConfiguration, load_config
 from whatyouship.inspectors import inspect_artifact
 from whatyouship.lint import LintEngine, compare_findings
-from whatyouship.rules.build_artifacts import BuildArtifactRule
-from whatyouship.rules.unsigned_pe import UnsignedPeRule
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -34,6 +33,9 @@ def main(argv: list[str] | None = None) -> int:
     lint_parser.add_argument(
         "--baseline", type=Path, help="Previous directory or MSI for finding comparison."
     )
+    lint_parser.add_argument(
+        "--config", type=Path, help="TOML file with lint rule settings."
+    )
     compare_parser = subparsers.add_parser("compare", help="Compare two release artifacts.")
     compare_parser.add_argument("old_artifact", type=Path, help="Earlier directory or MSI.")
     compare_parser.add_argument("new_artifact", type=Path, help="Later directory or MSI.")
@@ -47,6 +49,11 @@ def main(argv: list[str] | None = None) -> int:
             artifact = inspect_artifact(args.artifact)
             if args.command == "lint" and args.baseline is not None:
                 baseline_artifact = inspect_artifact(args.baseline)
+            if args.command == "lint":
+                configuration = (
+                    load_config(args.config)
+                    if args.config is not None else LintConfiguration()
+                )
     except (OSError, ValueError) as error:
         parser.error(str(error))
 
@@ -119,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
                         print("  Signature: " + " | ".join(details))
         return 0
 
-    engine = LintEngine([BuildArtifactRule(), UnsignedPeRule()])
+    engine = LintEngine(configuration.rules())
     findings = engine.run(artifact)
     if args.baseline is not None:
         baseline_findings = engine.run(baseline_artifact)

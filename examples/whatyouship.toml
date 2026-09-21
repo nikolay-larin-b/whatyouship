@@ -1,0 +1,20 @@
+# Configure the lint rules for the release artifact being analyzed.
+
+[rules.build-artifact-extension]
+enabled = true
+severity = "error" # Report matching files as errors.
+extensions = [
+    ".ilk",
+    ".obj",
+    ".iobj",
+    ".ipdb",
+    ".tlog",
+    ".lastbuildstate",
+    ".exp",
+    ".lib",
+    ".pdb",
+]
+
+[rules.unsigned-pe-binary]
+enabled = true
+severity = "warning" # Report unsigned PE executables and DLLs as warnings.

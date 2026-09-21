@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Literal
 
 
+Severity = Literal["warning", "error"]
+
+
 @dataclass
 class SignatureMetadata:
     """Describe a binary signature without assuming a specific format.
@@ -83,6 +86,6 @@ class Finding:
     """
 
     rule_id: str
-    severity: Literal["warning"]
+    severity: Severity
     relative_path: Path
     message: str

@@ -356,6 +356,134 @@ class CliTests(unittest.TestCase):
             inspector.return_value.inspect.assert_called_once_with(baseline)
             self.assertIn("New: 1\nExisting: 0\nResolved: 1", output.getvalue())
 
+    def test_lint_config_changes_extensions_and_severity(self) -> None:
+        """Apply configured extensions and severity to lint output."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            artifact = root / "release"
+            artifact.mkdir()
+            (artifact / "library.lib").write_bytes(b"library")
+            (artifact / "build.obj").write_bytes(b"object")
+            config = root / "rules.toml"
+            config.write_text(
+                "[rules.build-artifact-extension]\n"
+                "severity = 'error'\n"
+                "extensions = ['.lib']\n"
+            )
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main(["lint", str(artifact), "--config", str(config)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                output.getvalue(),
+                "build-artifact-extension | error | library.lib | "
+                "Suspicious build artifact extension: .lib.\n",
+            )
+
+    def test_lint_config_disables_rules(self) -> None:
+        """Suppress findings from rules disabled in the configuration."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            artifact = root / "release"
+            artifact.mkdir()
+            (artifact / "build.obj").write_bytes(b"object")
+            config = root / "rules.toml"
+            config.write_text(
+                "[rules.build-artifact-extension]\nenabled = false\n"
+                "[rules.unsigned-pe-binary]\nenabled = false\n"
+            )
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main(["lint", str(artifact), "--config", str(config)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(output.getvalue(), "No findings.\n")
+
+    def test_lint_config_sets_unsigned_pe_severity(self) -> None:
+        """Apply the configured severity to unsigned PE findings."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config = Path(temporary_directory) / "rules.toml"
+            config.write_text("[rules.unsigned-pe-binary]\nseverity = 'error'\n")
+            artifact = ReleaseArtifact(
+                Path("release"),
+                [ArtifactFile(Path("app.exe"), 1, "a", binary=BinaryMetadata(
+                    "PE", "x86_64", "executable", signature=SignatureMetadata(False),
+                ))],
+            )
+            output = io.StringIO()
+
+            with (
+                patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+                contextlib.redirect_stdout(output),
+            ):
+                result = main(["lint", "release", "--config", str(config)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                output.getvalue(),
+                "unsigned-pe-binary | error | app.exe | Unsigned PE executable.\n",
+            )
+
+    def test_lint_config_applies_to_baseline_and_current(self) -> None:
+        """Use one configured rule set for both baseline lint passes."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            baseline = root / "previous"
+            current = root / "current"
+            baseline.mkdir()
+            current.mkdir()
+            (baseline / "library.lib").write_bytes(b"old")
+            (current / "library.lib").write_bytes(b"new")
+            (current / "module.exp").write_bytes(b"new")
+            config = root / "rules.toml"
+            config.write_text(
+                "[rules.build-artifact-extension]\n"
+                "severity = 'error'\n"
+                "extensions = ['.lib', '.exp']\n"
+            )
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                result = main([
+                    "lint", str(current), "--baseline", str(baseline), "--config", str(config)
+                ])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(output.getvalue().splitlines(), [
+                "New: 1",
+                "Existing: 1",
+                "Resolved: 0",
+                "",
+                "New findings:",
+                "build-artifact-extension | error | module.exp | Suspicious build artifact extension: .exp.",
+            ])
+
+    def test_lint_config_errors_exit_nonzero(self) -> None:
+        """Report missing, malformed, and unsupported configuration files."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            artifact = root / "release"
+            artifact.mkdir()
+            config = root / "rules.toml"
+            cases = (
+                (None, "Configuration file does not exist"),
+                ("[rules.build-artifact-extension\n", "Invalid TOML"),
+                ("[rules.unknown]\nenabled = true\n", "Unknown rule ID"),
+                ("[rules.unsigned-pe-binary]\nseverity = 'critical'\n", "Invalid severity"),
+            )
+            for content, message in cases:
+                with self.subTest(message=message):
+                    if content is not None:
+                        config.write_text(content)
+                    error_output = io.StringIO()
+                    with contextlib.redirect_stderr(error_output), self.assertRaises(SystemExit) as result:
+                        main(["lint", str(artifact), "--config", str(config)])
+                    self.assertEqual(result.exception.code, 2)
+                    self.assertIn(message, error_output.getvalue())
+
     def test_compare_directories_prints_summary_and_changed_paths(self) -> None:
         """Compare directories and omit unchanged paths from detail lists."""
         with tempfile.TemporaryDirectory() as temporary_directory:
