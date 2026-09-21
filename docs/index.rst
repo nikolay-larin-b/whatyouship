@@ -11,7 +11,7 @@ The project is in an early stage of development. Currently available for
 directory and MSI artifacts:
 
 * ``inspect <artifact>`` to show the files in a release artifact.
-* ``lint <artifact>`` to report suspicious build artifacts and unsigned binaries.
+* ``lint <artifact>`` to report release findings, including suspicious files and scope conflicts.
 * ``compare <old-artifact> <new-artifact>`` to compare two releases.
 
 By default, the build artifact rule checks ``.ilk``, ``.obj``, ``.iobj``,
@@ -27,6 +27,15 @@ is unsupported on Linux and macOS. ``lint`` reports unsigned artifacts and
 invalid artifact signatures when verification is supported. Directory artifact
 signatures are unsupported. Package and contained binary signatures are checked
 independently.
+
+MSI installation scope is inferred statically from the ``Property``,
+``Directory``, ``Registry``, ``Component``, and explicit scope-setting
+``CustomAction`` tables on every platform. ``inspect`` reports ``per-user``,
+``per-machine``, ``dual-purpose``, or ``ambiguous``. ``lint`` reports concrete
+conflicts with ``inconsistent-installation-scope``, and ``compare`` shows scope
+changes between MSI releases. ``ALLUSERS=2``, context-aware folders, and
+redirected registry roots are valid for dual-purpose packages. Conditional
+components and runtime choices cannot always be resolved statically.
 
 MSI paths follow the package's target directory layout; runtime directory
 properties are not resolved.

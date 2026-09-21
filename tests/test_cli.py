@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from whatyouship import __version__
 from whatyouship.cli import main
-from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, InstallationScope, ReleaseArtifact, SignatureMetadata
 
 
 class CliTests(unittest.TestCase):
@@ -281,6 +281,22 @@ class CliTests(unittest.TestCase):
         )
         self.assertIn("  Signature: absent", output.getvalue())
 
+    def test_inspect_prints_installation_scope(self) -> None:
+        """Show statically inferred MSI scope in the artifact summary."""
+        artifact = ReleaseArtifact(
+            Path("release.msi"), installation_scope=InstallationScope("dual-purpose")
+        )
+        output = io.StringIO()
+
+        with (
+            patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+            contextlib.redirect_stdout(output),
+        ):
+            result = main(["inspect", "release.msi"])
+
+        self.assertEqual(result, 0)
+        self.assertIn("Installation scope: dual-purpose\n", output.getvalue())
+
     def test_lint_reports_artifact_signature_findings(self) -> None:
         """Print package signature findings independently of binary findings."""
         output = io.StringIO()
@@ -302,6 +318,29 @@ class CliTests(unittest.TestCase):
 
                 self.assertEqual(result, 0)
                 self.assertEqual(output.getvalue().strip(), expected)
+
+    def test_lint_reports_installation_scope_conflict(self) -> None:
+        """Render a concrete scope contradiction through the CLI."""
+        artifact = ReleaseArtifact(
+            Path("release.msi"),
+            installation_scope=InstallationScope(
+                "ambiguous", ("Component 'App' uses fixed per-machine HKLM registry entry.",)
+            ),
+        )
+        output = io.StringIO()
+
+        with (
+            patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+            contextlib.redirect_stdout(output),
+        ):
+            result = main(["lint", "release.msi"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            output.getvalue().strip(),
+            "inconsistent-installation-scope | warning | . | "
+            "Component 'App' uses fixed per-machine HKLM registry entry.",
+        )
 
     def test_lint_reports_unsigned_binary(self) -> None:
         """Run the unsigned binary rule through the CLI."""
@@ -600,6 +639,25 @@ class CliTests(unittest.TestCase):
                 "Changed files:",
                 "  changed.txt",
             ])
+
+    def test_compare_prints_installation_scope_change(self) -> None:
+        """Show artifact-level scope transitions without a file path prefix."""
+        old = ReleaseArtifact(
+            Path("old.msi"), installation_scope=InstallationScope("per-user")
+        )
+        new = ReleaseArtifact(
+            Path("new.msi"), installation_scope=InstallationScope("per-machine")
+        )
+        output = io.StringIO()
+
+        with (
+            patch("whatyouship.cli.inspect_artifact", side_effect=[old, new]),
+            contextlib.redirect_stdout(output),
+        ):
+            result = main(["compare", "old.msi", "new.msi"])
+
+        self.assertEqual(result, 0)
+        self.assertIn("  Installation scope: per-user -> per-machine\n", output.getvalue())
 
     def test_compare_uses_msi_inspector_for_msi_input(self) -> None:
         """Use the existing MSI inspector when either input is an MSI."""

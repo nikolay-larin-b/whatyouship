@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from whatyouship.compare import ComparisonResult, SemanticDifference, compare_artifacts
-from whatyouship.model import ArtifactFile, BinaryMetadata, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import ArtifactFile, BinaryMetadata, InstallationScope, ReleaseArtifact, SignatureMetadata
 
 
 def _version_differences(
@@ -232,6 +232,26 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(
             compare_artifacts(ReleaseArtifact(Path("old")), ReleaseArtifact(Path("new"))),
             ComparisonResult(),
+        )
+
+    def test_reports_installation_scope_change_between_artifacts(self) -> None:
+        """Compare scope independently of shared files or binary metadata."""
+        old = ReleaseArtifact(
+            Path("old.msi"), installation_scope=InstallationScope("per-user")
+        )
+        new = ReleaseArtifact(
+            Path("new.msi"), installation_scope=InstallationScope("per-machine")
+        )
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            differences,
+            [SemanticDifference(Path("."), "Installation scope", "per-user", "per-machine")],
+        )
+        self.assertEqual(
+            compare_artifacts(old, ReleaseArtifact(Path("directory"))).semantic_differences,
+            [],
         )
 
 

@@ -11,6 +11,7 @@ from typing import cast
 from whatyouship.lint import LintRule
 from whatyouship.model import Severity
 from whatyouship.rules.build_artifacts import DEFAULT_EXTENSIONS, BuildArtifactRule
+from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
@@ -55,6 +56,18 @@ class ArtifactSignatureRuleSettings:
 
 
 @dataclass(frozen=True)
+class InstallationScopeSettings:
+    """Configure the installation scope consistency rule.
+
+    :param enabled: Whether to run the rule.
+    :param severity: Severity assigned to its findings.
+    """
+
+    enabled: bool = True
+    severity: Severity = "warning"
+
+
+@dataclass(frozen=True)
 class LintConfiguration:
     """Collect settings for the available lint rules.
 
@@ -62,6 +75,7 @@ class LintConfiguration:
     :param unsigned_binary: Unsigned binary rule settings.
     :param unsigned_artifact: Unsigned release artifact rule settings.
     :param invalid_artifact_signature: Invalid artifact signature rule settings.
+    :param installation_scope: Installation scope rule settings.
     """
 
     build_artifacts: BuildArtifactSettings = field(default_factory=BuildArtifactSettings)
@@ -71,6 +85,9 @@ class LintConfiguration:
     )
     invalid_artifact_signature: ArtifactSignatureRuleSettings = field(
         default_factory=lambda: ArtifactSignatureRuleSettings(severity="error")
+    )
+    installation_scope: InstallationScopeSettings = field(
+        default_factory=InstallationScopeSettings
     )
 
     def rules(self) -> list[LintRule]:
@@ -94,6 +111,12 @@ class LintConfiguration:
             rules.append(
                 InvalidArtifactSignatureRule(
                     severity=self.invalid_artifact_signature.severity
+                )
+            )
+        if self.installation_scope.enabled:
+            rules.append(
+                InconsistentInstallationScopeRule(
+                    severity=self.installation_scope.severity
                 )
             )
         return rules
@@ -180,6 +203,7 @@ def load_config(path: Path) -> LintConfiguration:
     unknown_rules = set(rules) - {
         "build-artifact-extension", "unsigned-binary", "unsigned-artifact",
         "invalid-artifact-signature",
+        "inconsistent-installation-scope",
     }
     if unknown_rules:
         raise ValueError(f"Unknown rule ID: {', '.join(sorted(unknown_rules))}")
@@ -202,6 +226,11 @@ def load_config(path: Path) -> LintConfiguration:
         "invalid-artifact-signature", rules.get("invalid-artifact-signature", {}),
         {"enabled", "severity"}, "error",
     )
+    scope_enabled, scope_severity, _ = _rule_settings(
+        "inconsistent-installation-scope",
+        rules.get("inconsistent-installation-scope", {}),
+        {"enabled", "severity"},
+    )
     extensions = (
         _extensions(build_values["extensions"])
         if "extensions" in build_values
@@ -216,4 +245,5 @@ def load_config(path: Path) -> LintConfiguration:
         invalid_artifact_signature=ArtifactSignatureRuleSettings(
             invalid_enabled, invalid_severity
         ),
+        installation_scope=InstallationScopeSettings(scope_enabled, scope_severity),
     )

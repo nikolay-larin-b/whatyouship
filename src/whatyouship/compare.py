@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Nikolay Larin
 # SPDX-License-Identifier: MIT
 
-"""Compare release artifact contents and binary metadata."""
+"""Compare release artifact contents and semantic metadata."""
 
 import re
 from dataclasses import dataclass, field
@@ -15,9 +15,9 @@ _VERSION_PATTERN = re.compile(r"\s*\d+(?:\s*[.,]\s*\d+)*\s*[.,]?\s*", re.ASCII)
 
 @dataclass
 class SemanticDifference:
-    """Describe a binary metadata change at a shared relative path.
+    """Describe an artifact or binary metadata change.
 
-    :param relative_path: Path of the file in both artifacts.
+    :param relative_path: Shared file path, or ``.`` for the artifact itself.
     :param field: Name of the changed metadata field.
     :param old_value: Earlier value formatted for display.
     :param new_value: Later value formatted for display.
@@ -43,7 +43,7 @@ class ComparisonResult:
     :param removed: Paths found only in the old artifact.
     :param changed: Paths with different SHA-256 digests.
     :param unchanged: Paths with matching SHA-256 digests.
-    :param semantic_differences: Binary metadata changes at shared paths.
+    :param semantic_differences: Artifact and binary metadata changes.
     """
 
     added: list[Path] = field(default_factory=list)
@@ -166,11 +166,11 @@ def _binary_differences(
 
 
 def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonResult:
-    """Compare files in two artifacts by relative path and SHA-256.
+    """Compare files and available semantic metadata in two artifacts.
 
     :param old: Earlier release artifact.
     :param new: Later release artifact.
-    :returns: Sorted path classifications and binary metadata differences.
+    :returns: Sorted path classifications and semantic differences.
     """
     old_files = {file.relative_path: file for file in old.files}
     new_files = {file.relative_path: file for file in new.files}
@@ -181,6 +181,13 @@ def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonR
         added=sorted(new_paths - old_paths),
         removed=sorted(old_paths - new_paths),
     )
+    if old.installation_scope is not None and new.installation_scope is not None:
+        old_scope = old.installation_scope.kind
+        new_scope = new.installation_scope.kind
+        if old_scope != new_scope:
+            result.semantic_differences.append(
+                SemanticDifference(Path("."), "Installation scope", old_scope, new_scope)
+            )
     for path in sorted(common_paths):
         earlier = old_files[path]
         later = new_files[path]

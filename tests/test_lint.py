@@ -7,8 +7,9 @@ import unittest
 from pathlib import Path
 
 from whatyouship.lint import LintEngine, compare_findings
-from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, Finding, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, Finding, InstallationScope, ReleaseArtifact, SignatureMetadata
 from whatyouship.rules.build_artifacts import BuildArtifactRule
+from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
@@ -72,6 +73,20 @@ class LintTests(unittest.TestCase):
         self.assertEqual(comparison.existing, [])
         self.assertEqual(comparison.new, [])
         self.assertEqual(comparison.resolved, [])
+
+    def test_baseline_preserves_findings_with_shared_artifact_path(self) -> None:
+        """Keep all scope conflicts under the same rule and artifact path."""
+        current = [
+            Finding("inconsistent-installation-scope", "warning", Path("."), message)
+            for message in (
+                "HKLM conflicts with per-user scope.",
+                "AppData conflicts with per-machine scope.",
+            )
+        ]
+
+        comparison = compare_findings([], current)
+
+        self.assertEqual(comparison.new, current)
 
     def test_build_artifact_rule_flags_only_listed_extensions(self) -> None:
         """Flag suspicious extensions while leaving .lib and .pdb alone."""
@@ -155,6 +170,27 @@ class LintTests(unittest.TestCase):
         self.assertEqual(invalid[0].severity, "error")
         self.assertEqual(
             [finding.rule_id for finding in unsupported], ["unsigned-binary"]
+        )
+
+    def test_installation_scope_rule_reports_each_contradiction(self) -> None:
+        """Report specific scope conflicts with warning severity by default."""
+        artifact = ReleaseArtifact(
+            Path("release.msi"),
+            installation_scope=InstallationScope(
+                "ambiguous",
+                ("Component 'App' writes to HKLM.", "Component 'Data' uses AppDataFolder."),
+            ),
+        )
+
+        findings = InconsistentInstallationScopeRule().check(artifact)
+
+        self.assertEqual(len(findings), 2)
+        self.assertTrue(all(finding.rule_id == "inconsistent-installation-scope" for finding in findings))
+        self.assertTrue(all(finding.severity == "warning" for finding in findings))
+        self.assertEqual([finding.message for finding in findings], list(artifact.installation_scope.conflicts))
+        self.assertEqual(
+            InconsistentInstallationScopeRule().check(ReleaseArtifact(Path("directory"))),
+            [],
         )
 
 

@@ -11,6 +11,19 @@ from typing import Literal
 
 Severity = Literal["warning", "error"]
 ArtifactSignatureStatus = Literal["unsupported", "unsigned", "valid", "invalid"]
+InstallationScopeKind = Literal["per-user", "per-machine", "dual-purpose", "ambiguous"]
+
+
+@dataclass
+class InstallationScope:
+    """Describe an artifact's intended installation context and contradictions.
+
+    :param kind: Statically inferred installation context.
+    :param conflicts: Concrete contradictions found in the artifact.
+    """
+
+    kind: InstallationScopeKind
+    conflicts: tuple[str, ...] = ()
 
 
 @dataclass
@@ -86,11 +99,13 @@ class ReleaseArtifact:
     :param source_path: Path to the original artifact being analyzed.
     :param files: Files contained in the artifact.
     :param signature: Signature of the release artifact itself.
+    :param installation_scope: Installation context metadata, when supported.
     """
 
     source_path: Path
     files: list[ArtifactFile] = field(default_factory=list)
     signature: ArtifactSignature = field(default_factory=ArtifactSignature)
+    installation_scope: InstallationScope | None = None
 
 
 @dataclass
@@ -99,7 +114,7 @@ class Finding:
 
     :param rule_id: Identifier of the rule that reported the finding.
     :param severity: Severity of the finding.
-    :param relative_path: Path of the affected file within the artifact.
+    :param relative_path: Affected file path, or ``.`` for the artifact itself.
     :param message: Short description of the condition.
     """
 

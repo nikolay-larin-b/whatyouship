@@ -84,8 +84,12 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if difference.warning_message is not None:
                     warning += f" [WARNING: {difference.warning_message}]"
+                location = (
+                    "" if difference.relative_path == Path(".")
+                    else f"{difference.relative_path} | "
+                )
                 print(
-                    f"  {difference.relative_path} | {difference.field}: "
+                    f"  {location}{difference.field}: "
                     f"{difference.old_value} -> {difference.new_value}{warning}"
                 )
         return 0
@@ -100,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  Signer: {artifact.signature.signer}")
         if artifact.signature.timestamp is not None:
             print(f"  Timestamp: {artifact.signature.timestamp.isoformat()}")
+        if artifact.installation_scope is not None:
+            print(f"Installation scope: {artifact.installation_scope.kind}")
         print()
         print("Relative path | Size (bytes) | SHA-256")
         for file in artifact.files:

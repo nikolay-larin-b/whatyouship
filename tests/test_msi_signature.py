@@ -19,7 +19,7 @@ from whatyouship.inspectors.windows_authenticode import (
     _WintrustFileInfo,
 )
 from whatyouship.lint import LintEngine
-from whatyouship.model import ArtifactSignature, ReleaseArtifact
+from whatyouship.model import ArtifactSignature, InstallationScope, ReleaseArtifact
 
 
 class MsiSignatureTests(unittest.TestCase):
@@ -145,6 +145,10 @@ class MsiSignatureTests(unittest.TestCase):
                     "whatyouship.inspectors.msi.MsiSignatureInspector.inspect",
                     side_effect=[ArtifactSignature("valid"), ArtifactSignature("invalid")],
                 ) as verify,
+                patch(
+                    "whatyouship.inspectors.msi.MsiScopeInspector.inspect",
+                    return_value=InstallationScope("per-user"),
+                ),
             ):
                 first = MsiInspector().inspect(source)
                 second = MsiInspector().inspect(source)

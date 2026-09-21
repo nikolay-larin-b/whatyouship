@@ -5,6 +5,7 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol
 
 from whatyouship.model import Finding, ReleaseArtifact
@@ -64,16 +65,32 @@ def compare_findings(
     :param current: Findings from the current artifact.
     :returns: Existing, new, and resolved findings in stable key order.
     """
-    previous_by_key = {
-        (finding.rule_id, finding.relative_path): finding for finding in previous
-    }
-    current_by_key = {
-        (finding.rule_id, finding.relative_path): finding for finding in current
-    }
+    previous_by_key: dict[tuple[str, Path], list[Finding]] = {}
+    current_by_key: dict[tuple[str, Path], list[Finding]] = {}
+    for finding in previous:
+        previous_by_key.setdefault((finding.rule_id, finding.relative_path), []).append(
+            finding
+        )
+    for finding in current:
+        current_by_key.setdefault((finding.rule_id, finding.relative_path), []).append(
+            finding
+        )
     previous_keys = previous_by_key.keys()
     current_keys = current_by_key.keys()
     return BaselineComparison(
-        existing=[current_by_key[key] for key in sorted(previous_keys & current_keys)],
-        new=[current_by_key[key] for key in sorted(current_keys - previous_keys)],
-        resolved=[previous_by_key[key] for key in sorted(previous_keys - current_keys)],
+        existing=[
+            finding
+            for key in sorted(previous_keys & current_keys)
+            for finding in current_by_key[key]
+        ],
+        new=[
+            finding
+            for key in sorted(current_keys - previous_keys)
+            for finding in current_by_key[key]
+        ],
+        resolved=[
+            finding
+            for key in sorted(previous_keys - current_keys)
+            for finding in previous_by_key[key]
+        ],
     )

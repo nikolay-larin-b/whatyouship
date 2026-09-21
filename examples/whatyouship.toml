@@ -26,3 +26,7 @@ severity = "warning" # Report missing release artifact signatures.
 [rules.invalid-artifact-signature]
 enabled = true
 severity = "error" # Report failed release artifact signature checks.
+
+[rules.inconsistent-installation-scope]
+enabled = true
+severity = "warning" # Report conflicting installation scope signals.

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 from whatyouship.inspectors.msi import MsiInspector
-from whatyouship.model import ArtifactSignature, BinaryMetadata
+from whatyouship.model import ArtifactSignature, BinaryMetadata, InstallationScope
 
 
 _MSI_HEADER = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -30,6 +30,12 @@ class MsiInspectorTests(unittest.TestCase):
         )
         signature_patch.start()
         self.addCleanup(signature_patch.stop)
+        scope_patch = patch(
+            "whatyouship.inspectors.msi.MsiScopeInspector.inspect",
+            return_value=InstallationScope("per-user"),
+        )
+        scope_patch.start()
+        self.addCleanup(scope_patch.stop)
 
     def test_reads_payloads_and_target_installation_paths(self) -> None:
         """Prefer target long names and hash extracted payload bytes."""
@@ -81,6 +87,7 @@ class MsiInspectorTests(unittest.TestCase):
 
             msi_factory.assert_called_once_with(package, load_data=True)
             self.assertEqual(artifact.source_path, source)
+            self.assertEqual(artifact.installation_scope, InstallationScope("per-user"))
             self.assertEqual(
                 [file.relative_path for file in artifact.files],
                 [Path("Application/BIN/Long Name.ilk"), Path("Application/README.TXT")],
