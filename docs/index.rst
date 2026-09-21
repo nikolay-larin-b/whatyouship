@@ -70,3 +70,14 @@ text to stdout. CSV is available for ``inspect`` and ``lint`` only.
 
 JSON reports include ``schema_version`` (currently ``1``), ``tool_version``,
 and the report type.
+
+For CI, ``lint`` exits with ``0`` when the release passes, ``1`` when findings
+reach the selected threshold, and ``2`` for tool or input errors. The default
+threshold is ``--fail-on error``. Use ``--fail-on warning`` to fail on warnings
+or errors, or ``--fail-on never`` to ignore findings for the exit code. With
+``--baseline``, only new findings are checked against the threshold.
+
+.. code-block:: text
+
+   whatyouship lint release.zip --fail-on warning -o lint.json
+   whatyouship lint release.zip --baseline previous.zip --fail-on error

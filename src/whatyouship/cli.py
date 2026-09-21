@@ -5,12 +5,14 @@
 
 import argparse
 from pathlib import Path
+from typing import Literal
 
 from whatyouship import __version__
 from whatyouship.compare import compare_artifacts
 from whatyouship.config import LintConfiguration, load_config
 from whatyouship.inspectors import inspect_artifact
 from whatyouship.lint import LintEngine, compare_findings
+from whatyouship.model import Finding
 from whatyouship.report import CompareReport, InspectReport, LintReport, Report
 from whatyouship.renderers import OutputFormat, render_report
 
@@ -20,6 +22,7 @@ _OUTPUT_FORMATS: dict[str, OutputFormat] = {
     ".json": "json",
     ".csv": "csv",
 }
+FailThreshold = Literal["error", "warning", "never"]
 
 
 def _output_format(path: Path | None, command: str) -> OutputFormat:
@@ -42,11 +45,25 @@ def _output_format(path: Path | None, command: str) -> OutputFormat:
     return output_format
 
 
+def _lint_exit_code(findings: list[Finding], fail_on: FailThreshold) -> int:
+    """Decide whether eligible lint findings fail the release gate.
+
+    :param findings: Current findings, or only new findings with a baseline.
+    :param fail_on: Minimum severity that fails lint, or ``never``.
+    :returns: One when the threshold is reached, otherwise zero.
+    """
+    if fail_on == "never":
+        return 0
+    if fail_on == "warning":
+        return int(bool(findings))
+    return int(any(finding.severity == "error" for finding in findings))
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the WhatYouShip command-line interface.
 
     :param argv: Arguments to parse, or ``None`` to use command-line arguments.
-    :returns: Zero when the requested command completes successfully.
+    :returns: One when lint findings reach the threshold, otherwise zero.
     :raises SystemExit: When help or version is requested, or an error occurs.
     """
     parser = argparse.ArgumentParser(
@@ -67,12 +84,17 @@ def main(argv: list[str] | None = None) -> int:
     lint_parser.add_argument(
         "--config", type=Path, help="TOML file with lint rule settings."
     )
+    lint_parser.add_argument(
+        "--fail-on", choices=("error", "warning", "never"), default="error",
+        help="Minimum lint severity that fails the command (default: error).",
+    )
     compare_parser = subparsers.add_parser("compare", help="Compare two release artifacts.")
     compare_parser.add_argument("old_artifact", type=Path, help="Earlier directory, MSI, or ZIP.")
     compare_parser.add_argument("new_artifact", type=Path, help="Later directory, MSI, or ZIP.")
     compare_parser.add_argument("-o", "--output", type=Path, help="Write a .txt or .json report.")
 
     args = parser.parse_args(argv)
+    exit_code = 0
     try:
         output_format = _output_format(args.output, args.command)
         if args.command == "compare":
@@ -102,6 +124,11 @@ def main(argv: list[str] | None = None) -> int:
                 report = LintReport(
                     artifact, findings, baseline_artifact, baseline_comparison
                 )
+                eligible_findings = (
+                    baseline_comparison.new
+                    if baseline_comparison is not None else findings
+                )
+                exit_code = _lint_exit_code(eligible_findings, args.fail_on)
         rendered = render_report(report, output_format)
         if args.output is None:
             print(rendered, end="")
@@ -109,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output.write_text(rendered, encoding="utf-8")
     except (OSError, ValueError) as error:
         parser.error(str(error))
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

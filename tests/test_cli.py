@@ -316,7 +316,7 @@ class CliTests(unittest.TestCase):
                 ):
                     result = main(["lint", "release.msi"])
 
-                self.assertEqual(result, 0)
+                self.assertEqual(result, 1 if status == "invalid" else 0)
                 self.assertEqual(output.getvalue().strip(), expected)
 
     def test_lint_reports_installation_scope_conflict(self) -> None:
@@ -492,7 +492,7 @@ class CliTests(unittest.TestCase):
             with contextlib.redirect_stdout(output):
                 result = main(["lint", str(artifact), "--config", str(config)])
 
-            self.assertEqual(result, 0)
+            self.assertEqual(result, 1)
             self.assertEqual(
                 output.getvalue(),
                 "build-artifact-extension | error | library.lib | "
@@ -538,7 +538,7 @@ class CliTests(unittest.TestCase):
             ):
                 result = main(["lint", "release", "--config", str(config)])
 
-            self.assertEqual(result, 0)
+            self.assertEqual(result, 1)
             self.assertEqual(
                 output.getvalue(),
                 "unsigned-binary | error | app.exe | Unsigned executable.\n",
@@ -568,7 +568,7 @@ class CliTests(unittest.TestCase):
                     "lint", str(current), "--baseline", str(baseline), "--config", str(config)
                 ])
 
-            self.assertEqual(result, 0)
+            self.assertEqual(result, 1)
             self.assertEqual(output.getvalue().splitlines(), [
                 "New: 1",
                 "Existing: 1",

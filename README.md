@@ -41,3 +41,10 @@ whatyouship compare previous.zip release.zip -o compare.txt
 ```
 
 JSON reports include `schema_version` (currently `1`), `tool_version`, and the report type.
+
+For CI, `lint` exits with `0` when the release passes, `1` when findings reach the selected threshold, and `2` for tool or input errors. The default threshold is `--fail-on error`; `--fail-on warning` fails on warnings or errors, while `--fail-on never` always ignores findings for the exit code. With `--baseline`, only new findings are checked against the threshold.
+
+```text
+whatyouship lint release.zip --fail-on warning -o lint.json
+whatyouship lint release.zip --baseline previous.zip --fail-on error
+```
