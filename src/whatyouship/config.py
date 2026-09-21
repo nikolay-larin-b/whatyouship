@@ -11,6 +11,8 @@ from typing import cast
 from whatyouship.lint import LintRule
 from whatyouship.model import Severity
 from whatyouship.rules.build_artifacts import DEFAULT_EXTENSIONS, BuildArtifactRule
+from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
+from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
 
@@ -41,15 +43,35 @@ class UnsignedBinarySettings:
 
 
 @dataclass(frozen=True)
+class ArtifactSignatureRuleSettings:
+    """Configure a release artifact signature rule.
+
+    :param enabled: Whether to run the rule.
+    :param severity: Severity assigned to its findings.
+    """
+
+    enabled: bool = True
+    severity: Severity = "warning"
+
+
+@dataclass(frozen=True)
 class LintConfiguration:
     """Collect settings for the available lint rules.
 
     :param build_artifacts: Build artifact extension rule settings.
     :param unsigned_binary: Unsigned binary rule settings.
+    :param unsigned_artifact: Unsigned release artifact rule settings.
+    :param invalid_artifact_signature: Invalid artifact signature rule settings.
     """
 
     build_artifacts: BuildArtifactSettings = field(default_factory=BuildArtifactSettings)
     unsigned_binary: UnsignedBinarySettings = field(default_factory=UnsignedBinarySettings)
+    unsigned_artifact: ArtifactSignatureRuleSettings = field(
+        default_factory=ArtifactSignatureRuleSettings
+    )
+    invalid_artifact_signature: ArtifactSignatureRuleSettings = field(
+        default_factory=lambda: ArtifactSignatureRuleSettings(severity="error")
+    )
 
     def rules(self) -> list[LintRule]:
         """Create the enabled lint rules in their usual order.
@@ -66,6 +88,14 @@ class LintConfiguration:
             )
         if self.unsigned_binary.enabled:
             rules.append(UnsignedBinaryRule(severity=self.unsigned_binary.severity))
+        if self.unsigned_artifact.enabled:
+            rules.append(UnsignedArtifactRule(severity=self.unsigned_artifact.severity))
+        if self.invalid_artifact_signature.enabled:
+            rules.append(
+                InvalidArtifactSignatureRule(
+                    severity=self.invalid_artifact_signature.severity
+                )
+            )
         return rules
 
 
@@ -83,13 +113,14 @@ def _validate_keys(values: dict[str, object], allowed: set[str], location: str) 
 
 
 def _rule_settings(
-    rule_id: str, values: object, allowed: set[str]
+    rule_id: str, values: object, allowed: set[str], default_severity: Severity = "warning"
 ) -> tuple[bool, Severity, dict[str, object]]:
     """Validate common rule settings and return the rule table.
 
     :param rule_id: ID of the rule being configured.
     :param values: Parsed TOML table for the rule.
     :param allowed: Supported keys for the rule.
+    :param default_severity: Severity used when no value is configured.
     :returns: Enabled state, severity, and validated table.
     :raises ValueError: If the table or a setting is invalid.
     """
@@ -99,7 +130,7 @@ def _rule_settings(
     enabled = values.get("enabled", True)
     if not isinstance(enabled, bool):
         raise ValueError(f"Rule '{rule_id}' enabled must be a boolean")
-    severity = values.get("severity", "warning")
+    severity = values.get("severity", default_severity)
     if severity not in ("warning", "error"):
         raise ValueError(f"Invalid severity for rule '{rule_id}': {severity!r}")
     return enabled, cast(Severity, severity), values
@@ -146,7 +177,10 @@ def load_config(path: Path) -> LintConfiguration:
     rules = data.get("rules", {})
     if not isinstance(rules, dict):
         raise ValueError("Configuration 'rules' must be a TOML table")
-    unknown_rules = set(rules) - {"build-artifact-extension", "unsigned-binary"}
+    unknown_rules = set(rules) - {
+        "build-artifact-extension", "unsigned-binary", "unsigned-artifact",
+        "invalid-artifact-signature",
+    }
     if unknown_rules:
         raise ValueError(f"Unknown rule ID: {', '.join(sorted(unknown_rules))}")
 
@@ -160,6 +194,14 @@ def load_config(path: Path) -> LintConfiguration:
         rules.get("unsigned-binary", {}),
         {"enabled", "severity"},
     )
+    artifact_enabled, artifact_severity, _ = _rule_settings(
+        "unsigned-artifact", rules.get("unsigned-artifact", {}),
+        {"enabled", "severity"},
+    )
+    invalid_enabled, invalid_severity, _ = _rule_settings(
+        "invalid-artifact-signature", rules.get("invalid-artifact-signature", {}),
+        {"enabled", "severity"}, "error",
+    )
     extensions = (
         _extensions(build_values["extensions"])
         if "extensions" in build_values
@@ -168,4 +210,10 @@ def load_config(path: Path) -> LintConfiguration:
     return LintConfiguration(
         build_artifacts=BuildArtifactSettings(build_enabled, build_severity, extensions),
         unsigned_binary=UnsignedBinarySettings(unsigned_enabled, unsigned_severity),
+        unsigned_artifact=ArtifactSignatureRuleSettings(
+            artifact_enabled, artifact_severity
+        ),
+        invalid_artifact_signature=ArtifactSignatureRuleSettings(
+            invalid_enabled, invalid_severity
+        ),
     )

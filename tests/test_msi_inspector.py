@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 from whatyouship.inspectors.msi import MsiInspector
-from whatyouship.model import BinaryMetadata
+from whatyouship.model import ArtifactSignature, BinaryMetadata
 
 
 _MSI_HEADER = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -21,6 +21,15 @@ _MSI_HEADER = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 class MsiInspectorTests(unittest.TestCase):
     """Verify MSI payloads and target paths using synthetic pymsi data."""
+
+    def setUp(self) -> None:
+        """Keep cache tests independent of the signature verification backend."""
+        signature_patch = patch(
+            "whatyouship.inspectors.msi.MsiSignatureInspector.inspect",
+            return_value=ArtifactSignature(status="unsigned"),
+        )
+        signature_patch.start()
+        self.addCleanup(signature_patch.stop)
 
     def test_reads_payloads_and_target_installation_paths(self) -> None:
         """Prefer target long names and hash extracted payload bytes."""

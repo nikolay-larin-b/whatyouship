@@ -15,6 +15,7 @@ from pymsi.msi.file import File
 
 from whatyouship.binary.pe import PeInspector
 from whatyouship.inspectors.msi_cache import MsiPayloadCache
+from whatyouship.inspectors.msi_signature import MsiSignatureInspector
 from whatyouship.model import ArtifactFile, ReleaseArtifact
 
 
@@ -46,6 +47,7 @@ class MsiInspector:
 
         try:
             digest = self._msi_sha256(source_path)
+            signature = MsiSignatureInspector().inspect(source_path)
             cached = MsiPayloadCache().load_or_populate(
                 digest, lambda: self._extract_payloads(source_path)
             )
@@ -63,7 +65,7 @@ class MsiInspector:
             raise ValueError(f"Unable to inspect MSI '{source_path}': {error}") from error
 
         files.sort(key=attrgetter("relative_path"))
-        return ReleaseArtifact(source_path=source_path, files=files)
+        return ReleaseArtifact(source_path=source_path, files=files, signature=signature)
 
     def _msi_sha256(self, source_path: Path) -> str:
         """Validate and hash the complete MSI file.

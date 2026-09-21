@@ -4,11 +4,27 @@
 """Format-independent models for release artifacts."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 
 Severity = Literal["warning", "error"]
+ArtifactSignatureStatus = Literal["unsupported", "unsigned", "valid", "invalid"]
+
+
+@dataclass
+class ArtifactSignature:
+    """Describe verification of a release artifact's own signature.
+
+    :param status: Verification result, or ``unsupported`` when not applicable.
+    :param signer: Signer certificate subject, when available.
+    :param timestamp: Countersignature time, when available.
+    """
+
+    status: ArtifactSignatureStatus = "unsupported"
+    signer: str | None = None
+    timestamp: datetime | None = None
 
 
 @dataclass
@@ -69,10 +85,12 @@ class ReleaseArtifact:
 
     :param source_path: Path to the original artifact being analyzed.
     :param files: Files contained in the artifact.
+    :param signature: Signature of the release artifact itself.
     """
 
     source_path: Path
     files: list[ArtifactFile] = field(default_factory=list)
+    signature: ArtifactSignature = field(default_factory=ArtifactSignature)
 
 
 @dataclass

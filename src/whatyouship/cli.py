@@ -94,6 +94,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Source: {artifact.source_path}")
         print(f"Files: {len(artifact.files)}")
         print(f"Total size: {sum(file.size_bytes for file in artifact.files)} bytes")
+        print("Artifact signature:")
+        print(f"  Status: {artifact.signature.status}")
+        if artifact.signature.signer is not None:
+            print(f"  Signer: {artifact.signature.signer}")
+        if artifact.signature.timestamp is not None:
+            print(f"  Timestamp: {artifact.signature.timestamp.isoformat()}")
         print()
         print("Relative path | Size (bytes) | SHA-256")
         for file in artifact.files:

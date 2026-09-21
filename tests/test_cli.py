@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from whatyouship import __version__
 from whatyouship.cli import main
-from whatyouship.model import ArtifactFile, BinaryMetadata, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, ReleaseArtifact, SignatureMetadata
 
 
 class CliTests(unittest.TestCase):
@@ -53,9 +53,10 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result, 0)
             lines = output.getvalue().splitlines()
             self.assertEqual(lines[:3], [f"Source: {root}", "Files: 2", "Total size: 3 bytes"])
-            self.assertEqual(lines[4], "Relative path | Size (bytes) | SHA-256")
+            self.assertEqual(lines[3:6], ["Artifact signature:", "  Status: unsupported", ""])
+            self.assertEqual(lines[6], "Relative path | Size (bytes) | SHA-256")
             self.assertEqual(
-                lines[5:],
+                lines[7:],
                 [
                     "a.txt | 0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
                     "z.txt | 3 | ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
@@ -253,6 +254,54 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIn("Signature: valid | Signer: CN=Example Publisher | Timestamp: present", output.getvalue())
+
+    def test_inspect_prints_artifact_signature_separately(self) -> None:
+        """Show the package signature before signatures of contained files."""
+        from datetime import datetime, timezone
+
+        artifact = ReleaseArtifact(
+            Path("release.msi"),
+            [ArtifactFile(Path("app.exe"), 1, "a" * 64, binary=BinaryMetadata(
+                "PE", "x86_64", "executable", signature=SignatureMetadata(False),
+            ))],
+            ArtifactSignature(
+                "valid", "CN=Example Publisher", datetime(2026, 1, 2, tzinfo=timezone.utc)
+            ),
+        )
+        output = io.StringIO()
+
+        with patch("whatyouship.cli.inspect_artifact", return_value=artifact), contextlib.redirect_stdout(output):
+            result = main(["inspect", "release.msi"])
+
+        self.assertEqual(result, 0)
+        self.assertIn(
+            "Artifact signature:\n  Status: valid\n  Signer: CN=Example Publisher\n"
+            "  Timestamp: 2026-01-02T00:00:00+00:00",
+            output.getvalue(),
+        )
+        self.assertIn("  Signature: absent", output.getvalue())
+
+    def test_lint_reports_artifact_signature_findings(self) -> None:
+        """Print package signature findings independently of binary findings."""
+        output = io.StringIO()
+        for status, expected in (
+            ("unsigned", "unsigned-artifact | warning | . | Unsigned release artifact."),
+            ("invalid", "invalid-artifact-signature | error | . | Invalid release artifact signature."),
+        ):
+            with self.subTest(status=status):
+                artifact = ReleaseArtifact(
+                    Path("release.msi"), signature=ArtifactSignature(status)
+                )
+                output.seek(0)
+                output.truncate(0)
+                with (
+                    patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+                    contextlib.redirect_stdout(output),
+                ):
+                    result = main(["lint", "release.msi"])
+
+                self.assertEqual(result, 0)
+                self.assertEqual(output.getvalue().strip(), expected)
 
     def test_lint_reports_unsigned_binary(self) -> None:
         """Run the unsigned binary rule through the CLI."""

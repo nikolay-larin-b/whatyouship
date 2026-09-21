@@ -14,8 +14,11 @@ The project is in an early stage of development. By default, the build artifact 
 
 For recognized binaries, `inspect` also reports architecture, executable or library kind, version metadata, and signature information when available. Binary inspection currently supports Windows executables and libraries.
 
+For MSI artifacts on Windows, `inspect` separately reports the package's own signature status using system Authenticode verification. MSI signature checking is unsupported on Linux and macOS. `lint` reports unsigned artifacts and invalid artifact signatures when verification is supported; directory artifact signatures are unsupported. Package and contained binary signatures are checked independently.
+
 MSI paths follow the package's target directory layout; runtime directory properties are not resolved.
 Extracted MSI files are cached by the MSI's SHA-256 in the user cache directory. Binary metadata is inspected again on each run.
+The cache hash identifies extracted content and does not verify the package's signature or authenticity.
 
 To configure lint rules for a product, pass an explicit TOML file:
 

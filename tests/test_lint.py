@@ -7,8 +7,10 @@ import unittest
 from pathlib import Path
 
 from whatyouship.lint import LintEngine, compare_findings
-from whatyouship.model import ArtifactFile, BinaryMetadata, Finding, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, Finding, ReleaseArtifact, SignatureMetadata
 from whatyouship.rules.build_artifacts import BuildArtifactRule
+from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
+from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
 
@@ -123,6 +125,36 @@ class LintTests(unittest.TestCase):
         self.assertEqual(
             [finding.message for finding in findings],
             ["Unsigned executable.", "Unsigned library.", "Unsigned executable."],
+        )
+
+    def test_artifact_signature_rules_are_independent_of_binary_signatures(self) -> None:
+        """Apply package and contained binary signature checks separately."""
+        binary = BinaryMetadata(
+            "PE", "x86_64", "executable", signature=SignatureMetadata(False)
+        )
+        files = [ArtifactFile(Path("app.exe"), 1, "0" * 64, binary=binary)]
+        rules = [UnsignedArtifactRule(), InvalidArtifactSignatureRule(), UnsignedBinaryRule()]
+
+        unsigned = LintEngine(rules).run(
+            ReleaseArtifact(Path("release.msi"), files, ArtifactSignature("unsigned"))
+        )
+        invalid = LintEngine(rules).run(
+            ReleaseArtifact(Path("release.msi"), files, ArtifactSignature("invalid"))
+        )
+        unsupported = LintEngine(rules).run(ReleaseArtifact(Path("release"), files))
+
+        self.assertEqual(
+            [finding.rule_id for finding in unsigned],
+            ["unsigned-artifact", "unsigned-binary"],
+        )
+        self.assertEqual(unsigned[0].relative_path, Path("."))
+        self.assertEqual(
+            [finding.rule_id for finding in invalid],
+            ["invalid-artifact-signature", "unsigned-binary"],
+        )
+        self.assertEqual(invalid[0].severity, "error")
+        self.assertEqual(
+            [finding.rule_id for finding in unsupported], ["unsigned-binary"]
         )
 
 

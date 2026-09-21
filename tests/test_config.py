@@ -24,6 +24,8 @@ class ConfigTests(unittest.TestCase):
         self.assertIn(".exp", config.build_artifacts.extensions)
         self.assertIn(".lib", config.build_artifacts.extensions)
         self.assertEqual(config.unsigned_binary.severity, "warning")
+        self.assertEqual(config.unsigned_artifact.severity, "warning")
+        self.assertEqual(config.invalid_artifact_signature.severity, "error")
 
     def test_partial_configuration_preserves_rule_defaults(self) -> None:
         """Use default settings for omitted rules and parameters."""
@@ -51,7 +53,22 @@ class ConfigTests(unittest.TestCase):
             config = load_config(path)
 
         self.assertEqual(config.build_artifacts.extensions, frozenset({".obj", ".lib"}))
-        self.assertEqual(len(config.rules()), 1)
+        self.assertEqual(len(config.rules()), 3)
+
+    def test_artifact_signature_rules_accept_common_settings(self) -> None:
+        """Configure enabled state and severity for artifact signature rules."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.toml"
+            path.write_text(
+                "[rules.unsigned-artifact]\nenabled = false\n"
+                "[rules.invalid-artifact-signature]\nseverity = 'warning'\n"
+            )
+
+            config = load_config(path)
+
+        self.assertFalse(config.unsigned_artifact.enabled)
+        self.assertEqual(config.invalid_artifact_signature.severity, "warning")
+        self.assertEqual(len(config.rules()), 3)
 
     def test_missing_file_has_readable_error(self) -> None:
         """Name the missing configuration file in the error."""

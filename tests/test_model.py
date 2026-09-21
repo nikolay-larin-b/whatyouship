@@ -6,7 +6,7 @@
 import unittest
 from pathlib import Path
 
-from whatyouship.model import ArtifactFile, ReleaseArtifact
+from whatyouship.model import ArtifactFile, ArtifactSignature, ReleaseArtifact
 
 
 class ModelTests(unittest.TestCase):
@@ -39,6 +39,12 @@ class ModelTests(unittest.TestCase):
 
         self.assertEqual(len(first.files), 1)
         self.assertEqual(second.files, [])
+
+    def test_artifact_signature_defaults_to_unsupported(self) -> None:
+        """Represent artifact types without a signature checker explicitly."""
+        artifact = ReleaseArtifact(Path("release"))
+
+        self.assertEqual(artifact.signature, ArtifactSignature("unsupported"))
 
 
 if __name__ == "__main__":
