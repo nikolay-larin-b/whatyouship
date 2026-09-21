@@ -9,7 +9,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from whatyouship.inspectors.msi_scope import MsiScopeInspector, analyze_msi_scope
-from whatyouship.model import InstallationScope
+from whatyouship.model import InstallationScope, ReleaseArtifact
+from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 
 
 class MsiScopeTests(unittest.TestCase):
@@ -114,6 +115,129 @@ class MsiScopeTests(unittest.TestCase):
         self.assertTrue(any("AppDataFolder" in item for item in scope.conflicts))
         self.assertTrue(any("HKCU" in item for item in scope.conflicts))
 
+    def test_per_user_package_with_fixed_machine_component_regression(self) -> None:
+        """Keep a JASON 6.1-like HKLM component visible in a per-user package."""
+        scope = analyze_msi_scope({
+            "Component": [{
+                "Component": "CM_CP_JASON.exe", "Directory_": "ProgramFilesFolder",
+                "Attributes": 0,
+            }],
+            "Registry": [{
+                "Registry": "CPMachineRegistration", "Root": 2,
+                "Component_": "CM_CP_JASON.exe",
+            }],
+        })
+
+        self.assertEqual(scope.kind, "ambiguous")
+        self.assertTrue(any(
+            "Component 'CM_CP_JASON.exe' uses fixed per-machine HKLM registry entry"
+            in conflict and "per-user installation scope" in conflict
+            for conflict in scope.conflicts
+        ))
+        findings = InconsistentInstallationScopeRule().check(
+            ReleaseArtifact(Path("jason-6.1.msi"), installation_scope=scope)
+        )
+        self.assertTrue(any(
+            finding.rule_id == "inconsistent-installation-scope"
+            and finding.severity == "warning"
+            and "CM_CP_JASON.exe" in finding.message
+            for finding in findings
+        ))
+
+    def test_per_machine_shortcut_keypaths_do_not_create_scope_conflicts(self) -> None:
+        """Accept JASON 6.2-like HKCU key paths for non-advertised shortcuts."""
+        scope = analyze_msi_scope({
+            "Property": [{"Property": "ALLUSERS", "Value": "1"}],
+            "Directory": [{
+                "Directory": "CommonDesktopFolder", "Directory_Parent": "TARGETDIR",
+            }],
+            "Component": [
+                {
+                    "Component": "CM_SHORTCUT", "Directory_": "ProgramMenuFolder",
+                    "Attributes": 4, "KeyPath": "StartMenuShortcutKey",
+                },
+                {
+                    "Component": "CM_SHORTCUT_DESKTOP",
+                    "Directory_": "CommonDesktopFolder",
+                    "Attributes": 4, "KeyPath": "DesktopShortcutKey",
+                },
+            ],
+            "Registry": [
+                {
+                    "Registry": "StartMenuShortcutKey", "Root": 1,
+                    "Component_": "CM_SHORTCUT",
+                },
+                {
+                    "Registry": "DesktopShortcutKey", "Root": 1,
+                    "Component_": "CM_SHORTCUT_DESKTOP",
+                },
+            ],
+            "Shortcut": [
+                {
+                    "Shortcut": "StartMenuLink", "Component_": "CM_SHORTCUT",
+                    "Target": "[#JASON.exe]",
+                },
+                {
+                    "Shortcut": "DesktopLink",
+                    "Component_": "CM_SHORTCUT_DESKTOP",
+                    "Target": "[INSTALLDIR]JASON.exe",
+                },
+            ],
+        })
+
+        self.assertEqual(scope, InstallationScope("per-machine"))
+        self.assertEqual(
+            InconsistentInstallationScopeRule().check(
+                ReleaseArtifact(Path("jason-6.2.msi"), installation_scope=scope)
+            ),
+            [],
+        )
+
+    def test_per_machine_shortcut_exception_is_limited_to_its_hkcu_keypath(self) -> None:
+        """Flag other HKCU entries and advertised-only shortcut components."""
+        for shortcut_target in (None, "MainFeature"):
+            with self.subTest(shortcut_target=shortcut_target):
+                shortcuts = (
+                    [] if shortcut_target is None else [{
+                        "Shortcut": "Link", "Component_": "Shortcuts",
+                        "Target": shortcut_target,
+                    }]
+                )
+                scope = analyze_msi_scope({
+                    "Property": [{"Property": "ALLUSERS", "Value": "1"}],
+                    "Component": [{
+                        "Component": "Shortcuts", "Attributes": 4,
+                        "KeyPath": "ShortcutKey",
+                    }],
+                    "Registry": [{
+                        "Registry": "ShortcutKey", "Root": 1,
+                        "Component_": "Shortcuts",
+                    }],
+                    "Shortcut": shortcuts,
+                })
+
+                self.assertEqual(scope.kind, "ambiguous")
+                self.assertTrue(any("HKCU registry key path" in item for item in scope.conflicts))
+
+        scope = analyze_msi_scope({
+            "Property": [{"Property": "ALLUSERS", "Value": "1"}],
+            "Component": [{
+                "Component": "Shortcuts", "Attributes": 4,
+                "KeyPath": "ShortcutKey",
+            }],
+            "Registry": [
+                {"Registry": "ShortcutKey", "Root": 1, "Component_": "Shortcuts"},
+                {"Registry": "OtherUserKey", "Root": 1, "Component_": "Shortcuts"},
+            ],
+            "Shortcut": [{
+                "Shortcut": "Link", "Component_": "Shortcuts", "Target": "[#AppFile]",
+            }],
+        })
+
+        self.assertEqual(scope.kind, "ambiguous")
+        self.assertTrue(any("HKCU registry entry 'OtherUserKey'" in item for item in scope.conflicts))
+        self.assertFalse(any("ShortcutKey" in item for item in scope.conflicts))
+
     def test_dual_purpose_package_with_fixed_root_is_ambiguous(self) -> None:
         """Flag a fixed HKLM entry that cannot follow a per-user choice."""
         scope = analyze_msi_scope({
@@ -198,7 +322,8 @@ class MsiScopeTests(unittest.TestCase):
         """Use the cross-platform MSI database reader for each required table."""
         rows = {
             "Property": [{"Property": "ALLUSERS", "Value": "1"}],
-            "Directory": [], "Registry": [], "Component": [], "CustomAction": [],
+            "Directory": [], "Registry": [], "Component": [], "Shortcut": [],
+            "CustomAction": [],
         }
         package = MagicMock()
         package.get.side_effect = lambda name: SimpleNamespace(iter=lambda: rows[name])
@@ -209,7 +334,7 @@ class MsiScopeTests(unittest.TestCase):
             scope = MsiScopeInspector().inspect(Path("release.msi"))
 
         self.assertEqual(scope, InstallationScope("per-machine"))
-        self.assertEqual(package.get.call_count, 5)
+        self.assertEqual(package.get.call_count, 6)
         open_package.assert_called_once_with(Path("release.msi"))
 
 

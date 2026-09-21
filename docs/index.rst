@@ -29,13 +29,15 @@ artifact signatures are unsupported. Package and contained binary signatures
 are checked independently.
 
 MSI installation scope is inferred statically from the ``Property``,
-``Directory``, ``Registry``, ``Component``, and explicit scope-setting
+``Directory``, ``Registry``, ``Component``, ``Shortcut``, and explicit scope-setting
 ``CustomAction`` tables on every platform. ``inspect`` reports ``per-user``,
 ``per-machine``, ``dual-purpose``, or ``ambiguous``. ``lint`` reports concrete
 conflicts with ``inconsistent-installation-scope``, and ``compare`` shows scope
 changes between MSI releases. ``ALLUSERS=2``, context-aware folders, and
-redirected registry roots are valid for dual-purpose packages. Conditional
-components and runtime choices cannot always be resolved statically.
+redirected registry roots are valid for dual-purpose packages. HKCU KeyPaths
+for components with non-advertised shortcuts are accepted in per-machine
+packages. Conditional components and runtime choices cannot always be resolved
+statically.
 
 MSI paths follow the package's target directory layout; runtime directory
 properties are not resolved.

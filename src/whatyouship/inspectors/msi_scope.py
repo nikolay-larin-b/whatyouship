@@ -4,6 +4,7 @@
 """Infer MSI installation scope from authored database tables."""
 
 import io
+import re
 from collections.abc import Iterable, Mapping
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -22,7 +23,8 @@ _MACHINE_DIRECTORIES = frozenset({
     "systemfolder", "system64folder", "system16folder",
 })
 _SCOPE_PROPERTIES = frozenset({"ALLUSERS", "MSIINSTALLPERUSER"})
-_TABLES = ("Property", "Directory", "Registry", "Component", "CustomAction")
+_TABLES = ("Property", "Directory", "Registry", "Component", "Shortcut", "CustomAction")
+_FORMATTED_REFERENCE = re.compile(r"\[[^][]+\]")
 
 
 def _value(row: Mapping[str, object], column: str) -> str:
@@ -67,6 +69,22 @@ def _directory_scope(
             return "per-machine", current
         current = parents.get(current, "")
     return None
+
+
+def _non_advertised_shortcut_components(
+    shortcuts: Iterable[Mapping[str, object]],
+) -> set[str]:
+    """Find components with shortcuts targeting a formatted path.
+
+    :param shortcuts: Rows from the MSI Shortcut table.
+    :returns: Component IDs containing non-advertised shortcuts.
+    """
+    return {
+        _value(shortcut, "Component_")
+        for shortcut in shortcuts
+        if _value(shortcut, "Component_")
+        and _FORMATTED_REFERENCE.search(_value(shortcut, "Target")) is not None
+    }
 
 
 def analyze_msi_scope(
@@ -152,6 +170,9 @@ def analyze_msi_scope(
     registry_by_component: dict[str, list[Mapping[str, object]]] = {}
     for row in rows["Registry"]:
         registry_by_component.setdefault(_value(row, "Component_"), []).append(row)
+    non_advertised_shortcut_components = _non_advertised_shortcut_components(
+        rows["Shortcut"]
+    )
 
     component_ids = {_value(row, "Component") for row in rows["Component"]}
     for registry in sorted(rows["Registry"], key=lambda item: _value(item, "Registry")):
@@ -190,6 +211,14 @@ def analyze_msi_scope(
             scope = "per-user" if root == 1 else "per-machine"
             root_name = "HKCU" if root == 1 else "HKLM"
             registry_id = _value(registry, "Registry")
+            if (
+                declared == "per-machine"
+                and root == 1
+                and keypath
+                and registry_id == keypath
+                and component_id in non_advertised_shortcut_components
+            ):
+                continue
             kind = "registry key path" if registry_id == keypath else "registry entry"
             signals.append((scope, f"{root_name} {kind} '{registry_id}'"))
 
