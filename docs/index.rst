@@ -41,15 +41,19 @@ statically.
 
 MSI paths follow the package's target directory layout; runtime directory
 properties are not resolved.
-Extracted MSI files are cached by the MSI's SHA-256 in the user cache directory.
-Binary metadata is inspected again on each run.
+Extracted MSI files are cached by the MSI's SHA-256 under
+``~/.whatyouship/cache/msi/v1/``. Binary metadata is inspected again on each run.
 The cache hash identifies extracted content and does not verify the package's
 signature or authenticity.
 
-ZIP distributions are safely extracted into a separate versioned cache keyed by
-the ZIP file's SHA-256. Their extracted files use the same inspection, binary
-analysis, lint rules, and comparison logic as directories. ZIP artifact
-signatures are not checked.
+ZIP distributions are safely extracted under ``~/.whatyouship/cache/zip/v1/``,
+keyed by the ZIP file's SHA-256. Their extracted files use the same inspection,
+binary analysis, lint rules, and comparison logic as directories. ZIP artifact
+signatures are not checked. On Windows, ``~`` is the user profile directory.
+
+WhatYouShip keeps user data below ``~/.whatyouship/``; ``cache/`` contains
+extracted artifact caches and ``config/`` is reserved for user configuration.
+Existing caches in platform-specific cache directories are not migrated.
 
 To configure lint rules for a product, provide a TOML file explicitly:
 

@@ -9,9 +9,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-import platformdirs
-
 from whatyouship.inspectors.extraction_cache import ExtractionCache
+from whatyouship.paths import cache_directory
 
 
 @dataclass(frozen=True)
@@ -35,7 +34,7 @@ class MsiPayloadCache:
 
     def __init__(self) -> None:
         """Select the versioned user cache directory."""
-        self._root = Path(platformdirs.user_cache_dir("whatyouship")) / "msi" / "v1"
+        self._root = cache_directory("msi")
 
     def load_or_populate(
         self,

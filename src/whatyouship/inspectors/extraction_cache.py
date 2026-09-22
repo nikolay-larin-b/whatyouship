@@ -47,8 +47,7 @@ class ExtractionCache:
         temporary = Path(tempfile.mkdtemp(prefix=".tmp-", dir=self._root))
         try:
             populate(temporary)
-            staged = load(temporary)
-            if staged is None:
+            if load(temporary) is None:
                 raise ValueError("Extracted cache entry is incomplete")
 
             cached = load(entry)
@@ -56,7 +55,7 @@ class ExtractionCache:
                 return cached
             self._remove_invalid(entry)
             try:
-                os.replace(temporary, entry)
+                os.rename(temporary, entry)
             except OSError:
                 cached = load(entry)
                 if cached is not None:

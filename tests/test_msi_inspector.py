@@ -70,8 +70,8 @@ class MsiInspectorTests(unittest.TestCase):
 
             with (
                 patch(
-                    "whatyouship.inspectors.msi_cache.platformdirs.user_cache_dir",
-                    return_value=str(Path(temporary_directory) / "cache"),
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=Path(temporary_directory) / "cache" / "msi" / "v1",
                 ),
                 patch("whatyouship.inspectors.msi.pymsi.Package", return_value=package_context),
                 patch(
@@ -112,8 +112,8 @@ class MsiInspectorTests(unittest.TestCase):
 
             with (
                 patch(
-                    "whatyouship.inspectors.msi_cache.platformdirs.user_cache_dir",
-                    return_value=str(cache_home),
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=cache_home / "msi" / "v1",
                 ),
                 patch.object(
                     MsiInspector,
@@ -138,8 +138,8 @@ class MsiInspectorTests(unittest.TestCase):
 
             with (
                 patch(
-                    "whatyouship.inspectors.msi_cache.platformdirs.user_cache_dir",
-                    return_value=str(root / "cache"),
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=root / "cache" / "msi" / "v1",
                 ),
                 patch.object(
                     MsiInspector,
@@ -169,8 +169,8 @@ class MsiInspectorTests(unittest.TestCase):
 
             with (
                 patch(
-                    "whatyouship.inspectors.msi_cache.platformdirs.user_cache_dir",
-                    return_value=str(cache_home),
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=cache_home / "msi" / "v1",
                 ),
                 patch.object(
                     MsiInspector,
@@ -202,8 +202,8 @@ class MsiInspectorTests(unittest.TestCase):
 
             with (
                 patch(
-                    "whatyouship.inspectors.msi_cache.platformdirs.user_cache_dir",
-                    return_value=str(cache_home),
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=cache_home / "msi" / "v1",
                 ),
                 patch.object(
                     MsiInspector,
@@ -248,8 +248,8 @@ class MsiInspectorTests(unittest.TestCase):
 
             with (
                 patch(
-                    "whatyouship.inspectors.msi_cache.platformdirs.user_cache_dir",
-                    return_value=str(cache_home),
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=cache_home / "msi" / "v1",
                 ),
                 patch.object(
                     MsiInspector,
@@ -284,8 +284,8 @@ class MsiInspectorTests(unittest.TestCase):
 
             with (
                 patch(
-                    "whatyouship.inspectors.msi_cache.platformdirs.user_cache_dir",
-                    return_value=str(cache_home),
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=cache_home / "msi" / "v1",
                 ),
                 patch.object(
                     MsiInspector,

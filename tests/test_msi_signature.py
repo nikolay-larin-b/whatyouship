@@ -134,8 +134,8 @@ class MsiSignatureTests(unittest.TestCase):
             source.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1synthetic")
             with (
                 patch(
-                    "whatyouship.inspectors.msi_cache.platformdirs.user_cache_dir",
-                    return_value=str(Path(temporary_directory) / "cache"),
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=Path(temporary_directory) / "cache" / "msi" / "v1",
                 ),
                 patch.object(
                     MsiInspector, "_extract_payloads",

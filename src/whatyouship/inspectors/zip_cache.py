@@ -10,9 +10,8 @@ import stat
 import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-import platformdirs
-
 from whatyouship.inspectors.extraction_cache import ExtractionCache
+from whatyouship.paths import cache_directory
 
 
 def _safe_path(name: str) -> Path:
@@ -41,7 +40,7 @@ class ZipExtractionCache:
 
     def __init__(self) -> None:
         """Select the versioned user cache directory."""
-        self._root = Path(platformdirs.user_cache_dir("whatyouship")) / "zip" / "v1"
+        self._root = cache_directory("zip")
 
     def load_or_populate(self, digest: str, source_path: Path) -> Path:
         """Return a validated extracted tree, populating it when needed.

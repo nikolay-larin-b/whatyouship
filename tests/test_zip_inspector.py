@@ -61,8 +61,8 @@ class ZipInspectorTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.cache_home = self.root / "cache"
         cache_patch = patch(
-            "whatyouship.inspectors.zip_cache.platformdirs.user_cache_dir",
-            return_value=str(self.cache_home),
+            "whatyouship.inspectors.zip_cache.cache_directory",
+            return_value=self.cache_home / "zip" / "v1",
         )
         cache_patch.start()
         self.addCleanup(cache_patch.stop)
