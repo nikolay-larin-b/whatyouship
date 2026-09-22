@@ -3,6 +3,8 @@
 
 """Read basic Windows PE metadata with LIEF."""
 
+import sys
+import tempfile
 from pathlib import Path
 
 import lief
@@ -66,13 +68,15 @@ class PeInspector:
                 kind = "other"
 
             file_version, product_version = self._versions(binary)
+            with lief.logging.level_scope(lief.logging.LEVEL.OFF):
+                signature = self._signature(binary, source)
             return BinaryMetadata(
                 format="PE",
                 architecture=architecture,
                 kind=kind,
                 file_version=file_version,
                 product_version=product_version,
-                signature=self._signature(binary),
+                signature=signature,
             )
         except Exception:
             return None
@@ -116,38 +120,105 @@ class PeInspector:
                 pass
         return file_version, product_version
 
-    def _signature(self, binary: lief.PE.Binary) -> SignatureMetadata:
+    def _signature(
+        self, binary: lief.PE.Binary, source: Path | bytes | memoryview
+    ) -> SignatureMetadata:
         """Read embedded Authenticode signature information.
 
         :param binary: Parsed PE binary.
+        :param source: Path or bytes passed to :meth:`inspect`.
         :returns: Signature state, including unknown values on read failures.
         """
         try:
             signatures = list(binary.signatures)
         except Exception:
+            signatures = None
+
+        signer: str | None = None
+        timestamp: bool | None = None
+        if signatures:
+            for signature in signatures:
+                try:
+                    for signer_info in signature.signers:
+                        if signer is None and signer_info.cert is not None:
+                            subject = signer_info.cert.subject
+                            signer = (
+                                subject.decode(errors="replace")
+                                if isinstance(subject, bytes)
+                                else str(subject)
+                            )
+                        has_timestamp = any(
+                            isinstance(
+                                attribute,
+                                (
+                                    lief.PE.PKCS9CounterSignature,
+                                    lief.PE.MsCounterSign,
+                                ),
+                            )
+                            for attribute in signer_info.unauthenticated_attributes
+                        )
+                        timestamp = (
+                            has_timestamp
+                            if timestamp is None
+                            else timestamp or has_timestamp
+                        )
+                except Exception:
+                    pass
+
+        if sys.platform == "win32":
+            return self._windows_signature(source, signer, timestamp)
+        if signatures is None:
             return SignatureMetadata(present=None)
         if not signatures:
             return SignatureMetadata(present=False, valid=None, timestamp=None)
 
         valid: bool | None = None
-        signer: str | None = None
-        timestamp: bool | None = None
         for signature in signatures:
             try:
-                verified = binary.verify_signature(signature) == lief.PE.Signature.VERIFICATION_FLAGS.OK
+                verified = (
+                    binary.verify_signature(signature)
+                    == lief.PE.Signature.VERIFICATION_FLAGS.OK
+                )
                 valid = verified if valid is None else valid or verified
             except Exception:
                 pass
-            try:
-                for signer_info in signature.signers:
-                    if signer is None and signer_info.cert is not None:
-                        subject = signer_info.cert.subject
-                        signer = subject.decode(errors="replace") if isinstance(subject, bytes) else str(subject)
-                    has_timestamp = any(
-                        isinstance(attribute, (lief.PE.PKCS9CounterSignature, lief.PE.MsCounterSign))
-                        for attribute in signer_info.unauthenticated_attributes
-                    )
-                    timestamp = has_timestamp if timestamp is None else timestamp or has_timestamp
-            except Exception:
-                pass
-        return SignatureMetadata(present=True, valid=valid, signer=signer, timestamp=timestamp)
+        return SignatureMetadata(
+            present=True,
+            valid=valid,
+            signer=signer,
+            timestamp=timestamp,
+        )
+
+    def _windows_signature(
+        self,
+        source: Path | bytes | memoryview,
+        signer: str | None,
+        timestamp: bool | None,
+    ) -> SignatureMetadata:
+        """Use Windows trust policy as the PE signature source of truth.
+
+        :param source: Path or bytes containing the PE file.
+        :param signer: Signer subject extracted by LIEF, when available.
+        :param timestamp: Timestamp presence extracted by LIEF, when available.
+        :returns: Signature metadata with validity supplied by WinVerifyTrust.
+        """
+        from whatyouship.inspectors.windows_authenticode import (
+            WindowsAuthenticodeVerifier,
+        )
+
+        if isinstance(source, Path):
+            status = WindowsAuthenticodeVerifier().verify(source).status
+        else:
+            with tempfile.TemporaryDirectory() as temporary_directory:
+                path = Path(temporary_directory) / "payload.exe"
+                path.write_bytes(bytes(source))
+                status = WindowsAuthenticodeVerifier().verify(path).status
+
+        if status == "unsigned":
+            return SignatureMetadata(present=False, valid=None, timestamp=None)
+        return SignatureMetadata(
+            present=True,
+            valid=status == "valid",
+            signer=signer,
+            timestamp=timestamp,
+        )

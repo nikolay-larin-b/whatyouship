@@ -3,8 +3,10 @@
 
 """Tests for PE binary inspection."""
 
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -12,7 +14,9 @@ from unittest.mock import Mock, patch
 import lief
 
 from whatyouship.binary.pe import PeInspector
+from whatyouship.cli import main
 from whatyouship.inspectors.directory import DirectoryInspector
+from whatyouship.model import ArtifactSignature
 
 
 def _make_pe(kind: str) -> bytes:
@@ -185,7 +189,10 @@ class PeInspectorTests(unittest.TestCase):
             verify_signature=Mock(return_value=lief.PE.Signature.VERIFICATION_FLAGS.OK),
         )
 
-        with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
+        with (
+            patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
+            patch("whatyouship.binary.pe.sys.platform", "linux"),
+        ):
             metadata = PeInspector().inspect(b"MZsynthetic")
 
         self.assertIsNotNone(metadata)
@@ -208,7 +215,10 @@ class PeInspectorTests(unittest.TestCase):
             verify_signature=Mock(side_effect=RuntimeError("verification failed")),
         )
 
-        with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
+        with (
+            patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
+            patch("whatyouship.binary.pe.sys.platform", "linux"),
+        ):
             metadata = PeInspector().inspect(b"MZsynthetic")
 
         self.assertIsNotNone(metadata)
@@ -229,7 +239,10 @@ class PeInspectorTests(unittest.TestCase):
             verify_signature=Mock(return_value=lief.PE.Signature.VERIFICATION_FLAGS.BAD_DIGEST),
         )
 
-        with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
+        with (
+            patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
+            patch("whatyouship.binary.pe.sys.platform", "linux"),
+        ):
             metadata = PeInspector().inspect(b"MZsynthetic")
 
         self.assertIsNotNone(metadata)
@@ -243,11 +256,114 @@ class PeInspectorTests(unittest.TestCase):
         header.has_characteristic.side_effect = [False, True]
         binary = SimpleNamespace(header=header, has_resources=False)
 
-        with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
+        with (
+            patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
+            patch("whatyouship.binary.pe.sys.platform", "linux"),
+        ):
             metadata = PeInspector().inspect(b"MZsynthetic")
 
         self.assertIsNotNone(metadata)
         self.assertIsNone(metadata.signature.present)
+
+    def test_windows_uses_system_authenticode_status(self) -> None:
+        """Map valid, unsigned, and invalid WinVerifyTrust results."""
+        signer = SimpleNamespace(
+            cert=SimpleNamespace(subject="CN=Example Publisher"),
+            unauthenticated_attributes=[Mock(spec=lief.PE.MsCounterSign)],
+        )
+        signature = SimpleNamespace(signers=[signer])
+        header = Mock()
+        header.machine = lief.PE.Header.MACHINE_TYPES.AMD64
+        header.has_characteristic.side_effect = (
+            lambda characteristic: characteristic
+            == lief.PE.Header.CHARACTERISTICS.EXECUTABLE_IMAGE
+        )
+        binary = SimpleNamespace(
+            header=header,
+            has_resources=False,
+            signatures=[signature],
+            verify_signature=Mock(
+                side_effect=AssertionError("LIEF verification must not run")
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "sample.exe"
+            source.write_bytes(b"MZsynthetic")
+            for status, present, valid in (
+                ("valid", True, True),
+                ("unsigned", False, None),
+                ("invalid", True, False),
+            ):
+                with (
+                    self.subTest(status=status),
+                    patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
+                    patch("whatyouship.binary.pe.sys.platform", "win32"),
+                    patch(
+                        "whatyouship.inspectors.windows_authenticode."
+                        "WindowsAuthenticodeVerifier.verify",
+                        return_value=ArtifactSignature(status),
+                    ) as verify,
+                ):
+                    metadata = PeInspector().inspect(source)
+
+                self.assertIsNotNone(metadata)
+                self.assertEqual(metadata.signature.present, present)
+                self.assertEqual(metadata.signature.valid, valid)
+                self.assertEqual(
+                    metadata.signature.signer,
+                    None if status == "unsigned" else "CN=Example Publisher",
+                )
+                self.assertEqual(
+                    metadata.signature.timestamp,
+                    None if status == "unsigned" else True,
+                )
+                verify.assert_called_once_with(source)
+
+        binary.verify_signature.assert_not_called()
+
+    def test_rfc3161_diagnostics_do_not_reach_cli_output(self) -> None:
+        """Keep LIEF countersignature diagnostics out of normal lint output."""
+        signer = SimpleNamespace(
+            cert=SimpleNamespace(subject="CN=Timestamped Publisher"),
+            unauthenticated_attributes=[Mock(spec=lief.PE.MsCounterSign)],
+        )
+        header = Mock()
+        header.machine = lief.PE.Header.MACHINE_TYPES.AMD64
+        header.has_characteristic.side_effect = [False, True]
+        binary = SimpleNamespace(
+            header=header,
+            has_resources=False,
+            signatures=[SimpleNamespace(signers=[signer])],
+            verify_signature=Mock(
+                side_effect=RuntimeError(
+                    "Bad OID for ContentType in authenticated attributes"
+                )
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "timestamped.exe"
+            source.write_bytes(b"MZsynthetic")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
+                patch("whatyouship.binary.pe.sys.platform", "win32"),
+                patch(
+                    "whatyouship.inspectors.windows_authenticode."
+                    "WindowsAuthenticodeVerifier.verify",
+                    return_value=ArtifactSignature("valid"),
+                ),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                exit_code = main(["lint", temporary_directory])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue(), "No findings.\n")
+        self.assertEqual(stderr.getvalue(), "")
+        binary.verify_signature.assert_not_called()
 
 
 if __name__ == "__main__":
