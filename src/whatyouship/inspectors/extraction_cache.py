@@ -5,13 +5,18 @@
 
 import os
 import shutil
+import sys
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
 
 _Entry = TypeVar("_Entry")
+
+_WINDOWS_RENAME_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2)
+_WINDOWS_TRANSIENT_RENAME_ERRORS = {5, 32}
 
 
 class ExtractionCache:
@@ -54,13 +59,9 @@ class ExtractionCache:
             if cached is not None:
                 return cached
             self._remove_invalid(entry)
-            try:
-                os.rename(temporary, entry)
-            except OSError:
-                cached = load(entry)
-                if cached is not None:
-                    return cached
-                raise
+            cached = self._promote(temporary, entry, load)
+            if cached is not None:
+                return cached
 
             published = load(entry)
             if published is None:
@@ -69,6 +70,41 @@ class ExtractionCache:
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary)
+
+    def _promote(
+        self,
+        temporary: Path,
+        entry: Path,
+        load: Callable[[Path], _Entry | None],
+    ) -> _Entry | None:
+        """Atomically rename staging, retrying transient Windows locks.
+
+        :param temporary: Complete staging directory.
+        :param entry: Final content-addressed cache path.
+        :param load: Callback that validates and reads a complete entry.
+        :returns: A concurrently published entry, or ``None`` after promotion.
+        :raises OSError: If promotion fails permanently.
+        """
+        delays = iter(_WINDOWS_RENAME_RETRY_DELAYS)
+        while True:
+            try:
+                os.rename(temporary, entry)
+                return None
+            except OSError as error:
+                cached = load(entry)
+                if cached is not None:
+                    return cached
+                if (
+                    sys.platform != "win32"
+                    or getattr(error, "winerror", None)
+                    not in _WINDOWS_TRANSIENT_RENAME_ERRORS
+                ):
+                    raise
+                try:
+                    delay = next(delays)
+                except StopIteration:
+                    raise error
+                time.sleep(delay)
 
     def _remove_invalid(self, entry: Path) -> None:
         """Discard an invalid entry after a replacement is ready.

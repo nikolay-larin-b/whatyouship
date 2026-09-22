@@ -89,21 +89,66 @@ class ExtractionCacheTests(unittest.TestCase):
             self.assertEqual((final / "complete").read_text(encoding="utf-8"), "ready")
             self.assertEqual(list(root.glob(".tmp-*")), [])
 
-    def test_failed_promotion_removes_staging_without_publishing_entry(self) -> None:
-        """Remove incomplete staging when no valid final entry exists."""
+    def test_transient_windows_lock_is_retried(self) -> None:
+        """Retry promotion after Windows briefly denies directory renaming."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory) / "cache"
-            final = root / ("c" * 64)
+            error = PermissionError(13, "Access is denied")
+            error.winerror = 5
+            real_rename = os.rename
+            attempts = 0
+
+            def fail_once(source: Path, destination: Path) -> None:
+                """Fail the first rename and perform the second one.
+
+                :param source: Complete staging directory.
+                :param destination: Final content-addressed entry.
+                :raises PermissionError: On the first call only.
+                """
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise error
+                real_rename(source, destination)
 
             with (
                 patch(
                     "whatyouship.inspectors.extraction_cache.os.rename",
-                    side_effect=PermissionError(13, "Access is denied"),
-                ),
+                    side_effect=fail_once,
+                ) as rename,
+                patch("whatyouship.inspectors.extraction_cache.sys.platform", "win32"),
+                patch("whatyouship.inspectors.extraction_cache.time.sleep") as sleep,
+            ):
+                entry = ExtractionCache(root).load_or_populate(
+                    "c" * 64, _populate, _load
+                )
+
+            self.assertEqual(entry, root / ("c" * 64))
+            self.assertEqual(rename.call_count, 2)
+            sleep.assert_called_once_with(0.05)
+            self.assertEqual(list(root.glob(".tmp-*")), [])
+
+    def test_failed_promotion_removes_staging_without_publishing_entry(self) -> None:
+        """Remove incomplete staging when no valid final entry exists."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "cache"
+            final = root / ("d" * 64)
+            error = PermissionError(13, "Access is denied")
+            error.winerror = 5
+
+            with (
+                patch(
+                    "whatyouship.inspectors.extraction_cache.os.rename",
+                    side_effect=error,
+                ) as rename,
+                patch("whatyouship.inspectors.extraction_cache.sys.platform", "win32"),
+                patch("whatyouship.inspectors.extraction_cache.time.sleep") as sleep,
                 self.assertRaises(PermissionError),
             ):
-                ExtractionCache(root).load_or_populate("c" * 64, _populate, _load)
+                ExtractionCache(root).load_or_populate("d" * 64, _populate, _load)
 
+            self.assertEqual(rename.call_count, 8)
+            self.assertEqual(sleep.call_count, 7)
             self.assertFalse(final.exists())
             self.assertEqual(list(root.glob(".tmp-*")), [])
 
