@@ -61,7 +61,7 @@ Current checks and comparisons include:
 
 * suspicious build artifacts accidentally included in a release;
 * unsigned Windows executables and libraries;
-* invalid artifact signatures where platform verification is available;
+* untrusted signers and invalid artifact signatures where platform verification is available;
 * inconsistent MSI installation scope;
 * added, removed, and changed files between releases;
 * binary architecture changes;
@@ -136,7 +136,7 @@ In addition to added, removed, changed, and unchanged files, WhatYouShip reports
 
 MSI extraction and static MSI analysis are platform-independent.
 
-On Windows, the signature of the MSI package itself is verified using the system Authenticode API. Package signature verification is currently unsupported on Linux and macOS.
+On Windows, the signature of the MSI package itself is verified using the system Authenticode API. Signature status distinguishes unsigned, valid and trusted, signed but untrusted, and cryptographically invalid artifacts. Package signature verification is currently unsupported on Linux and macOS.
 
 ZIP releases use the same file and binary analysis as ordinary directories.
 

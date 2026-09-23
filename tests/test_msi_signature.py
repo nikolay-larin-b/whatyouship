@@ -67,11 +67,13 @@ class MsiSignatureTests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_windows_maps_system_trust_results(self) -> None:
-        """Classify verified, absent, and failed signatures distinctly."""
+        """Classify trusted, absent, untrusted, invalid, and unsupported results."""
         for result, expected in (
             (0, "valid"),
             (0x800B0100, "unsigned"),
-            (0x80096010, "invalid"),
+            (0x800B010A, "untrusted"),  # CERT_E_CHAINING (for example self-signed)
+            (0x80096010, "invalid"),  # TRUST_E_BAD_DIGEST (for example tampering)
+            (0x800B0001, "unsupported"),
         ):
             with self.subTest(result=result):
                 verify_trust = Mock(side_effect=[result, 0])

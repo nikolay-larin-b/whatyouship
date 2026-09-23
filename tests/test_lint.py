@@ -6,6 +6,7 @@
 import unittest
 from pathlib import Path
 
+from whatyouship.config import LintConfiguration
 from whatyouship.lint import LintEngine, compare_findings
 from whatyouship.model import (
     ArtifactFile,
@@ -20,6 +21,7 @@ from whatyouship.model import (
 from whatyouship.rules.build_artifacts import BuildArtifactRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
+from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
@@ -228,13 +230,21 @@ class LintTests(unittest.TestCase):
             "PE", "x86_64", "executable", signature=SignatureMetadata(False)
         )
         files = [ArtifactFile(Path("app.exe"), 1, "0" * 64, binary=binary)]
-        rules = [UnsignedArtifactRule(), InvalidArtifactSignatureRule(), UnsignedBinaryRule()]
+        rules = [
+            UnsignedArtifactRule(),
+            UntrustedArtifactSignatureRule(),
+            InvalidArtifactSignatureRule(),
+            UnsignedBinaryRule(),
+        ]
 
         unsigned = LintEngine(rules).run(
             ReleaseArtifact(Path("release.msi"), files, ArtifactSignature("unsigned"))
         )
         invalid = LintEngine(rules).run(
             ReleaseArtifact(Path("release.msi"), files, ArtifactSignature("invalid"))
+        )
+        untrusted = LintEngine(rules).run(
+            ReleaseArtifact(Path("release.msi"), files, ArtifactSignature("untrusted"))
         )
         unsupported = LintEngine(rules).run(ReleaseArtifact(Path("release"), files))
 
@@ -249,7 +259,47 @@ class LintTests(unittest.TestCase):
         )
         self.assertEqual(invalid[0].severity, "error")
         self.assertEqual(
+            [finding.rule_id for finding in untrusted],
+            ["untrusted-artifact-signature", "unsigned-binary"],
+        )
+        self.assertEqual(
+            untrusted[0].message,
+            "Release artifact is signed, but the signer is not trusted.",
+        )
+        self.assertEqual(
             [finding.rule_id for finding in unsupported], ["unsigned-binary"]
+        )
+
+    def test_artifact_signature_baseline_transitions(self) -> None:
+        """Treat artifact signature status changes as semantic finding changes."""
+        engine = LintEngine(LintConfiguration().rules())
+        unsigned = ReleaseArtifact(
+            Path("unsigned.msi"), signature=ArtifactSignature("unsigned")
+        )
+        untrusted = ReleaseArtifact(
+            Path("untrusted.msi"), signature=ArtifactSignature("untrusted")
+        )
+        valid = ReleaseArtifact(
+            Path("valid.msi"), signature=ArtifactSignature("valid")
+        )
+
+        became_untrusted = compare_findings(
+            engine.run(unsigned), engine.run(untrusted)
+        )
+        became_valid = compare_findings(engine.run(untrusted), engine.run(valid))
+
+        self.assertEqual(
+            [finding.rule_id for finding in became_untrusted.new],
+            ["untrusted-artifact-signature"],
+        )
+        self.assertEqual(
+            [finding.rule_id for finding in became_untrusted.resolved],
+            ["unsigned-artifact"],
+        )
+        self.assertEqual(became_valid.new, [])
+        self.assertEqual(
+            [finding.rule_id for finding in became_valid.resolved],
+            ["untrusted-artifact-signature"],
         )
 
     def test_installation_scope_rule_reports_each_contradiction(self) -> None:

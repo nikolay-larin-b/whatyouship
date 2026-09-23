@@ -10,7 +10,9 @@ from typing import Literal
 
 
 Severity = Literal["warning", "error"]
-ArtifactSignatureStatus = Literal["unsupported", "unsigned", "valid", "invalid"]
+ArtifactSignatureStatus = Literal[
+    "unsupported", "unsigned", "valid", "untrusted", "invalid"
+]
 InstallationScopeKind = Literal["per-user", "per-machine", "dual-purpose", "ambiguous"]
 
 

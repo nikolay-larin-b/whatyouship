@@ -23,8 +23,9 @@ Binary inspection currently supports Windows executables and libraries.
 
 For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking
-is unsupported on Linux and macOS. ``lint`` reports unsigned artifacts and
-invalid artifact signatures when verification is supported. Directory and ZIP
+is unsupported on Linux and macOS. ``lint`` reports unsigned artifacts,
+signatures whose signer is not trusted, and cryptographically invalid artifact
+signatures when verification is supported. Directory and ZIP
 artifact signatures are unsupported. Package and contained binary signatures
 are checked independently.
 

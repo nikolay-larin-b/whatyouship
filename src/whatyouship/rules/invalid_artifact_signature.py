@@ -9,7 +9,7 @@ from whatyouship.model import Finding, ReleaseArtifact, Severity
 
 
 class InvalidArtifactSignatureRule:
-    """Flag artifacts whose own signature failed verification."""
+    """Flag artifacts whose own signature is cryptographically invalid."""
 
     rule_id = "invalid-artifact-signature"
 
@@ -21,7 +21,7 @@ class InvalidArtifactSignatureRule:
         self.severity = severity
 
     def check(self, artifact: ReleaseArtifact) -> list[Finding]:
-        """Report a failed artifact signature verification.
+        """Report a cryptographically invalid artifact signature.
 
         :param artifact: Artifact to examine.
         :returns: A finding for an invalid signature, otherwise an empty list.

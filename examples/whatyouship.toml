@@ -23,9 +23,13 @@ severity = "warning" # Report unsigned executables and libraries as warnings.
 enabled = true
 severity = "warning" # Report missing release artifact signatures.
 
+[rules.untrusted-artifact-signature]
+enabled = true
+severity = "warning" # Report signatures whose signer is not trusted.
+
 [rules.invalid-artifact-signature]
 enabled = true
-severity = "error" # Report failed release artifact signature checks.
+severity = "error" # Report cryptographically invalid release artifact signatures.
 
 [rules.inconsistent-installation-scope]
 enabled = true

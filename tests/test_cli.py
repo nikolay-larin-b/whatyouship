@@ -349,6 +349,11 @@ class CliTests(unittest.TestCase):
         output = io.StringIO()
         for status, expected in (
             ("unsigned", "unsigned-artifact | warning | . | Unsigned release artifact."),
+            (
+                "untrusted",
+                "untrusted-artifact-signature | warning | . | "
+                "Release artifact is signed, but the signer is not trusted.",
+            ),
             ("invalid", "invalid-artifact-signature | error | . | Invalid release artifact signature."),
         ):
             with self.subTest(status=status):

@@ -13,6 +13,7 @@ from whatyouship.model import Severity
 from whatyouship.rules.build_artifacts import DEFAULT_EXTENSIONS, BuildArtifactRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
+from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
@@ -74,6 +75,7 @@ class LintConfiguration:
     :param build_artifacts: Build artifact extension rule settings.
     :param unsigned_binary: Unsigned binary rule settings.
     :param unsigned_artifact: Unsigned release artifact rule settings.
+    :param untrusted_artifact_signature: Untrusted artifact signature settings.
     :param invalid_artifact_signature: Invalid artifact signature rule settings.
     :param installation_scope: Installation scope rule settings.
     """
@@ -81,6 +83,9 @@ class LintConfiguration:
     build_artifacts: BuildArtifactSettings = field(default_factory=BuildArtifactSettings)
     unsigned_binary: UnsignedBinarySettings = field(default_factory=UnsignedBinarySettings)
     unsigned_artifact: ArtifactSignatureRuleSettings = field(
+        default_factory=ArtifactSignatureRuleSettings
+    )
+    untrusted_artifact_signature: ArtifactSignatureRuleSettings = field(
         default_factory=ArtifactSignatureRuleSettings
     )
     invalid_artifact_signature: ArtifactSignatureRuleSettings = field(
@@ -107,6 +112,12 @@ class LintConfiguration:
             rules.append(UnsignedBinaryRule(severity=self.unsigned_binary.severity))
         if self.unsigned_artifact.enabled:
             rules.append(UnsignedArtifactRule(severity=self.unsigned_artifact.severity))
+        if self.untrusted_artifact_signature.enabled:
+            rules.append(
+                UntrustedArtifactSignatureRule(
+                    severity=self.untrusted_artifact_signature.severity
+                )
+            )
         if self.invalid_artifact_signature.enabled:
             rules.append(
                 InvalidArtifactSignatureRule(
@@ -202,7 +213,7 @@ def load_config(path: Path) -> LintConfiguration:
         raise ValueError("Configuration 'rules' must be a TOML table")
     unknown_rules = set(rules) - {
         "build-artifact-extension", "unsigned-binary", "unsigned-artifact",
-        "invalid-artifact-signature",
+        "untrusted-artifact-signature", "invalid-artifact-signature",
         "inconsistent-installation-scope",
     }
     if unknown_rules:
@@ -220,6 +231,11 @@ def load_config(path: Path) -> LintConfiguration:
     )
     artifact_enabled, artifact_severity, _ = _rule_settings(
         "unsigned-artifact", rules.get("unsigned-artifact", {}),
+        {"enabled", "severity"},
+    )
+    untrusted_enabled, untrusted_severity, _ = _rule_settings(
+        "untrusted-artifact-signature",
+        rules.get("untrusted-artifact-signature", {}),
         {"enabled", "severity"},
     )
     invalid_enabled, invalid_severity, _ = _rule_settings(
@@ -241,6 +257,9 @@ def load_config(path: Path) -> LintConfiguration:
         unsigned_binary=UnsignedBinarySettings(unsigned_enabled, unsigned_severity),
         unsigned_artifact=ArtifactSignatureRuleSettings(
             artifact_enabled, artifact_severity
+        ),
+        untrusted_artifact_signature=ArtifactSignatureRuleSettings(
+            untrusted_enabled, untrusted_severity
         ),
         invalid_artifact_signature=ArtifactSignatureRuleSettings(
             invalid_enabled, invalid_severity

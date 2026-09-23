@@ -58,6 +58,54 @@ _AUTHENTICODE_POLICY = _Guid(
     (ctypes.c_ubyte * 8)(0x8C, 0xC2, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE),
 )
 _TRUST_E_NOSIGNATURE = 0x800B0100
+_TRUST_E_PROVIDER_UNKNOWN = 0x800B0001
+_TRUST_E_ACTION_UNKNOWN = 0x800B0002
+_TRUST_E_SUBJECT_FORM_UNKNOWN = 0x800B0003
+_TRUST_E_SUBJECT_NOT_TRUSTED = 0x800B0004
+_TRUST_E_SYSTEM_ERROR = 0x80096001
+_TRUST_E_COUNTER_SIGNER = 0x80096003
+_TRUST_E_CERT_SIGNATURE = 0x80096004
+_TRUST_E_TIME_STAMP = 0x80096005
+_TRUST_E_BAD_DIGEST = 0x80096010
+_NTE_BAD_SIGNATURE = 0x80090006
+_CERTIFICATE_TRUST_ERRORS = {
+    _TRUST_E_SUBJECT_NOT_TRUSTED,
+    0x80092011,  # CRYPT_E_NO_REVOCATION_DLL
+    0x80092012,  # CRYPT_E_NO_REVOCATION_CHECK
+    0x80092013,  # CRYPT_E_REVOCATION_OFFLINE
+    0x800B0101,  # CERT_E_EXPIRED
+    0x800B0102,  # CERT_E_VALIDITYPERIODNESTING
+    0x800B0103,  # CERT_E_ROLE
+    0x800B0104,  # CERT_E_PATHLENCONST
+    0x800B0105,  # CERT_E_CRITICAL
+    0x800B0106,  # CERT_E_PURPOSE
+    0x800B0107,  # CERT_E_ISSUERCHAINING
+    0x800B0108,  # CERT_E_MALFORMED
+    0x800B0109,  # CERT_E_UNTRUSTEDROOT
+    0x800B010A,  # CERT_E_CHAINING
+    0x800B010C,  # CERT_E_REVOKED
+    0x800B010D,  # CERT_E_UNTRUSTEDTESTROOT
+    0x800B010E,  # CERT_E_REVOCATION_FAILURE
+    0x800B010F,  # CERT_E_CN_NO_MATCH
+    0x800B0110,  # CERT_E_WRONG_USAGE
+    0x800B0111,  # TRUST_E_EXPLICIT_DISTRUST
+    0x800B0112,  # CERT_E_UNTRUSTEDCA
+    0x800B0113,  # CERT_E_INVALID_POLICY
+    0x800B0114,  # CERT_E_INVALID_NAME
+}
+_INVALID_SIGNATURE_ERRORS = {
+    _NTE_BAD_SIGNATURE,
+    _TRUST_E_COUNTER_SIGNER,
+    _TRUST_E_CERT_SIGNATURE,
+    _TRUST_E_TIME_STAMP,
+    _TRUST_E_BAD_DIGEST,
+}
+_UNSUPPORTED_VERIFICATION_ERRORS = {
+    _TRUST_E_PROVIDER_UNKNOWN,
+    _TRUST_E_ACTION_UNKNOWN,
+    _TRUST_E_SUBJECT_FORM_UNKNOWN,
+    _TRUST_E_SYSTEM_ERROR,
+}
 _WTD_UI_NONE = 2
 _WTD_CHOICE_FILE = 1
 _WTD_STATEACTION_VERIFY = 1
@@ -73,7 +121,7 @@ class WindowsAuthenticodeVerifier:
         """Verify a file using WinVerifyTrust's Authenticode policy.
 
         :param source_path: Release artifact to verify.
-        :returns: Valid, unsigned, or invalid signature status.
+        :returns: Valid, unsigned, untrusted, invalid, or unsupported status.
         :raises OSError: If the Windows trust provider cannot be loaded.
         """
         wintrust = ctypes.WinDLL("wintrust", use_last_error=True)
@@ -103,8 +151,15 @@ class WindowsAuthenticodeVerifier:
             data.dwStateAction = _WTD_STATEACTION_CLOSE
             verify_trust(None, ctypes.byref(_AUTHENTICODE_POLICY), ctypes.byref(data))
 
-        if result == 0:
+        status = result & 0xFFFFFFFF
+        if status == 0:
             return ArtifactSignature(status="valid")
-        if result & 0xFFFFFFFF == _TRUST_E_NOSIGNATURE:
+        if status == _TRUST_E_NOSIGNATURE:
             return ArtifactSignature(status="unsigned")
-        return ArtifactSignature(status="invalid")
+        if status in _CERTIFICATE_TRUST_ERRORS:
+            return ArtifactSignature(status="untrusted")
+        if status in _INVALID_SIGNATURE_ERRORS:
+            return ArtifactSignature(status="invalid")
+        if status in _UNSUPPORTED_VERIFICATION_ERRORS:
+            return ArtifactSignature(status="unsupported")
+        return ArtifactSignature(status="unsupported")

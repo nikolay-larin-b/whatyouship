@@ -25,6 +25,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIn(".lib", config.build_artifacts.extensions)
         self.assertEqual(config.unsigned_binary.severity, "warning")
         self.assertEqual(config.unsigned_artifact.severity, "warning")
+        self.assertEqual(config.untrusted_artifact_signature.severity, "warning")
         self.assertEqual(config.invalid_artifact_signature.severity, "error")
         self.assertEqual(config.installation_scope.severity, "warning")
 
@@ -54,7 +55,7 @@ class ConfigTests(unittest.TestCase):
             config = load_config(path)
 
         self.assertEqual(config.build_artifacts.extensions, frozenset({".obj", ".lib"}))
-        self.assertEqual(len(config.rules()), 4)
+        self.assertEqual(len(config.rules()), 5)
 
     def test_artifact_signature_rules_accept_common_settings(self) -> None:
         """Configure enabled state and severity for artifact signature rules."""
@@ -62,14 +63,16 @@ class ConfigTests(unittest.TestCase):
             path = Path(temporary_directory) / "config.toml"
             path.write_text(
                 "[rules.unsigned-artifact]\nenabled = false\n"
+                "[rules.untrusted-artifact-signature]\nseverity = 'error'\n"
                 "[rules.invalid-artifact-signature]\nseverity = 'warning'\n"
             )
 
             config = load_config(path)
 
         self.assertFalse(config.unsigned_artifact.enabled)
+        self.assertEqual(config.untrusted_artifact_signature.severity, "error")
         self.assertEqual(config.invalid_artifact_signature.severity, "warning")
-        self.assertEqual(len(config.rules()), 4)
+        self.assertEqual(len(config.rules()), 5)
 
     def test_installation_scope_rule_accepts_common_settings(self) -> None:
         """Configure the new scope rule through the existing TOML format."""
@@ -84,7 +87,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.installation_scope.enabled)
         self.assertEqual(config.installation_scope.severity, "error")
-        self.assertEqual(len(config.rules()), 4)
+        self.assertEqual(len(config.rules()), 5)
 
     def test_missing_file_has_readable_error(self) -> None:
         """Name the missing configuration file in the error."""
