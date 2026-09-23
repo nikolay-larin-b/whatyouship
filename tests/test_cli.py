@@ -18,6 +18,13 @@ from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, I
 class CliTests(unittest.TestCase):
     """Verify the supported command-line options."""
 
+    _HELP_HEADER = (
+        "WhatYouShip 0.1.0b1\n"
+        "Copyright (c) 2026 Nikolay Larin\n"
+        "\n"
+        "Know what you ship. Know what you install.\n"
+    )
+
     def test_help(self) -> None:
         """Verify that ``--help`` prints usage information and exits."""
         output = io.StringIO()
@@ -25,6 +32,7 @@ class CliTests(unittest.TestCase):
             main(["--help"])
 
         self.assertEqual(result.exception.code, 0)
+        self.assertTrue(output.getvalue().startswith(self._HELP_HEADER))
         self.assertIn("usage: whatyouship", output.getvalue())
         self.assertIn("--version", output.getvalue())
         self.assertIn("lint", output.getvalue())
@@ -45,8 +53,24 @@ class CliTests(unittest.TestCase):
         self.assertTrue(help_text.endswith(expected_footer))
         self.assertNotIn("<command> --help", help_text)
 
+    def test_subcommand_help_uses_project_header(self) -> None:
+        """Prepend the shared project identity to every subcommand help screen."""
+        for command in ("inspect", "lint", "compare"):
+            with self.subTest(command=command):
+                output = io.StringIO()
+                with (
+                    contextlib.redirect_stdout(output),
+                    self.assertRaises(SystemExit) as result,
+                ):
+                    main([command, "--help"])
+
+                self.assertEqual(result.exception.code, 0)
+                self.assertTrue(output.getvalue().startswith(self._HELP_HEADER))
+                self.assertIn(f"usage: whatyouship {command}", output.getvalue())
+
     def test_version(self) -> None:
         """Verify that ``--version`` prints the package version and exits."""
+        self.assertEqual(__version__, "0.1.0b1")
         output = io.StringIO()
         with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as result:
             main(["--version"])

@@ -25,6 +25,24 @@ _OUTPUT_FORMATS: dict[str, OutputFormat] = {
 FailThreshold = Literal["error", "warning", "never"]
 
 
+class _WhatYouShipArgumentParser(argparse.ArgumentParser):
+    """Add project identity above standard command help."""
+
+    def format_help(self) -> str:
+        """Prepend the version, copyright, and tagline to command help.
+
+        :returns: Complete command help text.
+        """
+        banner = (
+            f"WhatYouShip {__version__}\n"
+            "Copyright (c) 2026 Nikolay Larin\n"
+            "\n"
+            "Know what you ship. Know what you install.\n"
+            "\n"
+        )
+        return banner + super().format_help()
+
+
 def _output_format(path: Path | None, command: str) -> OutputFormat:
     """Select the output format from a requested file extension.
 
@@ -66,9 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     :returns: One when lint findings reach the threshold, otherwise zero.
     :raises SystemExit: When help or version is requested, or an error occurs.
     """
-    parser = argparse.ArgumentParser(
+    parser = _WhatYouShipArgumentParser(
         prog="whatyouship",
-        description="Know what you ship. Know what you install.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Command-specific help:\n"
