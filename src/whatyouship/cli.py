@@ -69,6 +69,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="whatyouship",
         description="Know what you ship. Know what you install.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Command-specific help:\n"
+            "  `whatyouship inspect --help`\n"
+            "  `whatyouship lint --help`\n"
+            "  `whatyouship compare --help`\n"
+            "\n"
+            "Report output:\n"
+            "  Use `-o/--output <file>`; the extension selects the format.\n"
+            "  `.txt`   Text report for inspect, lint, and compare.\n"
+            "  `.json`  JSON report for inspect, lint, and compare.\n"
+            "  `.csv`   CSV report for inspect and lint."
+        ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)

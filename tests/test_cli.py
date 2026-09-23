@@ -29,6 +29,21 @@ class CliTests(unittest.TestCase):
         self.assertIn("--version", output.getvalue())
         self.assertIn("lint", output.getvalue())
         self.assertIn("compare", output.getvalue())
+        help_text = output.getvalue()
+        expected_footer = (
+            "Command-specific help:\n"
+            "  `whatyouship inspect --help`\n"
+            "  `whatyouship lint --help`\n"
+            "  `whatyouship compare --help`\n"
+            "\n"
+            "Report output:\n"
+            "  Use `-o/--output <file>`; the extension selects the format.\n"
+            "  `.txt`   Text report for inspect, lint, and compare.\n"
+            "  `.json`  JSON report for inspect, lint, and compare.\n"
+            "  `.csv`   CSV report for inspect and lint.\n"
+        )
+        self.assertTrue(help_text.endswith(expected_footer))
+        self.assertNotIn("<command> --help", help_text)
 
     def test_version(self) -> None:
         """Verify that ``--version`` prints the package version and exits."""
