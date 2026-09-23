@@ -4,7 +4,8 @@
 
 WhatYouShip is an open-source release artifact linter. It analyzes the software package that users actually receive — not the source tree or build configuration.
 
-It can inspect, lint, and compare directory, MSI, NSIS installer, and ZIP releases.
+It can inspect, lint, and compare directory, MSI, NSIS installer, Inno Setup
+installer, and ZIP releases.
 
 ## Quick start
 
@@ -127,12 +128,13 @@ In addition to added, removed, changed, and unchanged files, WhatYouShip reports
 
 ## Supported artifacts
 
-| Artifact  | Inspect | Lint | Compare |
-| --------- | ------- | ---- | ------- |
-| Directory | Yes     | Yes  | Yes     |
-| MSI       | Yes     | Yes  | Yes     |
-| NSIS EXE  | Yes     | Yes  | Yes     |
-| ZIP       | Yes     | Yes  | Yes     |
+| Artifact       | Inspect | Lint | Compare |
+| -------------- | ------- | ---- | ------- |
+| Directory      | Yes     | Yes  | Yes     |
+| MSI            | Yes     | Yes  | Yes     |
+| NSIS EXE       | Yes     | Yes  | Yes     |
+| Inno Setup EXE | Yes     | Yes  | Yes     |
+| ZIP            | Yes     | Yes  | Yes     |
 
 MSI extraction and static MSI analysis are platform-independent.
 
@@ -145,6 +147,11 @@ WhatYouShip inspects the extracted payload; extracted paths are not an exact
 simulation of runtime installation paths. On Windows, the outer installer's
 Authenticode signature is checked separately from signatures of binaries in its
 payload.
+
+Inno Setup installers require `innoextract` to be available in `PATH`. Their
+extracted layout is a payload representation, not an exact simulation of
+runtime installation paths. On Windows, the outer installer's Authenticode
+signature is checked separately from signatures of binaries in its payload.
 
 ## MSI installation scope
 
@@ -228,6 +235,7 @@ Extracted artifacts are cached by SHA-256:
 ```text
 ~/.whatyouship/cache/msi/v1/
 ~/.whatyouship/cache/nsis/v1/
+~/.whatyouship/cache/inno/v1/
 ~/.whatyouship/cache/zip/v1/
 ```
 

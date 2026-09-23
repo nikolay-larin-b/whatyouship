@@ -221,7 +221,10 @@ class NsisInspectorTests(unittest.TestCase):
 
         with (
             patch("whatyouship.inspectors.nsis_cache.shutil.which") as which,
-            self.assertRaisesRegex(ValueError, "Unsupported EXE artifact .*not an NSIS installer"),
+            self.assertRaisesRegex(
+                ValueError,
+                "Unsupported EXE artifact .*not an NSIS or Inno Setup installer",
+            ),
         ):
             inspect_artifact(source)
 

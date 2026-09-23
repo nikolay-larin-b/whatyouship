@@ -8,7 +8,7 @@ release artifacts. It aims to analyze what users actually receive, rather
 than source code or build configuration.
 
 The project is in an early stage of development. Currently available for
-directory, MSI, NSIS installer, and ZIP artifacts:
+directory, MSI, NSIS installer, Inno Setup installer, and ZIP artifacts:
 
 * ``inspect <artifact>`` to show the files in a release artifact.
 * ``lint <artifact>`` to report release findings, including suspicious files and scope conflicts.
@@ -57,6 +57,14 @@ NSIS installer ``.exe`` files are detected before extraction and require
 SHA-256 under ``~/.whatyouship/cache/nsis/v1/`` and use the same inspection,
 binary analysis, lint rules, and comparison logic as directories. Extracted
 paths describe the payload and are not an exact simulation of runtime
+installation paths. On Windows, the outer installer's Authenticode signature
+is checked separately from signatures of binaries in the payload.
+
+Inno Setup installer ``.exe`` files are detected independently from NSIS and
+require ``innoextract`` in ``PATH``. Their payloads are cached by installer
+SHA-256 under ``~/.whatyouship/cache/inno/v1/`` and use the same inspection,
+binary analysis, lint rules, and comparison logic as directories. Extracted
+paths are a payload representation rather than an exact simulation of runtime
 installation paths. On Windows, the outer installer's Authenticode signature
 is checked separately from signatures of binaries in the payload.
 
