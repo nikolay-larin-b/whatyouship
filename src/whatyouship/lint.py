@@ -59,22 +59,20 @@ class BaselineComparison:
 def compare_findings(
     previous: Iterable[Finding], current: Iterable[Finding]
 ) -> BaselineComparison:
-    """Compare lint findings by rule ID and relative file path.
+    """Compare findings by rule ID, relative path, and semantic identity.
 
     :param previous: Findings from the baseline artifact.
     :param current: Findings from the current artifact.
     :returns: Existing, new, and resolved findings in stable key order.
     """
-    previous_by_key: dict[tuple[str, Path], list[Finding]] = {}
-    current_by_key: dict[tuple[str, Path], list[Finding]] = {}
+    previous_by_key: dict[tuple[str, Path, str], list[Finding]] = {}
+    current_by_key: dict[tuple[str, Path, str], list[Finding]] = {}
     for finding in previous:
-        previous_by_key.setdefault((finding.rule_id, finding.relative_path), []).append(
-            finding
-        )
+        key = (finding.rule_id, finding.relative_path, finding.identity)
+        previous_by_key.setdefault(key, []).append(finding)
     for finding in current:
-        current_by_key.setdefault((finding.rule_id, finding.relative_path), []).append(
-            finding
-        )
+        key = (finding.rule_id, finding.relative_path, finding.identity)
+        current_by_key.setdefault(key, []).append(finding)
     previous_keys = previous_by_key.keys()
     current_keys = current_by_key.keys()
     return BaselineComparison(

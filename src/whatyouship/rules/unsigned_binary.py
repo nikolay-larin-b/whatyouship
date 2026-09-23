@@ -36,6 +36,7 @@ class UnsignedBinaryRule:
                         rule_id="unsigned-binary",
                         severity=self._severity,
                         relative_path=file.relative_path,
+                        identity="unsigned",
                         message=f"Unsigned {binary.kind}.",
                     )
                 )

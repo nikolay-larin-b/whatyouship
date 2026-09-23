@@ -42,6 +42,7 @@ class BuildArtifactRule:
                         rule_id="build-artifact-extension",
                         severity=self._severity,
                         relative_path=file.relative_path,
+                        identity=f"extension:{extension}",
                         message=f"Suspicious build artifact extension: {extension}.",
                     )
                 )

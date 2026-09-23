@@ -99,8 +99,22 @@ class MsiScopeTests(unittest.TestCase):
         })
 
         self.assertEqual(scope.kind, "ambiguous")
-        self.assertTrue(any("CommonAppDataFolder" in item for item in scope.conflicts))
-        self.assertTrue(any("HKLM registry key path 'MachineKey'" in item for item in scope.conflicts))
+        self.assertTrue(
+            any("CommonAppDataFolder" in item.message for item in scope.conflicts)
+        )
+        self.assertTrue(
+            any(
+                "HKLM registry key path 'MachineKey'" in item.message
+                for item in scope.conflicts
+            )
+        )
+        self.assertEqual(
+            {conflict.identity for conflict in scope.conflicts},
+            {
+                "component:Mixed:fixed-per-machine:directory:CommonAppDataFolder",
+                "component:Mixed:fixed-per-machine:registry-key-path:MachineKey",
+            },
+        )
 
     def test_per_machine_package_with_user_destinations_is_ambiguous(self) -> None:
         """Report HKCU and AppData destinations in a machine package."""
@@ -112,8 +126,8 @@ class MsiScopeTests(unittest.TestCase):
         })
 
         self.assertEqual(scope.kind, "ambiguous")
-        self.assertTrue(any("AppDataFolder" in item for item in scope.conflicts))
-        self.assertTrue(any("HKCU" in item for item in scope.conflicts))
+        self.assertTrue(any("AppDataFolder" in item.message for item in scope.conflicts))
+        self.assertTrue(any("HKCU" in item.message for item in scope.conflicts))
 
     def test_per_user_package_with_fixed_machine_component_regression(self) -> None:
         """Keep a JASON 6.1-like HKLM component visible in a per-user package."""
@@ -131,7 +145,8 @@ class MsiScopeTests(unittest.TestCase):
         self.assertEqual(scope.kind, "ambiguous")
         self.assertTrue(any(
             "Component 'CM_CP_JASON.exe' uses fixed per-machine HKLM registry entry"
-            in conflict and "per-user installation scope" in conflict
+            in conflict.message
+            and "per-user installation scope" in conflict.message
             for conflict in scope.conflicts
         ))
         findings = InconsistentInstallationScopeRule().check(
@@ -217,7 +232,12 @@ class MsiScopeTests(unittest.TestCase):
                 })
 
                 self.assertEqual(scope.kind, "ambiguous")
-                self.assertTrue(any("HKCU registry key path" in item for item in scope.conflicts))
+                self.assertTrue(
+                    any(
+                        "HKCU registry key path" in item.message
+                        for item in scope.conflicts
+                    )
+                )
 
         scope = analyze_msi_scope({
             "Property": [{"Property": "ALLUSERS", "Value": "1"}],
@@ -235,8 +255,15 @@ class MsiScopeTests(unittest.TestCase):
         })
 
         self.assertEqual(scope.kind, "ambiguous")
-        self.assertTrue(any("HKCU registry entry 'OtherUserKey'" in item for item in scope.conflicts))
-        self.assertFalse(any("ShortcutKey" in item for item in scope.conflicts))
+        self.assertTrue(
+            any(
+                "HKCU registry entry 'OtherUserKey'" in item.message
+                for item in scope.conflicts
+            )
+        )
+        self.assertFalse(
+            any("ShortcutKey" in item.message for item in scope.conflicts)
+        )
 
     def test_dual_purpose_package_with_fixed_root_is_ambiguous(self) -> None:
         """Flag a fixed HKLM entry that cannot follow a per-user choice."""
@@ -247,8 +274,8 @@ class MsiScopeTests(unittest.TestCase):
         })
 
         self.assertEqual(scope.kind, "ambiguous")
-        self.assertIn("dual-purpose", scope.conflicts[0])
-        self.assertIn("HKLM", scope.conflicts[0])
+        self.assertIn("dual-purpose", scope.conflicts[0].message)
+        self.assertIn("HKLM", scope.conflicts[0].message)
 
     def test_component_mixes_user_and_machine_destinations(self) -> None:
         """Identify an internally mixed component even before install choice."""
@@ -260,7 +287,12 @@ class MsiScopeTests(unittest.TestCase):
         })
 
         self.assertEqual(scope.kind, "ambiguous")
-        self.assertTrue(any("mixes per-user and per-machine" in item for item in scope.conflicts))
+        self.assertTrue(
+            any(
+                "mixes per-user and per-machine" in item.message
+                for item in scope.conflicts
+            )
+        )
 
     def test_custom_action_changes_declared_scope(self) -> None:
         """Detect explicit Type 51 scope changes, including flagged actions."""
@@ -273,7 +305,7 @@ class MsiScopeTests(unittest.TestCase):
         })
 
         self.assertEqual(scope.kind, "ambiguous")
-        self.assertIn("CustomAction 'ChangeScope'", scope.conflicts[0])
+        self.assertIn("CustomAction 'ChangeScope'", scope.conflicts[0].message)
 
     def test_formatted_custom_action_scope_is_ambiguous(self) -> None:
         """Report a scope property set from runtime formatted text."""
@@ -286,7 +318,7 @@ class MsiScopeTests(unittest.TestCase):
         })
 
         self.assertEqual(scope.kind, "ambiguous")
-        self.assertIn("formatted value", scope.conflicts[0])
+        self.assertIn("formatted value", scope.conflicts[0].message)
 
     def test_ignored_msiinstallperuser_property_is_reported(self) -> None:
         """Explain why MSIINSTALLPERUSER cannot override ALLUSERS=1."""
@@ -296,7 +328,7 @@ class MsiScopeTests(unittest.TestCase):
         ]})
 
         self.assertEqual(scope.kind, "ambiguous")
-        self.assertIn("ignored unless ALLUSERS=2", scope.conflicts[0])
+        self.assertIn("ignored unless ALLUSERS=2", scope.conflicts[0].message)
 
     def test_ignored_matching_per_user_preference_has_no_conflict(self) -> None:
         """Keep an ignored preference from masquerading as mixed scope."""

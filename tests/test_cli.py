@@ -12,7 +12,15 @@ from unittest.mock import patch
 
 from whatyouship import __version__
 from whatyouship.cli import main
-from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, InstallationScope, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import (
+    ArtifactFile,
+    ArtifactSignature,
+    BinaryMetadata,
+    InstallationScope,
+    InstallationScopeConflict,
+    ReleaseArtifact,
+    SignatureMetadata,
+)
 
 
 class CliTests(unittest.TestCase):
@@ -363,7 +371,13 @@ class CliTests(unittest.TestCase):
         artifact = ReleaseArtifact(
             Path("release.msi"),
             installation_scope=InstallationScope(
-                "ambiguous", ("Component 'App' uses fixed per-machine HKLM registry entry.",)
+                "ambiguous",
+                (
+                    InstallationScopeConflict(
+                        "component:App:fixed-per-machine:registry-entry:MachineKey",
+                        "Component 'App' uses fixed per-machine HKLM registry entry.",
+                    ),
+                ),
             ),
         )
         output = io.StringIO()

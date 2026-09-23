@@ -11,7 +11,11 @@ from pathlib import Path
 
 import pymsi
 
-from whatyouship.model import InstallationScope, InstallationScopeKind
+from whatyouship.model import (
+    InstallationScope,
+    InstallationScopeConflict,
+    InstallationScopeKind,
+)
 
 
 _USER_DIRECTORIES = frozenset({
@@ -87,6 +91,16 @@ def _non_advertised_shortcut_components(
     }
 
 
+def _conflict(identity: str, message: str) -> InstallationScopeConflict:
+    """Create a scope conflict with a stable semantic identity.
+
+    :param identity: Identity derived from MSI table keys and conflict type.
+    :param message: Human-readable explanation.
+    :returns: Structured installation scope conflict.
+    """
+    return InstallationScopeConflict(identity, message)
+
+
 def analyze_msi_scope(
     tables: Mapping[str, Iterable[Mapping[str, object]]],
 ) -> InstallationScope:
@@ -102,7 +116,7 @@ def analyze_msi_scope(
     }
     allusers = properties.get("ALLUSERS", "")
     per_user_property = properties.get("MSIINSTALLPERUSER")
-    conflicts: list[str] = []
+    conflicts: list[InstallationScopeConflict] = []
 
     declared: InstallationScopeKind
     if allusers == "1":
@@ -113,18 +127,23 @@ def analyze_msi_scope(
         declared = "per-user"
     else:
         declared = "ambiguous"
-        conflicts.append(f"Property ALLUSERS has unsupported value '{allusers}'.")
+        conflicts.append(_conflict(
+            "property:ALLUSERS:unsupported-value",
+            f"Property ALLUSERS has unsupported value '{allusers}'.",
+        ))
 
     if allusers == "2":
         if per_user_property not in (None, "", "1"):
-            conflicts.append(
-                f"Property MSIINSTALLPERUSER has unsupported value '{per_user_property}'."
-            )
+            conflicts.append(_conflict(
+                "property:MSIINSTALLPERUSER:unsupported-value",
+                f"Property MSIINSTALLPERUSER has unsupported value '{per_user_property}'.",
+            ))
     elif allusers == "1" and per_user_property not in (None, ""):
-        conflicts.append(
+        conflicts.append(_conflict(
+            "property:MSIINSTALLPERUSER:ignored-with-fixed-ALLUSERS",
             "Property MSIINSTALLPERUSER is ignored unless ALLUSERS=2; "
-            f"ALLUSERS={allusers or '(unset)'} and MSIINSTALLPERUSER={per_user_property}."
-        )
+            f"ALLUSERS={allusers or '(unset)'} and MSIINSTALLPERUSER={per_user_property}.",
+        ))
 
     for row in sorted(rows["CustomAction"], key=lambda item: _value(item, "Action")):
         action_type = _integer(row.get("Type"))
@@ -137,31 +156,36 @@ def analyze_msi_scope(
         target = _value(row, "Target")
         if property_name == "MSIINSTALLPERUSER" and allusers in ("", "1"):
             if allusers == "1" and target == "1":
-                conflicts.append(
+                conflicts.append(_conflict(
+                    f"custom-action:{action}:per-user-request-ignored",
                     f"CustomAction '{action}' requests per-user installation through "
-                    "MSIINSTALLPERUSER, which is ignored unless ALLUSERS=2."
-                )
+                    "MSIINSTALLPERUSER, which is ignored unless ALLUSERS=2.",
+                ))
             continue
         if "[" in target or "]" in target:
-            conflicts.append(
+            conflicts.append(_conflict(
+                f"custom-action:{action}:{property_name}:formatted-value",
                 f"CustomAction '{action}' sets {property_name} from a formatted value; "
-                "the resulting installation scope is ambiguous."
-            )
+                "the resulting installation scope is ambiguous.",
+            ))
         elif property_name == "ALLUSERS":
             if target not in ("", "1", "2"):
-                conflicts.append(
-                    f"CustomAction '{action}' sets ALLUSERS to unsupported value '{target}'."
-                )
+                conflicts.append(_conflict(
+                    f"custom-action:{action}:ALLUSERS:unsupported-value",
+                    f"CustomAction '{action}' sets ALLUSERS to unsupported value '{target}'.",
+                ))
             elif allusers != "2" and target != allusers:
-                conflicts.append(
+                conflicts.append(_conflict(
+                    f"custom-action:{action}:ALLUSERS:conflicts-property",
                     f"CustomAction '{action}' sets ALLUSERS={target or '(unset)'} "
-                    f"while Property ALLUSERS={allusers or '(unset)'}."
-                )
+                    f"while Property ALLUSERS={allusers or '(unset)'}.",
+                ))
         elif target not in ("", "1"):
-            conflicts.append(
+            conflicts.append(_conflict(
+                f"custom-action:{action}:MSIINSTALLPERUSER:unsupported-value",
                 f"CustomAction '{action}' sets MSIINSTALLPERUSER to unsupported "
-                f"value '{target}'."
-            )
+                f"value '{target}'.",
+            ))
 
     parents = {
         _value(row, "Directory"): _value(row, "Directory_Parent")
@@ -185,19 +209,21 @@ def analyze_msi_scope(
                 declared in ("per-user", "per-machine") and scope != declared
             )
         ):
-            conflicts.append(
-                f"Registry '{_value(registry, 'Registry')}' uses fixed {scope} root "
+            registry_id = _value(registry, "Registry")
+            conflicts.append(_conflict(
+                f"registry:{registry_id}:fixed-{scope}-without-component",
+                f"Registry '{registry_id}' uses fixed {scope} root "
                 f"without a matching component while the package declares {declared} "
-                "installation scope."
-            )
+                "installation scope.",
+            ))
 
     for component in sorted(rows["Component"], key=lambda item: _value(item, "Component")):
         component_id = _value(component, "Component")
-        signals: list[tuple[InstallationScopeKind, str]] = []
+        signals: list[tuple[InstallationScopeKind, str, str]] = []
         destination = _directory_scope(_value(component, "Directory_"), parents)
         if destination is not None:
             scope, anchor = destination
-            signals.append((scope, f"directory '{anchor}'"))
+            signals.append((scope, f"directory:{anchor}", f"directory '{anchor}'"))
 
         attributes = _integer(component.get("Attributes")) or 0
         keypath = _value(component, "KeyPath") if attributes & 0x04 else ""
@@ -219,29 +245,42 @@ def analyze_msi_scope(
                 and component_id in non_advertised_shortcut_components
             ):
                 continue
-            kind = "registry key path" if registry_id == keypath else "registry entry"
-            signals.append((scope, f"{root_name} {kind} '{registry_id}'"))
+            if registry_id == keypath:
+                kind_id = "registry-key-path"
+                kind_name = "registry key path"
+            else:
+                kind_id = "registry-entry"
+                kind_name = "registry entry"
+            signals.append((
+                scope,
+                f"{kind_id}:{registry_id}",
+                f"{root_name} {kind_name} '{registry_id}'",
+            ))
 
-        scopes = {scope for scope, _ in signals}
+        scopes = {scope for scope, _, _ in signals}
         if len(scopes) > 1:
-            conflicts.append(
-                f"Component '{component_id}' mixes per-user and per-machine destinations."
-            )
+            conflicts.append(_conflict(
+                f"component:{component_id}:mixed-destinations",
+                f"Component '{component_id}' mixes per-user and per-machine destinations.",
+            ))
 
         if _value(component, "Condition"):
             continue
-        for scope, destination_name in signals:
+        for scope, destination_id, destination_name in signals:
             if declared == "dual-purpose" or (
                 declared in ("per-user", "per-machine") and scope != declared
             ):
-                conflicts.append(
+                conflicts.append(_conflict(
+                    f"component:{component_id}:fixed-{scope}:{destination_id}",
                     f"Component '{component_id}' uses fixed {scope} {destination_name} "
-                    f"while the package declares {declared} installation scope."
-                )
+                    f"while the package declares {declared} installation scope.",
+                ))
 
     return InstallationScope(
         kind="ambiguous" if conflicts else declared,
-        conflicts=tuple(dict.fromkeys(conflicts)),
+        conflicts=tuple(
+            {conflict.identity: conflict for conflict in conflicts}.values()
+        ),
     )
 
 

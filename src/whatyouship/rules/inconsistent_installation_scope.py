@@ -30,6 +30,12 @@ class InconsistentInstallationScopeRule:
         if scope is None:
             return []
         return [
-            Finding(self.rule_id, self.severity, Path("."), conflict)
+            Finding(
+                self.rule_id,
+                self.severity,
+                Path("."),
+                conflict.identity,
+                conflict.message,
+            )
             for conflict in scope.conflicts
         ]

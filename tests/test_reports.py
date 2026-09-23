@@ -17,8 +17,14 @@ from whatyouship import __version__
 from whatyouship.cli import main
 from whatyouship.compare import ComparisonResult, SemanticDifference
 from whatyouship.model import (
-    ArtifactFile, ArtifactSignature, BinaryMetadata, Finding, InstallationScope,
-    ReleaseArtifact, SignatureMetadata,
+    ArtifactFile,
+    ArtifactSignature,
+    BinaryMetadata,
+    Finding,
+    InstallationScope,
+    InstallationScopeConflict,
+    ReleaseArtifact,
+    SignatureMetadata,
 )
 from whatyouship.report import CompareReport, LintReport
 from whatyouship.renderers.csv import INSPECT_COLUMNS, LINT_COLUMNS, render_csv
@@ -67,7 +73,10 @@ class ReportOutputTests(unittest.TestCase):
                 ),
             )],
             signature=ArtifactSignature("valid", "CN=Package Publisher", timestamp),
-            installation_scope=InstallationScope("ambiguous", ("Conflicting registry root",)),
+            installation_scope=InstallationScope(
+                "ambiguous",
+                (InstallationScopeConflict("registry:conflict", "Conflicting registry root"),),
+            ),
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
             target = Path(temporary_directory) / "inspect.json"
@@ -188,7 +197,13 @@ class ReportOutputTests(unittest.TestCase):
 
     def test_lint_csv_has_one_row_per_finding_and_quotes_message(self) -> None:
         """Preserve punctuation and newlines in CSV finding messages."""
-        finding = Finding("sample", "warning", Path("a,b.obj"), 'A "quoted",\nmessage')
+        finding = Finding(
+            "sample",
+            "warning",
+            Path("a,b.obj"),
+            "sample-conflict",
+            'A "quoted",\nmessage',
+        )
         report = LintReport(ReleaseArtifact(Path("release")), [finding])
 
         raw = render_csv(report)

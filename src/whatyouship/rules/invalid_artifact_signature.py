@@ -33,6 +33,7 @@ class InvalidArtifactSignatureRule:
                 self.rule_id,
                 self.severity,
                 Path("."),
+                "invalid",
                 "Invalid release artifact signature.",
             )
         ]

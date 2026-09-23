@@ -28,4 +28,12 @@ class UnsignedArtifactRule:
         """
         if artifact.signature.status != "unsigned":
             return []
-        return [Finding(self.rule_id, self.severity, Path("."), "Unsigned release artifact.")]
+        return [
+            Finding(
+                self.rule_id,
+                self.severity,
+                Path("."),
+                "unsigned",
+                "Unsigned release artifact.",
+            )
+        ]

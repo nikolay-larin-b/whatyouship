@@ -14,6 +14,18 @@ ArtifactSignatureStatus = Literal["unsupported", "unsigned", "valid", "invalid"]
 InstallationScopeKind = Literal["per-user", "per-machine", "dual-purpose", "ambiguous"]
 
 
+@dataclass(frozen=True)
+class InstallationScopeConflict:
+    """Describe one semantically identified installation scope conflict.
+
+    :param identity: Stable rule-facing identity independent of display text.
+    :param message: Human-readable explanation of the conflict.
+    """
+
+    identity: str
+    message: str
+
+
 @dataclass
 class InstallationScope:
     """Describe an artifact's intended installation context and contradictions.
@@ -23,7 +35,7 @@ class InstallationScope:
     """
 
     kind: InstallationScopeKind
-    conflicts: tuple[str, ...] = ()
+    conflicts: tuple[InstallationScopeConflict, ...] = ()
 
 
 @dataclass
@@ -115,10 +127,12 @@ class Finding:
     :param rule_id: Identifier of the rule that reported the finding.
     :param severity: Severity of the finding.
     :param relative_path: Affected file path, or ``.`` for the artifact itself.
+    :param identity: Stable semantic identity assigned by the reporting rule.
     :param message: Short description of the condition.
     """
 
     rule_id: str
     severity: Severity
     relative_path: Path
+    identity: str
     message: str

@@ -66,7 +66,7 @@ def _artifact_data(artifact: ReleaseArtifact) -> dict[str, Any]:
         },
         "installation_scope": None if scope is None else {
             "kind": scope.kind,
-            "conflicts": list(scope.conflicts),
+            "conflicts": [conflict.message for conflict in scope.conflicts],
         },
         "files": [_file_data(file) for file in artifact.files],
     }

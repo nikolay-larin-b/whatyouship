@@ -7,7 +7,16 @@ import unittest
 from pathlib import Path
 
 from whatyouship.lint import LintEngine, compare_findings
-from whatyouship.model import ArtifactFile, ArtifactSignature, BinaryMetadata, Finding, InstallationScope, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import (
+    ArtifactFile,
+    ArtifactSignature,
+    BinaryMetadata,
+    Finding,
+    InstallationScope,
+    InstallationScopeConflict,
+    ReleaseArtifact,
+    SignatureMetadata,
+)
 from whatyouship.rules.build_artifacts import BuildArtifactRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
@@ -39,32 +48,73 @@ class LintTests(unittest.TestCase):
 
     def test_engine_collects_findings_from_all_rules(self) -> None:
         """Collect findings from each rule in the supplied order."""
-        first = Finding("first", "warning", Path("a"), "First finding.")
-        second = Finding("second", "warning", Path("b"), "Second finding.")
+        first = Finding("first", "warning", Path("a"), "first", "First finding.")
+        second = Finding("second", "warning", Path("b"), "second", "Second finding.")
         artifact = ReleaseArtifact(source_path=Path("release"))
 
         findings = LintEngine([_FixedRule(first), _FixedRule(second)]).run(artifact)
 
         self.assertEqual(findings, [first, second])
 
-    def test_compares_findings_by_rule_and_relative_path(self) -> None:
-        """Classify findings without considering severity or message changes."""
-        previous = [
-            Finding("rule-a", "warning", Path("shared.obj"), "Earlier message."),
-            Finding("rule-a", "warning", Path("removed.obj"), "Resolved finding."),
-            Finding("rule-b", "warning", Path("same-path.obj"), "Different rule."),
-        ]
-        current = [
-            Finding("rule-a", "warning", Path("new.obj"), "New finding."),
-            Finding("rule-a", "warning", Path("shared.obj"), "Updated message."),
-            Finding("rule-a", "warning", Path("same-path.obj"), "Different rule."),
-        ]
+    def test_identical_finding_is_existing(self) -> None:
+        """Classify the same semantic finding as existing."""
+        previous = Finding(
+            "rule-a", "warning", Path("shared.obj"), "shared", "Same finding."
+        )
+        current = Finding(
+            "rule-a", "warning", Path("shared.obj"), "shared", "Same finding."
+        )
 
-        comparison = compare_findings(previous, current)
+        comparison = compare_findings([previous], [current])
 
-        self.assertEqual(comparison.existing, [current[1]])
-        self.assertEqual(comparison.new, [current[0], current[2]])
-        self.assertEqual(comparison.resolved, [previous[1], previous[2]])
+        self.assertEqual(comparison.existing, [current])
+        self.assertEqual(comparison.new, [])
+        self.assertEqual(comparison.resolved, [])
+
+    def test_different_identity_on_same_rule_and_path_is_new_and_resolved(self) -> None:
+        """Distinguish semantic conflicts reported at the same artifact path."""
+        previous = Finding(
+            "rule-a", "warning", Path("."), "component:Old", "Old conflict."
+        )
+        current = Finding(
+            "rule-a", "warning", Path("."), "component:New", "New conflict."
+        )
+
+        comparison = compare_findings([previous], [current])
+
+        self.assertEqual(comparison.existing, [])
+        self.assertEqual(comparison.new, [current])
+        self.assertEqual(comparison.resolved, [previous])
+
+    def test_message_change_with_same_identity_is_existing(self) -> None:
+        """Ignore cosmetic message changes during baseline matching."""
+        previous = Finding(
+            "rule-a", "warning", Path("app.exe"), "unsigned", "Earlier wording."
+        )
+        current = Finding(
+            "rule-a", "warning", Path("app.exe"), "unsigned", "Improved wording."
+        )
+
+        comparison = compare_findings([previous], [current])
+
+        self.assertEqual(comparison.existing, [current])
+        self.assertEqual(comparison.new, [])
+        self.assertEqual(comparison.resolved, [])
+
+    def test_severity_change_with_same_identity_is_existing(self) -> None:
+        """Ignore severity changes during baseline matching."""
+        previous = Finding(
+            "rule-a", "warning", Path("app.exe"), "unsigned", "Unsigned binary."
+        )
+        current = Finding(
+            "rule-a", "error", Path("app.exe"), "unsigned", "Unsigned binary."
+        )
+
+        comparison = compare_findings([previous], [current])
+
+        self.assertEqual(comparison.existing, [current])
+        self.assertEqual(comparison.new, [])
+        self.assertEqual(comparison.resolved, [])
 
     def test_compares_empty_findings(self) -> None:
         """Return empty groups when neither artifact has findings."""
@@ -74,19 +124,47 @@ class LintTests(unittest.TestCase):
         self.assertEqual(comparison.new, [])
         self.assertEqual(comparison.resolved, [])
 
-    def test_baseline_preserves_findings_with_shared_artifact_path(self) -> None:
-        """Keep all scope conflicts under the same rule and artifact path."""
-        current = [
-            Finding("inconsistent-installation-scope", "warning", Path("."), message)
-            for message in (
-                "HKLM conflicts with per-user scope.",
-                "AppData conflicts with per-machine scope.",
-            )
-        ]
+    def test_baseline_distinguishes_multiple_installation_scope_conflicts(self) -> None:
+        """Match scope conflicts by component and conflict type at path ``.``."""
+        old_scope = InstallationScope(
+            "ambiguous",
+            (
+                InstallationScopeConflict(
+                    "component:App:fixed-per-machine:registry-entry:MachineKey",
+                    "Component 'App' writes to HKLM.",
+                ),
+                InstallationScopeConflict(
+                    "component:Data:fixed-per-user:directory:AppDataFolder",
+                    "Component 'Data' uses AppDataFolder.",
+                ),
+            ),
+        )
+        new_scope = InstallationScope(
+            "ambiguous",
+            (
+                InstallationScopeConflict(
+                    "component:App:fixed-per-machine:registry-entry:MachineKey",
+                    "Component 'App' uses a fixed machine registry entry.",
+                ),
+                InstallationScopeConflict(
+                    "component:Tools:mixed-destinations",
+                    "Component 'Tools' mixes per-user and per-machine destinations.",
+                ),
+            ),
+        )
+        rule = InconsistentInstallationScopeRule()
+        previous = rule.check(
+            ReleaseArtifact(Path("old.msi"), installation_scope=old_scope)
+        )
+        current = rule.check(
+            ReleaseArtifact(Path("new.msi"), installation_scope=new_scope)
+        )
 
-        comparison = compare_findings([], current)
+        comparison = compare_findings(previous, current)
 
-        self.assertEqual(comparison.new, current)
+        self.assertEqual(comparison.existing, [current[0]])
+        self.assertEqual(comparison.new, [current[1]])
+        self.assertEqual(comparison.resolved, [previous[1]])
 
     def test_build_artifact_rule_flags_only_listed_extensions(self) -> None:
         """Flag suspicious extensions while leaving .lib and .pdb alone."""
@@ -114,6 +192,7 @@ class LintTests(unittest.TestCase):
         )
         self.assertTrue(all(finding.rule_id == "build-artifact-extension" for finding in findings))
         self.assertTrue(all(finding.severity == "warning" for finding in findings))
+        self.assertEqual(findings[0].identity, "extension:.ilk")
         self.assertTrue(all("Suspicious build artifact extension" in finding.message for finding in findings))
 
     def test_unsigned_binary_rule_uses_binary_type(self) -> None:
@@ -137,6 +216,7 @@ class LintTests(unittest.TestCase):
         self.assertEqual([finding.relative_path for finding in findings], [Path("app.dat"), Path("library.bin"), Path("other.bin")])
         self.assertTrue(all(finding.rule_id == "unsigned-binary" for finding in findings))
         self.assertTrue(all(finding.severity == "warning" for finding in findings))
+        self.assertTrue(all(finding.identity == "unsigned" for finding in findings))
         self.assertEqual(
             [finding.message for finding in findings],
             ["Unsigned executable.", "Unsigned library.", "Unsigned executable."],
@@ -178,7 +258,16 @@ class LintTests(unittest.TestCase):
             Path("release.msi"),
             installation_scope=InstallationScope(
                 "ambiguous",
-                ("Component 'App' writes to HKLM.", "Component 'Data' uses AppDataFolder."),
+                (
+                    InstallationScopeConflict(
+                        "component:App:fixed-per-machine:registry-entry:MachineKey",
+                        "Component 'App' writes to HKLM.",
+                    ),
+                    InstallationScopeConflict(
+                        "component:Data:fixed-per-user:directory:AppDataFolder",
+                        "Component 'Data' uses AppDataFolder.",
+                    ),
+                ),
             ),
         )
 
@@ -187,7 +276,10 @@ class LintTests(unittest.TestCase):
         self.assertEqual(len(findings), 2)
         self.assertTrue(all(finding.rule_id == "inconsistent-installation-scope" for finding in findings))
         self.assertTrue(all(finding.severity == "warning" for finding in findings))
-        self.assertEqual([finding.message for finding in findings], list(artifact.installation_scope.conflicts))
+        self.assertEqual(
+            [finding.message for finding in findings],
+            [conflict.message for conflict in artifact.installation_scope.conflicts],
+        )
         self.assertEqual(
             InconsistentInstallationScopeRule().check(ReleaseArtifact(Path("directory"))),
             [],
