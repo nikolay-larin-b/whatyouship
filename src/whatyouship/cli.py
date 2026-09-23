@@ -103,13 +103,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a release artifact.")
-    inspect_parser.add_argument("artifact", type=Path, help="Directory, MSI, or ZIP to inspect.")
+    inspect_parser.add_argument("artifact", type=Path, help="Directory, MSI, NSIS EXE, or ZIP to inspect.")
     inspect_parser.add_argument("-o", "--output", type=Path, help="Write a .txt, .json, or .csv report.")
     lint_parser = subparsers.add_parser("lint", help="Lint a release artifact.")
-    lint_parser.add_argument("artifact", type=Path, help="Directory, MSI, or ZIP to lint.")
+    lint_parser.add_argument("artifact", type=Path, help="Directory, MSI, NSIS EXE, or ZIP to lint.")
     lint_parser.add_argument("-o", "--output", type=Path, help="Write a .txt, .json, or .csv report.")
     lint_parser.add_argument(
-        "--baseline", type=Path, help="Previous directory, MSI, or ZIP for finding comparison."
+        "--baseline", type=Path, help="Previous directory, MSI, NSIS EXE, or ZIP for finding comparison."
     )
     lint_parser.add_argument(
         "--config", type=Path, help="TOML file with lint rule settings."
@@ -119,8 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Minimum lint severity that fails the command (default: error).",
     )
     compare_parser = subparsers.add_parser("compare", help="Compare two release artifacts.")
-    compare_parser.add_argument("old_artifact", type=Path, help="Earlier directory, MSI, or ZIP.")
-    compare_parser.add_argument("new_artifact", type=Path, help="Later directory, MSI, or ZIP.")
+    compare_parser.add_argument("old_artifact", type=Path, help="Earlier directory, MSI, NSIS EXE, or ZIP.")
+    compare_parser.add_argument("new_artifact", type=Path, help="Later directory, MSI, NSIS EXE, or ZIP.")
     compare_parser.add_argument("-o", "--output", type=Path, help="Write a .txt or .json report.")
 
     args = parser.parse_args(argv)

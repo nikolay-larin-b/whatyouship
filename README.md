@@ -4,7 +4,7 @@
 
 WhatYouShip is an open-source release artifact linter. It analyzes the software package that users actually receive — not the source tree or build configuration.
 
-It can inspect, lint, and compare directory, MSI, and ZIP releases.
+It can inspect, lint, and compare directory, MSI, NSIS installer, and ZIP releases.
 
 ## Quick start
 
@@ -131,6 +131,7 @@ In addition to added, removed, changed, and unchanged files, WhatYouShip reports
 | --------- | ------- | ---- | ------- |
 | Directory | Yes     | Yes  | Yes     |
 | MSI       | Yes     | Yes  | Yes     |
+| NSIS EXE  | Yes     | Yes  | Yes     |
 | ZIP       | Yes     | Yes  | Yes     |
 
 MSI extraction and static MSI analysis are platform-independent.
@@ -138,6 +139,12 @@ MSI extraction and static MSI analysis are platform-independent.
 On Windows, the signature of the MSI package itself is verified using the system Authenticode API. Package signature verification is currently unsupported on Linux and macOS.
 
 ZIP releases use the same file and binary analysis as ordinary directories.
+
+NSIS installers require `7z` or `7zz` from 7-Zip to be available in `PATH`.
+WhatYouShip inspects the extracted payload; extracted paths are not an exact
+simulation of runtime installation paths. On Windows, the outer installer's
+Authenticode signature is checked separately from signatures of binaries in its
+payload.
 
 ## MSI installation scope
 
@@ -220,6 +227,7 @@ Extracted artifacts are cached by SHA-256:
 
 ```text
 ~/.whatyouship/cache/msi/v1/
+~/.whatyouship/cache/nsis/v1/
 ~/.whatyouship/cache/zip/v1/
 ```
 

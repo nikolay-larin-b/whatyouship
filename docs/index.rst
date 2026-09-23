@@ -8,7 +8,7 @@ release artifacts. It aims to analyze what users actually receive, rather
 than source code or build configuration.
 
 The project is in an early stage of development. Currently available for
-directory, MSI, and ZIP artifacts:
+directory, MSI, NSIS installer, and ZIP artifacts:
 
 * ``inspect <artifact>`` to show the files in a release artifact.
 * ``lint <artifact>`` to report release findings, including suspicious files and scope conflicts.
@@ -50,6 +50,14 @@ ZIP distributions are safely extracted under ``~/.whatyouship/cache/zip/v1/``,
 keyed by the ZIP file's SHA-256. Their extracted files use the same inspection,
 binary analysis, lint rules, and comparison logic as directories. ZIP artifact
 signatures are not checked. On Windows, ``~`` is the user profile directory.
+
+NSIS installer ``.exe`` files are detected before extraction and require
+``7z`` or ``7zz`` from 7-Zip in ``PATH``. Their payloads are cached by installer
+SHA-256 under ``~/.whatyouship/cache/nsis/v1/`` and use the same inspection,
+binary analysis, lint rules, and comparison logic as directories. Extracted
+paths describe the payload and are not an exact simulation of runtime
+installation paths. On Windows, the outer installer's Authenticode signature
+is checked separately from signatures of binaries in the payload.
 
 WhatYouShip keeps user data below ``~/.whatyouship/``; ``cache/`` contains
 extracted artifact caches and ``config/`` is reserved for user configuration.
