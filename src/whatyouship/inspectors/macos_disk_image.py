@@ -10,10 +10,24 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 
 _HDIUTIL = "/usr/bin/hdiutil"
+
+
+@dataclass(frozen=True)
+class DiskImageMetadata:
+    """Describe security-relevant disk image properties.
+
+    :param encrypted: Whether the image payload is encrypted.
+    :param license_agreement_present: Whether the image embeds a software
+        license agreement.
+    """
+
+    encrypted: bool
+    license_agreement_present: bool
 
 
 def _failure_detail(result: subprocess.CompletedProcess[bytes]) -> str:
@@ -69,6 +83,110 @@ def _reported_mount_point(output: bytes) -> Path:
             f"found {len(mount_points)}"
         )
     return mount_points[0]
+
+
+def inspect_disk_image_metadata(source_path: Path) -> DiskImageMetadata:
+    """Read disk image metadata without attaching the image.
+
+    :param source_path: Disk image whose metadata should be queried.
+    :returns: Parsed disk image properties.
+    :raises FileNotFoundError: If ``hdiutil`` cannot be executed.
+    :raises ValueError: If metadata cannot be read or is malformed.
+    """
+    if sys.platform != "darwin":
+        raise ValueError("Disk image inspection requires macOS")
+    try:
+        result = subprocess.run(
+            [
+                _HDIUTIL,
+                "imageinfo",
+                "-plist",
+                "-stdinpass",
+                str(source_path),
+            ],
+            input=b"\0",
+            capture_output=True,
+            check=False,
+        )
+    except OSError as error:
+        raise FileNotFoundError(
+            f"Unable to run macOS disk image utility '{_HDIUTIL}': {error}"
+        ) from error
+    if result.returncode != 0:
+        detail = _failure_detail(result)
+        suffix = f": {detail}" if detail else ""
+        raise ValueError(
+            f"hdiutil imageinfo failed with exit code {result.returncode}{suffix}"
+        )
+    try:
+        document = plistlib.loads(result.stdout)
+    except (plistlib.InvalidFileException, ValueError, TypeError) as error:
+        raise ValueError("hdiutil returned invalid disk image metadata") from error
+    if not isinstance(document, dict):
+        raise ValueError("hdiutil returned invalid disk image metadata")
+    properties = document.get("Properties")
+    if not isinstance(properties, dict):
+        raise ValueError("hdiutil disk image metadata has no properties")
+    encrypted = properties.get("Encrypted", False)
+    license_agreement = properties.get("Software License Agreement", False)
+    if type(encrypted) is not bool or type(license_agreement) is not bool:
+        raise ValueError("hdiutil returned invalid disk image properties")
+    return DiskImageMetadata(encrypted, license_agreement)
+
+
+def convert_disk_image(source_path: Path, destination_path: Path) -> None:
+    """Convert a disk image to a compressed image without presentation data.
+
+    Conversion preserves the contained filesystem while omitting the source
+    image's interactive software license agreement resource.
+
+    :param source_path: Disk image to convert.
+    :param destination_path: Exact path for the converted image.
+    :raises FileNotFoundError: If ``hdiutil`` cannot be executed.
+    :raises ValueError: If conversion fails.
+    """
+    raw_path = destination_path.parent / "intermediate.cdr"
+    try:
+        for input_path, output_path, image_format in (
+            (source_path, raw_path, "UDTO"),
+            (raw_path, destination_path, "UDZO"),
+        ):
+            try:
+                result = subprocess.run(
+                    [
+                        _HDIUTIL,
+                        "convert",
+                        str(input_path),
+                        "-format",
+                        image_format,
+                        "-o",
+                        str(output_path),
+                        "-stdinpass",
+                    ],
+                    input=b"\0",
+                    capture_output=True,
+                    check=False,
+                )
+            except OSError as error:
+                raise FileNotFoundError(
+                    f"Unable to run macOS disk image utility '{_HDIUTIL}': {error}"
+                ) from error
+            if result.returncode != 0:
+                detail = _failure_detail(result)
+                suffix = f": {detail}" if detail else ""
+                raise ValueError(
+                    "hdiutil convert failed while creating "
+                    f"{image_format} with exit code {result.returncode}{suffix}"
+                )
+            if output_path.is_symlink() or not output_path.is_file():
+                raise ValueError(
+                    f"hdiutil did not create the {image_format} disk image"
+                )
+    finally:
+        try:
+            raw_path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _remove_empty_mount_directories(mount_point: Path, temporary_root: Path) -> None:
@@ -142,6 +260,14 @@ class MacOSDiskImageMounter:
 
             if result.returncode != 0:
                 detail = _failure_detail(result)
+                if (
+                    "attach canceled" in detail.lower()
+                    and self._has_license_agreement(resolved_source)
+                ):
+                    raise ValueError(
+                        "Disk image contains an embedded software license "
+                        "agreement that cannot be accepted non-interactively"
+                    )
                 suffix = f": {detail}" if detail else ""
                 raise ValueError(
                     f"hdiutil attach failed with exit code {result.returncode}{suffix}"
@@ -175,6 +301,17 @@ class MacOSDiskImageMounter:
 
             if not attachment_owned or detached:
                 _remove_empty_mount_directories(mount_point, temporary_root)
+
+    def _has_license_agreement(self, source_path: Path) -> bool:
+        """Best-effort diagnose an attachment canceled by an agreement.
+
+        :param source_path: Disk image whose metadata should be queried.
+        :returns: Whether an embedded agreement is present.
+        """
+        try:
+            return inspect_disk_image_metadata(source_path).license_agreement_present
+        except (OSError, ValueError):
+            return False
 
     def _detach(self, mount_point: Path) -> None:
         """Detach an image through its private mount point.

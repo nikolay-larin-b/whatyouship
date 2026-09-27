@@ -34,3 +34,7 @@ severity = "error" # Report cryptographically invalid release artifact signature
 [rules.inconsistent-installation-scope]
 enabled = true
 severity = "warning" # Report conflicting installation scope signals.
+
+[rules.missing-license-agreement]
+enabled = true
+severity = "error" # Report artifacts that omit an embedded license agreement.

@@ -114,12 +114,15 @@ class ReleaseArtifact:
     :param files: Files contained in the artifact.
     :param signature: Signature of the release artifact itself.
     :param installation_scope: Installation context metadata, when supported.
+    :param license_agreement_present: Whether the artifact embeds a license
+        agreement, or ``None`` when the format does not expose that metadata.
     """
 
     source_path: Path
     files: list[ArtifactFile] = field(default_factory=list)
     signature: ArtifactSignature = field(default_factory=ArtifactSignature)
     installation_scope: InstallationScope | None = None
+    license_agreement_present: bool | None = None
 
 
 @dataclass

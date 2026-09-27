@@ -85,6 +85,9 @@ def _render_inspect(report: InspectReport) -> str:
         lines.append(f"  Timestamp: {artifact.signature.timestamp.isoformat()}")
     if artifact.installation_scope is not None:
         lines.append(f"Installation scope: {artifact.installation_scope.kind}")
+    if artifact.license_agreement_present is not None:
+        state = "present" if artifact.license_agreement_present else "absent"
+        lines.append(f"Embedded license agreement: {state}")
     lines.extend(["", "Relative path | Size (bytes) | SHA-256"])
     for file in artifact.files:
         lines.append(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")

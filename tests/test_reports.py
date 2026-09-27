@@ -97,6 +97,7 @@ class ReportOutputTests(unittest.TestCase):
         self.assertEqual(data["artifact"]["installation_scope"], {
             "kind": "ambiguous", "conflicts": ["Conflicting registry root"],
         })
+        self.assertIsNone(data["artifact"]["license_agreement_present"])
         self.assertEqual(data["artifact"]["files"][0], {
             "relative_path": "bin/app.exe", "size_bytes": 42, "sha256": "a" * 64,
             "binary": {

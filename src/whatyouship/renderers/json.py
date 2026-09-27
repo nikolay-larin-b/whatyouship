@@ -68,6 +68,7 @@ def _artifact_data(artifact: ReleaseArtifact) -> dict[str, Any]:
             "kind": scope.kind,
             "conflicts": [conflict.message for conflict in scope.conflicts],
         },
+        "license_agreement_present": artifact.license_agreement_present,
         "files": [_file_data(file) for file in artifact.files],
     }
 

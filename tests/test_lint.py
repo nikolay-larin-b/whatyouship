@@ -21,6 +21,7 @@ from whatyouship.model import (
 from whatyouship.rules.build_artifacts import BuildArtifactRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
+from whatyouship.rules.missing_license_agreement import MissingLicenseAgreementRule
 from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
@@ -57,6 +58,24 @@ class LintTests(unittest.TestCase):
         findings = LintEngine([_FixedRule(first), _FixedRule(second)]).run(artifact)
 
         self.assertEqual(findings, [first, second])
+
+    def test_missing_license_agreement_is_an_error_only_when_known_absent(self) -> None:
+        """Do not apply format-specific agreement policy to unknown formats."""
+        rule = MissingLicenseAgreementRule()
+
+        missing = rule.check(
+            ReleaseArtifact(Path("release.dmg"), license_agreement_present=False)
+        )
+
+        self.assertEqual(len(missing), 1)
+        self.assertEqual(missing[0].rule_id, "missing-license-agreement")
+        self.assertEqual(missing[0].severity, "error")
+        self.assertEqual(missing[0].relative_path, Path("."))
+        self.assertEqual(
+            rule.check(ReleaseArtifact(Path("licensed.dmg"), license_agreement_present=True)),
+            [],
+        )
+        self.assertEqual(rule.check(ReleaseArtifact(Path("release.zip"))), [])
 
     def test_identical_finding_is_existing(self) -> None:
         """Classify the same semantic finding as existing."""

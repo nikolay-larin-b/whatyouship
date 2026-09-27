@@ -130,37 +130,37 @@ class MsiScopeTests(unittest.TestCase):
         self.assertTrue(any("HKCU" in item.message for item in scope.conflicts))
 
     def test_per_user_package_with_fixed_machine_component_regression(self) -> None:
-        """Keep a JASON 6.1-like HKLM component visible in a per-user package."""
+        """Keep a fixed HKLM component visible in a per-user package."""
         scope = analyze_msi_scope({
             "Component": [{
-                "Component": "CM_CP_JASON.exe", "Directory_": "ProgramFilesFolder",
+                "Component": "MachineExecutable", "Directory_": "ProgramFilesFolder",
                 "Attributes": 0,
             }],
             "Registry": [{
                 "Registry": "CPMachineRegistration", "Root": 2,
-                "Component_": "CM_CP_JASON.exe",
+                "Component_": "MachineExecutable",
             }],
         })
 
         self.assertEqual(scope.kind, "ambiguous")
         self.assertTrue(any(
-            "Component 'CM_CP_JASON.exe' uses fixed per-machine HKLM registry entry"
+            "Component 'MachineExecutable' uses fixed per-machine HKLM registry entry"
             in conflict.message
             and "per-user installation scope" in conflict.message
             for conflict in scope.conflicts
         ))
         findings = InconsistentInstallationScopeRule().check(
-            ReleaseArtifact(Path("jason-6.1.msi"), installation_scope=scope)
+            ReleaseArtifact(Path("release.msi"), installation_scope=scope)
         )
         self.assertTrue(any(
             finding.rule_id == "inconsistent-installation-scope"
             and finding.severity == "warning"
-            and "CM_CP_JASON.exe" in finding.message
+            and "MachineExecutable" in finding.message
             for finding in findings
         ))
 
     def test_per_machine_shortcut_keypaths_do_not_create_scope_conflicts(self) -> None:
-        """Accept JASON 6.2-like HKCU key paths for non-advertised shortcuts."""
+        """Accept HKCU key paths for non-advertised shortcuts."""
         scope = analyze_msi_scope({
             "Property": [{"Property": "ALLUSERS", "Value": "1"}],
             "Directory": [{
@@ -190,12 +190,12 @@ class MsiScopeTests(unittest.TestCase):
             "Shortcut": [
                 {
                     "Shortcut": "StartMenuLink", "Component_": "CM_SHORTCUT",
-                    "Target": "[#JASON.exe]",
+                    "Target": "[#Product.exe]",
                 },
                 {
                     "Shortcut": "DesktopLink",
                     "Component_": "CM_SHORTCUT_DESKTOP",
-                    "Target": "[INSTALLDIR]JASON.exe",
+                    "Target": "[INSTALLDIR]Product.exe",
                 },
             ],
         })
@@ -203,7 +203,7 @@ class MsiScopeTests(unittest.TestCase):
         self.assertEqual(scope, InstallationScope("per-machine"))
         self.assertEqual(
             InconsistentInstallationScopeRule().check(
-                ReleaseArtifact(Path("jason-6.2.msi"), installation_scope=scope)
+                ReleaseArtifact(Path("release.msi"), installation_scope=scope)
             ),
             [],
         )

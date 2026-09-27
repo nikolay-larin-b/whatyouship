@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+.test-artifacts/
 *.egg-info/
 .venv/
 build/

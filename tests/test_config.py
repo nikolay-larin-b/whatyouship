@@ -28,6 +28,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.untrusted_artifact_signature.severity, "warning")
         self.assertEqual(config.invalid_artifact_signature.severity, "error")
         self.assertEqual(config.installation_scope.severity, "warning")
+        self.assertEqual(config.license_agreement.severity, "error")
 
     def test_partial_configuration_preserves_rule_defaults(self) -> None:
         """Use default settings for omitted rules and parameters."""
@@ -55,7 +56,7 @@ class ConfigTests(unittest.TestCase):
             config = load_config(path)
 
         self.assertEqual(config.build_artifacts.extensions, frozenset({".obj", ".lib"}))
-        self.assertEqual(len(config.rules()), 5)
+        self.assertEqual(len(config.rules()), 6)
 
     def test_artifact_signature_rules_accept_common_settings(self) -> None:
         """Configure enabled state and severity for artifact signature rules."""
@@ -72,7 +73,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.unsigned_artifact.enabled)
         self.assertEqual(config.untrusted_artifact_signature.severity, "error")
         self.assertEqual(config.invalid_artifact_signature.severity, "warning")
-        self.assertEqual(len(config.rules()), 5)
+        self.assertEqual(len(config.rules()), 6)
 
     def test_installation_scope_rule_accepts_common_settings(self) -> None:
         """Configure the new scope rule through the existing TOML format."""
@@ -87,7 +88,22 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.installation_scope.enabled)
         self.assertEqual(config.installation_scope.severity, "error")
-        self.assertEqual(len(config.rules()), 5)
+        self.assertEqual(len(config.rules()), 6)
+
+    def test_license_agreement_rule_accepts_common_settings(self) -> None:
+        """Allow the missing agreement rule to be downgraded or disabled."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.toml"
+            path.write_text(
+                "[rules.missing-license-agreement]\n"
+                "enabled = false\nseverity = 'warning'\n"
+            )
+
+            config = load_config(path)
+
+        self.assertFalse(config.license_agreement.enabled)
+        self.assertEqual(config.license_agreement.severity, "warning")
+        self.assertEqual(len(config.rules()), 6)
 
     def test_missing_file_has_readable_error(self) -> None:
         """Name the missing configuration file in the error."""

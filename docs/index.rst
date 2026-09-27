@@ -8,7 +8,7 @@ release artifacts. It aims to analyze what users actually receive, rather
 than source code or build configuration.
 
 The project is in an early stage of development. Currently available for
-directory, MSI, NSIS installer, Inno Setup installer, and ZIP artifacts:
+directory, DMG, MSI, NSIS installer, Inno Setup installer, and ZIP artifacts:
 
 * ``inspect <artifact>`` to show the files in a release artifact.
 * ``lint <artifact>`` to report release findings, including suspicious files and scope conflicts.
@@ -25,7 +25,7 @@ For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking
 is unsupported on Linux and macOS. ``lint`` reports unsigned artifacts,
 signatures whose signer is not trusted, and cryptographically invalid artifact
-signatures when verification is supported. Directory and ZIP
+signatures when verification is supported. Directory, DMG, and ZIP
 artifact signatures are unsupported. Package and contained binary signatures
 are checked independently.
 
@@ -52,6 +52,19 @@ keyed by the ZIP file's SHA-256. Their extracted files use the same inspection,
 binary analysis, lint rules, and comparison logic as directories. ZIP artifact
 signatures are not checked. On Windows, ``~`` is the user profile directory.
 
+DMG releases are supported on macOS through the system ``hdiutil`` command.
+WhatYouShip mounts a single-volume image read-only at a private mount point,
+analyzes its regular files with the same inspection, lint, and comparison logic
+as directories, and detaches it afterwards. Encrypted and multi-volume images
+are not supported. WhatYouShip reports whether the original image embeds a
+software license agreement; ``lint`` treats its absence as an error by default.
+Images with an agreement are converted to a normalized DMG without accepting
+the agreement on the user's behalf and cached by the original image's SHA-256
+under ``~/.whatyouship/cache/dmg/v1/``. The cached image preserves the contained
+filesystem instead of copying it into an extracted file tree. Symbolic links,
+extended attributes, and resource forks are not represented in reports. DMG
+artifact signatures and notarization status are not currently checked.
+
 NSIS installer ``.exe`` files are detected before extraction and require
 ``7z`` or ``7zz`` from 7-Zip in ``PATH``. Their payloads are cached by installer
 SHA-256 under ``~/.whatyouship/cache/nsis/v1/`` and use the same inspection,
@@ -69,7 +82,8 @@ installation paths. On Windows, the outer installer's Authenticode signature
 is checked separately from signatures of binaries in the payload.
 
 WhatYouShip keeps user data below ``~/.whatyouship/``; ``cache/`` contains
-extracted artifact caches and ``config/`` is reserved for user configuration.
+extracted artifact caches and normalized DMG images, while ``config/`` is
+reserved for user configuration.
 Existing caches in platform-specific cache directories are not migrated.
 
 To configure lint rules for a product, provide a TOML file explicitly:

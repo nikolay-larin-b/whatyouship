@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from whatyouship.inspectors.macos_disk_image import MacOSDiskImageMounter
+from whatyouship.inspectors.macos_disk_image import (
+    MacOSDiskImageMounter,
+    convert_disk_image,
+    inspect_disk_image_metadata,
+)
 
 
 def _attach_result(mount_points: list[Path]) -> subprocess.CompletedProcess[bytes]:
@@ -59,6 +63,66 @@ class MacOSDiskImageMounterTests(unittest.TestCase):
             "whatyouship.inspectors.macos_disk_image.tempfile.mkdtemp",
             return_value=str(self.mount_root),
         )
+
+    def test_reads_encryption_and_license_metadata(self) -> None:
+        """Parse security-relevant properties from ``hdiutil imageinfo``."""
+        result = subprocess.CompletedProcess(
+            ["hdiutil", "imageinfo"],
+            0,
+            plistlib.dumps({
+                "Properties": {
+                    "Encrypted": False,
+                    "Software License Agreement": True,
+                }
+            }),
+            b"",
+        )
+
+        with patch(
+            "whatyouship.inspectors.macos_disk_image.sys.platform", "darwin"
+        ), patch(
+            "whatyouship.inspectors.macos_disk_image.subprocess.run",
+            return_value=result,
+        ) as run:
+            metadata = inspect_disk_image_metadata(self.source)
+
+        self.assertFalse(metadata.encrypted)
+        self.assertTrue(metadata.license_agreement_present)
+        self.assertEqual(
+            run.call_args.args[0][:2], ["/usr/bin/hdiutil", "imageinfo"]
+        )
+        self.assertEqual(run.call_args.kwargs["input"], b"\0")
+
+    def test_converts_to_compressed_image_noninteractively(self) -> None:
+        """Request an exact UDZO output path without interactive password input."""
+        destination = self.root / "normalized.dmg"
+
+        def complete(
+            command: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[bytes]:
+            output_path = Path(command[command.index("-o") + 1])
+            output_path.write_bytes(b"normalized")
+            return subprocess.CompletedProcess(command, 0, b"", b"")
+
+        with patch(
+            "whatyouship.inspectors.macos_disk_image.subprocess.run",
+            side_effect=complete,
+        ) as run:
+            convert_disk_image(self.source, destination)
+
+        self.assertEqual(run.call_count, 2)
+        command = run.call_args_list[0].args[0]
+        self.assertEqual(command[:2], ["/usr/bin/hdiutil", "convert"])
+        self.assertEqual(command[command.index("-format") + 1], "UDTO")
+        raw_path = destination.parent / "intermediate.cdr"
+        self.assertEqual(command[command.index("-o") + 1], str(raw_path))
+        self.assertIn("-stdinpass", command)
+        self.assertEqual(run.call_args_list[0].kwargs["input"], b"\0")
+        compressed = run.call_args_list[1].args[0]
+        self.assertEqual(compressed[:3], ["/usr/bin/hdiutil", "convert", str(raw_path)])
+        self.assertEqual(compressed[compressed.index("-format") + 1], "UDZO")
+        self.assertEqual(compressed[compressed.index("-o") + 1], str(destination))
+        self.assertFalse(raw_path.exists())
 
     def test_mount_uses_noninteractive_read_only_attachment_and_detaches(self) -> None:
         """Yield the private volume and detach it normally after use."""
@@ -171,6 +235,50 @@ class MacOSDiskImageMounterTests(unittest.TestCase):
             with MacOSDiskImageMounter().mount(self.source):
                 pass
 
+        self.assertFalse(self.mount_root.exists())
+
+    def test_embedded_license_agreement_is_reported_without_accepting_it(self) -> None:
+        """Explain cancellation caused by an interactive disk image agreement."""
+        attach = subprocess.CompletedProcess(
+            ["hdiutil", "attach"], 1, b"", b"hdiutil: attach canceled\n"
+        )
+        imageinfo = subprocess.CompletedProcess(
+            ["hdiutil", "imageinfo"],
+            0,
+            plistlib.dumps({
+                "Properties": {
+                    "Encrypted": False,
+                    "Software License Agreement": True,
+                }
+            }),
+            b"",
+        )
+
+        with (
+            patch("whatyouship.inspectors.macos_disk_image.sys.platform", "darwin"),
+            self._patch_mount_root(),
+            patch(
+                "whatyouship.inspectors.macos_disk_image.os.path.ismount",
+                return_value=False,
+            ),
+            patch(
+                "whatyouship.inspectors.macos_disk_image.subprocess.run",
+                side_effect=[attach, imageinfo],
+            ) as run,
+            self.assertRaisesRegex(
+                ValueError,
+                "embedded software license agreement .* non-interactively",
+            ),
+        ):
+            with MacOSDiskImageMounter().mount(self.source):
+                pass
+
+        self.assertEqual(run.call_count, 2)
+        imageinfo_call = run.call_args_list[1]
+        self.assertEqual(
+            imageinfo_call.args[0][:2], ["/usr/bin/hdiutil", "imageinfo"]
+        )
+        self.assertEqual(imageinfo_call.kwargs["input"], b"\0")
         self.assertFalse(self.mount_root.exists())
 
     def test_invalid_plist_detaches_a_volume_found_at_private_mount_point(self) -> None:

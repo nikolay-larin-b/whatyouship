@@ -4,8 +4,8 @@
 
 WhatYouShip is an open-source release artifact linter. It analyzes the software package that users actually receive — not the source tree or build configuration.
 
-It can inspect, lint, and compare directory, MSI, NSIS installer, Inno Setup
-installer, and ZIP releases.
+It can inspect, lint, and compare directory, DMG, MSI, NSIS installer, Inno
+Setup installer, and ZIP releases.
 
 ## Quick start
 
@@ -64,6 +64,7 @@ Current checks and comparisons include:
 * unsigned Windows executables and libraries;
 * untrusted signers and invalid artifact signatures where platform verification is available;
 * inconsistent MSI installation scope;
+* DMG releases without an embedded software license agreement;
 * added, removed, and changed files between releases;
 * binary architecture changes;
 * executable/library kind changes;
@@ -131,6 +132,7 @@ In addition to added, removed, changed, and unchanged files, WhatYouShip reports
 | Artifact       | Inspect | Lint | Compare |
 | -------------- | ------- | ---- | ------- |
 | Directory      | Yes     | Yes  | Yes     |
+| DMG            | Yes     | Yes  | Yes     |
 | MSI            | Yes     | Yes  | Yes     |
 | NSIS EXE       | Yes     | Yes  | Yes     |
 | Inno Setup EXE | Yes     | Yes  | Yes     |
@@ -141,6 +143,17 @@ MSI extraction and static MSI analysis are platform-independent.
 On Windows, the signature of the MSI package itself is verified using the system Authenticode API. Signature status distinguishes unsigned, valid and trusted, signed but untrusted, and cryptographically invalid artifacts. Package signature verification is currently unsupported on Linux and macOS.
 
 ZIP releases use the same file and binary analysis as ordinary directories.
+
+DMG releases are supported on macOS and require the system `hdiutil` command.
+WhatYouShip mounts a single-volume image read-only at a private mount point,
+analyzes its regular files, and detaches it after inspection. Encrypted and
+multi-volume images are not supported. WhatYouShip reports whether the original
+image embeds a software license agreement; its absence is an error by default.
+An image with an agreement is converted to a normalized cached DMG without
+accepting the agreement on the user's behalf, then mounted read-only.
+Symbolic links, extended attributes, and resource forks are not represented in
+reports. DMG artifact signatures and notarization status are not currently
+checked.
 
 NSIS installers require `7z` or `7zz` from 7-Zip to be available in `PATH`.
 WhatYouShip inspects the extracted payload; extracted paths are not an exact
@@ -237,9 +250,15 @@ Extracted artifacts are cached by SHA-256:
 ~/.whatyouship/cache/nsis/v1/
 ~/.whatyouship/cache/inno/v1/
 ~/.whatyouship/cache/zip/v1/
+~/.whatyouship/cache/dmg/v1/
 ```
 
 The cache avoids repeated extraction of the same artifact. Binary metadata and lint analysis are performed again on each run.
+
+DMGs without an embedded agreement are inspected directly from a temporary
+read-only mount. Images with an agreement are converted once and cached by the
+original image's SHA-256. The cache stores a normalized disk image rather than
+an extracted file tree, preserving the contained filesystem for inspection.
 
 The cache hash identifies artifact content; it is not a signature or authenticity check.
 

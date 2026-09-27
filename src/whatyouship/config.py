@@ -13,6 +13,7 @@ from whatyouship.model import Severity
 from whatyouship.rules.build_artifacts import DEFAULT_EXTENSIONS, BuildArtifactRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
+from whatyouship.rules.missing_license_agreement import MissingLicenseAgreementRule
 from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
@@ -69,6 +70,18 @@ class InstallationScopeSettings:
 
 
 @dataclass(frozen=True)
+class LicenseAgreementSettings:
+    """Configure the missing license agreement rule.
+
+    :param enabled: Whether to run the rule.
+    :param severity: Severity assigned to its findings.
+    """
+
+    enabled: bool = True
+    severity: Severity = "error"
+
+
+@dataclass(frozen=True)
 class LintConfiguration:
     """Collect settings for the available lint rules.
 
@@ -78,6 +91,7 @@ class LintConfiguration:
     :param untrusted_artifact_signature: Untrusted artifact signature settings.
     :param invalid_artifact_signature: Invalid artifact signature rule settings.
     :param installation_scope: Installation scope rule settings.
+    :param license_agreement: Missing license agreement rule settings.
     """
 
     build_artifacts: BuildArtifactSettings = field(default_factory=BuildArtifactSettings)
@@ -93,6 +107,9 @@ class LintConfiguration:
     )
     installation_scope: InstallationScopeSettings = field(
         default_factory=InstallationScopeSettings
+    )
+    license_agreement: LicenseAgreementSettings = field(
+        default_factory=LicenseAgreementSettings
     )
 
     def rules(self) -> list[LintRule]:
@@ -128,6 +145,12 @@ class LintConfiguration:
             rules.append(
                 InconsistentInstallationScopeRule(
                     severity=self.installation_scope.severity
+                )
+            )
+        if self.license_agreement.enabled:
+            rules.append(
+                MissingLicenseAgreementRule(
+                    severity=self.license_agreement.severity
                 )
             )
         return rules
@@ -214,7 +237,7 @@ def load_config(path: Path) -> LintConfiguration:
     unknown_rules = set(rules) - {
         "build-artifact-extension", "unsigned-binary", "unsigned-artifact",
         "untrusted-artifact-signature", "invalid-artifact-signature",
-        "inconsistent-installation-scope",
+        "inconsistent-installation-scope", "missing-license-agreement",
     }
     if unknown_rules:
         raise ValueError(f"Unknown rule ID: {', '.join(sorted(unknown_rules))}")
@@ -247,6 +270,12 @@ def load_config(path: Path) -> LintConfiguration:
         rules.get("inconsistent-installation-scope", {}),
         {"enabled", "severity"},
     )
+    license_enabled, license_severity, _ = _rule_settings(
+        "missing-license-agreement",
+        rules.get("missing-license-agreement", {}),
+        {"enabled", "severity"},
+        "error",
+    )
     extensions = (
         _extensions(build_values["extensions"])
         if "extensions" in build_values
@@ -265,4 +294,7 @@ def load_config(path: Path) -> LintConfiguration:
             invalid_enabled, invalid_severity
         ),
         installation_scope=InstallationScopeSettings(scope_enabled, scope_severity),
+        license_agreement=LicenseAgreementSettings(
+            license_enabled, license_severity
+        ),
     )
