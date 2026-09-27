@@ -14,5 +14,5 @@ Development rules:
 - Start Python files with the copyright notice for Nikolay Larin and the `SPDX-License-Identifier: MIT` marker; add a module docstring.
 - Document classes and functions with Sphinx-compatible docstrings. Use reStructuredText fields for parameters, return values, and raised exceptions when applicable.
 - Add type annotations to every new function and method, including tests: annotate parameters other than `self` and `cls`, and always annotate return values.
-- Do not make Git commits.
+- Do not make Git commits unless explicitly requested by the user.
 - Do not publish packages or upload anything to PyPI.
