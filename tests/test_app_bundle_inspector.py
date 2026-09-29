@@ -10,8 +10,10 @@ import unittest
 from pathlib import Path
 
 from whatyouship.config import LintConfiguration
+from whatyouship.inspectors.app_bundle import AppBundleInspector
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.lint import LintEngine
+from whatyouship.model import ArtifactFile, BinaryDependency, BinaryMetadata
 from whatyouship.rules.invalid_app_bundle import InvalidAppBundleRule
 
 
@@ -273,6 +275,89 @@ class AppBundleInspectorTests(unittest.TestCase):
             artifact = DirectoryInspector().inspect(root)
 
         self.assertTrue(all(not bundle.issues for bundle in artifact.bundles))
+
+    def test_reports_only_missing_required_bundle_dependencies(self) -> None:
+        """Resolve loader tokens and tolerate weak, system, and framework links."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            bundle_path = root / "Sample.app"
+            _write_bundle(
+                bundle_path,
+                {
+                    "CFBundleIdentifier": "com.example.dependencies",
+                    "CFBundleExecutable": "sample",
+                    "CFBundlePackageType": "APPL",
+                },
+                executable_payload=_macho_executable(),
+            )
+            main_path = Path("Sample.app/Contents/MacOS/sample")
+            framework_root = Path("Sample.app/Contents/Frameworks")
+            present_path = framework_root / "libPresent.dylib"
+            framework_binary = (
+                framework_root / "Kit.framework/Versions/A/Kit"
+            )
+            files = [
+                ArtifactFile(
+                    main_path,
+                    32,
+                    "a",
+                    BinaryMetadata(
+                        "Mach-O",
+                        "arm64",
+                        "executable",
+                        dependencies=(
+                            BinaryDependency("@rpath/libPresent.dylib"),
+                            BinaryDependency("@rpath/libMissing.dylib"),
+                            BinaryDependency(
+                                "@rpath/libOptional.dylib",
+                                required=False,
+                            ),
+                            BinaryDependency("@rpath/Kit.framework/Kit"),
+                            BinaryDependency("/usr/lib/libSystem.B.dylib"),
+                            BinaryDependency("/Library/Frameworks/Host.framework/Host"),
+                        ),
+                        runtime_search_paths=(
+                            "@executable_path/../Frameworks",
+                        ),
+                    ),
+                ),
+                ArtifactFile(
+                    present_path,
+                    32,
+                    "b",
+                    BinaryMetadata(
+                        "Mach-O",
+                        "arm64",
+                        "library",
+                        dependencies=(
+                            BinaryDependency("@loader_path/libAdjacent.dylib"),
+                        ),
+                    ),
+                ),
+                ArtifactFile(
+                    framework_binary,
+                    32,
+                    "c",
+                    BinaryMetadata("Mach-O", "arm64", "library"),
+                ),
+            ]
+
+            bundles = AppBundleInspector().inspect(root, files)
+
+        dependency_issues = [
+            issue
+            for issue in bundles[0].issues
+            if issue.identity.startswith("missing-dynamic-dependency:")
+        ]
+        self.assertEqual(
+            [issue.identity for issue in dependency_issues],
+            [
+                "missing-dynamic-dependency:Sample.app/Contents/Frameworks/"
+                "libPresent.dylib:@loader_path/libAdjacent.dylib",
+                "missing-dynamic-dependency:Sample.app/Contents/MacOS/"
+                "sample:@rpath/libMissing.dylib",
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from whatyouship.compare import ComparisonResult, SemanticDifference, compare_ar
 from whatyouship.model import (
     AppBundleMetadata,
     ArtifactFile,
+    BinaryDependency,
     BinaryMetadata,
     InstallationScope,
     ReleaseArtifact,
@@ -201,6 +202,52 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(
             differences,
             [SemanticDifference(path, "Minimum OS version", "12.0", "13.0")],
+        )
+
+    def test_reports_macho_dependency_and_search_path_changes(self) -> None:
+        """Compare imported libraries and runtime search paths."""
+        path = Path("Sample.app/Contents/MacOS/sample")
+        old_binary = BinaryMetadata(
+            "Mach-O",
+            "arm64",
+            "executable",
+            dependencies=(BinaryDependency("@rpath/libOld.dylib"),),
+            runtime_search_paths=("@loader_path/../Frameworks",),
+        )
+        new_binary = BinaryMetadata(
+            "Mach-O",
+            "arm64",
+            "executable",
+            dependencies=(
+                BinaryDependency("@rpath/libNew.dylib"),
+                BinaryDependency("@rpath/libOptional.dylib", required=False),
+            ),
+            runtime_search_paths=("@executable_path/../Frameworks",),
+        )
+        old = ReleaseArtifact(
+            Path("old"), [ArtifactFile(path, 1, "a", old_binary)]
+        )
+        new = ReleaseArtifact(
+            Path("new"), [ArtifactFile(path, 1, "b", new_binary)]
+        )
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            [(difference.field, difference.old_value, difference.new_value)
+             for difference in differences],
+            [
+                (
+                    "Dynamic dependencies",
+                    "@rpath/libOld.dylib",
+                    "@rpath/libNew.dylib, @rpath/libOptional.dylib (weak)",
+                ),
+                (
+                    "Runtime search paths",
+                    "@loader_path/../Frameworks",
+                    "@executable_path/../Frameworks",
+                ),
+            ],
         )
 
     def test_hash_only_change_has_no_semantic_difference(self) -> None:

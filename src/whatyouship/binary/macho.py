@@ -9,7 +9,12 @@ from typing import Literal
 
 import lief
 
-from whatyouship.model import BinaryMetadata, BinarySignatureType, SignatureMetadata
+from whatyouship.model import (
+    BinaryDependency,
+    BinaryMetadata,
+    BinarySignatureType,
+    SignatureMetadata,
+)
 
 
 _MACHO_MAGICS = {
@@ -52,6 +57,14 @@ _CSMAGIC_BLOBWRAPPER = 0xFADE0B01
 _CSSLOT_CODEDIRECTORY = 0
 _CSSLOT_SIGNATURESLOT = 0x10000
 _CS_ADHOC = 0x00000002
+
+_DEPENDENCY_COMMANDS = {
+    lief.MachO.LoadCommand.TYPE.LAZY_LOAD_DYLIB,
+    lief.MachO.LoadCommand.TYPE.LOAD_DYLIB,
+    lief.MachO.LoadCommand.TYPE.LOAD_UPWARD_DYLIB,
+    lief.MachO.LoadCommand.TYPE.LOAD_WEAK_DYLIB,
+    lief.MachO.LoadCommand.TYPE.REEXPORT_DYLIB,
+}
 
 
 def _kind(file_type: lief.MachO.Header.FILE_TYPE) -> str:
@@ -231,6 +244,39 @@ def _minimum_os_version(slices: list[lief.MachO.Binary]) -> str | None:
     return _format_version(max(version for version in versions if version is not None))
 
 
+def _dependencies(slices: list[lief.MachO.Binary]) -> tuple[BinaryDependency, ...]:
+    """Combine imported dynamic libraries across architecture slices.
+
+    :param slices: Parsed slices from one thin or universal Mach-O file.
+    :returns: Unique dependencies sorted by install name.
+    """
+    required_by_path: dict[str, bool] = {}
+    for binary in slices:
+        for library in binary.libraries:
+            if library.command not in _DEPENDENCY_COMMANDS or not library.name:
+                continue
+            required = (
+                library.command
+                != lief.MachO.LoadCommand.TYPE.LOAD_WEAK_DYLIB
+            )
+            required_by_path[library.name] = (
+                required_by_path.get(library.name, False) or required
+            )
+    return tuple(
+        BinaryDependency(path, required_by_path[path])
+        for path in sorted(required_by_path)
+    )
+
+
+def _runtime_search_paths(slices: list[lief.MachO.Binary]) -> tuple[str, ...]:
+    """Combine runtime search paths across architecture slices.
+
+    :param slices: Parsed slices from one thin or universal Mach-O file.
+    :returns: Unique runtime search paths in lexical order.
+    """
+    return tuple(sorted({command.path for binary in slices for command in binary.rpaths}))
+
+
 class MachOInspector:
     """Identify thin and universal Mach-O binaries."""
 
@@ -275,12 +321,20 @@ class MachOInspector:
                 minimum_os_version = _minimum_os_version(slices)
             except Exception:
                 minimum_os_version = None
+            try:
+                dependencies = _dependencies(slices)
+                runtime_search_paths = _runtime_search_paths(slices)
+            except Exception:
+                dependencies = ()
+                runtime_search_paths = ()
             return BinaryMetadata(
                 format="Mach-O",
                 architecture="+".join(sorted(architectures)),
                 kind=kinds.pop() if len(kinds) == 1 else "other",
                 signature=signature,
                 minimum_os_version=minimum_os_version,
+                dependencies=dependencies,
+                runtime_search_paths=runtime_search_paths,
             )
         except Exception:
             return None

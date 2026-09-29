@@ -126,6 +126,15 @@ def _render_inspect(report: InspectReport) -> str:
                     f"Minimum OS version: {file.binary.minimum_os_version}"
                 )
             lines.append("  Binary: " + " | ".join(details))
+            for dependency in file.binary.dependencies:
+                requirement = "required" if dependency.required else "weak"
+                lines.append(
+                    f"  Dependency: {dependency.path} | {requirement}"
+                )
+            lines.extend(
+                f"  Runtime search path: {path}"
+                for path in file.binary.runtime_search_paths
+            )
             if file.binary.signature is not None:
                 signature = file.binary.signature
                 if signature.present is None:

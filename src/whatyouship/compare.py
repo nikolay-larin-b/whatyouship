@@ -71,6 +71,27 @@ def _signature_state(binary: BinaryMetadata) -> str:
     return "signed (verification unknown)"
 
 
+def _dependency_state(binary: BinaryMetadata) -> str:
+    """Format dynamic dependencies for semantic comparison.
+
+    :param binary: Binary metadata to describe.
+    :returns: Comma-separated dependency paths and weak markers.
+    """
+    return ", ".join(
+        dependency.path + (" (weak)" if not dependency.required else "")
+        for dependency in binary.dependencies
+    ) or "none"
+
+
+def _runtime_search_path_state(binary: BinaryMetadata) -> str:
+    """Format runtime search paths for semantic comparison.
+
+    :param binary: Binary metadata to describe.
+    :returns: Comma-separated paths, or ``none``.
+    """
+    return ", ".join(binary.runtime_search_paths) or "none"
+
+
 def _version_components(value: str) -> tuple[int, ...] | None:
     """Parse an unambiguous dotted or comma-separated numeric version.
 
@@ -125,6 +146,12 @@ def _binary_differences(
             "Minimum OS version",
             old.minimum_os_version,
             new.minimum_os_version,
+        ),
+        ("Dynamic dependencies", _dependency_state(old), _dependency_state(new)),
+        (
+            "Runtime search paths",
+            _runtime_search_path_state(old),
+            _runtime_search_path_state(new),
         ),
         ("Signature", _signature_state(old), _signature_state(new)),
         (

@@ -73,6 +73,18 @@ class SignatureMetadata:
     signature_type: BinarySignatureType | None = None
 
 
+@dataclass(frozen=True)
+class BinaryDependency:
+    """Describe one dynamic library dependency declared by a binary.
+
+    :param path: Loader path or absolute library install name.
+    :param required: Whether the loader requires the library to be present.
+    """
+
+    path: str
+    required: bool = True
+
+
 @dataclass
 class BinaryMetadata:
     """Describe identified binary properties without format-specific fields.
@@ -85,6 +97,8 @@ class BinaryMetadata:
     :param signature: Embedded signature metadata, when available.
     :param minimum_os_version: Minimum operating system version required by
         the binary, when available.
+    :param dependencies: Dynamic library dependencies declared by the binary.
+    :param runtime_search_paths: Runtime library search paths.
     """
 
     format: str
@@ -94,6 +108,8 @@ class BinaryMetadata:
     product_version: str | None = None
     signature: SignatureMetadata | None = None
     minimum_os_version: str | None = None
+    dependencies: tuple[BinaryDependency, ...] = ()
+    runtime_search_paths: tuple[str, ...] = ()
 
 
 @dataclass

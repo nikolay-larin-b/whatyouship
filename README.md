@@ -66,6 +66,7 @@ Current checks and comparisons include:
 * inconsistent MSI installation scope;
 * DMG releases without an embedded software license agreement;
 * malformed macOS application bundles;
+* missing required Mach-O libraries expected inside an application bundle;
 * added, removed, and changed files between releases;
 * binary architecture changes;
 * executable/library kind changes;
@@ -76,8 +77,9 @@ For recognized PE binaries, WhatYouShip extracts architecture, binary kind,
 version metadata, and signature information. For thin and universal Mach-O
 binaries, it reports all target architectures, the binary kind, and whether
 every architecture slice has an ad hoc or certificate signature. It also reads
-the macOS deployment target from modern and legacy Mach-O load commands.
-Cryptographic validity of Mach-O signatures is not currently checked.
+the macOS deployment target, dynamic library dependencies, and runtime search
+paths from Mach-O load commands. Cryptographic validity of Mach-O signatures is
+not currently checked.
 
 For macOS application bundles in directories, ZIP archives, and DMG images,
 WhatYouShip reads XML and binary `Contents/Info.plist` files without using
@@ -85,7 +87,9 @@ macOS APIs. `inspect` reports the bundle identifier, name, versions, main
 executable, minimum system version, and package type. `lint` checks required
 metadata, the main executable, and consistency between
 `LSMinimumSystemVersion` and the executable deployment target, while `compare`
-reports bundle and binary metadata changes.
+reports bundle and binary metadata changes. Bundle validation resolves
+`@executable_path`, `@loader_path`, and `@rpath` references and reports required
+libraries that should be present inside the application bundle but are missing.
 
 ## Inspect, lint, compare
 

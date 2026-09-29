@@ -4,6 +4,7 @@
 """Inspect macOS application bundle metadata without platform APIs."""
 
 import plistlib
+import posixpath
 import re
 from pathlib import Path
 
@@ -22,6 +23,7 @@ _STRING_KEYS = (
 )
 
 _VERSION_PATTERN = re.compile(r"\d+(?:\.\d+)*", re.ASCII)
+_SYSTEM_LIBRARY_PREFIXES = ("/System/Library/", "/usr/lib/")
 
 
 def _version_components(value: str) -> tuple[int, ...] | None:
@@ -50,6 +52,208 @@ def _version_is_lower(declared: str, required: str) -> bool:
     return declared_components + (0,) * (
         width - len(declared_components)
     ) < required_components + (0,) * (width - len(required_components))
+
+
+def _joined_artifact_path(base: Path, suffix: str) -> Path | None:
+    """Join and normalize a Mach-O path within an artifact tree.
+
+    :param base: Artifact-relative directory used as the path origin.
+    :param suffix: POSIX path suffix from a load command.
+    :returns: Normalized artifact path, or ``None`` when it escapes the tree.
+    """
+    normalized = posixpath.normpath(f"{base.as_posix()}/{suffix}")
+    if (
+        posixpath.isabs(normalized)
+        or normalized == ".."
+        or normalized.startswith("../")
+    ):
+        return None
+    return Path(*normalized.split("/"))
+
+
+def _expand_runtime_path(
+    value: str, loader_directory: Path, executable_directory: Path
+) -> Path | None:
+    """Expand a loader- or executable-relative Mach-O path.
+
+    :param value: Dependency or runtime search path.
+    :param loader_directory: Directory containing the current Mach-O file.
+    :param executable_directory: Directory containing the app's main executable.
+    :returns: Artifact-relative path, or ``None`` when it cannot be expanded.
+    """
+    for marker, base in (
+        ("@loader_path", loader_directory),
+        ("@executable_path", executable_directory),
+    ):
+        if value == marker:
+            return base
+        prefix = f"{marker}/"
+        if value.startswith(prefix):
+            return _joined_artifact_path(base, value[len(prefix):])
+    return None
+
+
+def _inside_bundle(path: Path, bundle: Path) -> bool:
+    """Check whether an artifact path belongs to a bundle tree.
+
+    :param path: Artifact-relative path.
+    :param bundle: Artifact-relative bundle path, or ``.`` for the root.
+    :returns: Whether ``path`` is inside ``bundle``.
+    """
+    if bundle == Path("."):
+        return True
+    try:
+        path.relative_to(bundle)
+    except ValueError:
+        return False
+    return True
+
+
+def _owned_by_bundle(path: Path, bundle: Path) -> bool:
+    """Exclude files owned by application bundles nested below a bundle.
+
+    :param path: Artifact-relative file path.
+    :param bundle: Artifact-relative bundle path, or ``.`` for the root.
+    :returns: Whether the file belongs directly to this bundle.
+    """
+    if not _inside_bundle(path, bundle):
+        return False
+    relative = path if bundle == Path(".") else path.relative_to(bundle)
+    return not any(part.lower().endswith(".app") for part in relative.parts[:-1])
+
+
+def _dependency_exists(candidate: Path, files: set[Path]) -> bool:
+    """Check a dependency path, including omitted framework symlinks.
+
+    :param candidate: Resolved artifact-relative dependency path.
+    :param files: Regular files represented by the artifact backend.
+    :returns: Whether the dependency target is represented by a regular file.
+    """
+    if candidate in files:
+        return True
+    parts = candidate.parts
+    for index, part in enumerate(parts):
+        if not part.lower().endswith(".framework"):
+            continue
+        framework_name = part[:-len(".framework")]
+        tail = parts[index + 1:]
+        if tail not in {(framework_name,), ("Versions", "Current", framework_name)}:
+            return False
+        prefix = parts[:index + 1]
+        return any(
+            path.parts[:index + 1] == prefix
+            and len(path.parts) == index + 4
+            and path.parts[index + 1] == "Versions"
+            and path.parts[index + 3] == framework_name
+            for path in files
+        )
+    return False
+
+
+def _dependency_candidates(
+    dependency: str,
+    binary_path: Path,
+    executable_path: Path,
+    runtime_search_directories: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    """Resolve bundle-relative candidates for one Mach-O dependency.
+
+    :param dependency: Dynamic library install name.
+    :param binary_path: Artifact path of the importing Mach-O file.
+    :param executable_path: Artifact path of the app's main executable.
+    :param runtime_search_directories: Expanded bundle search directories.
+    :returns: Unique artifact-relative candidate paths.
+    """
+    loader_directory = binary_path.parent
+    executable_directory = executable_path.parent
+    direct = _expand_runtime_path(
+        dependency, loader_directory, executable_directory
+    )
+    if direct is not None:
+        return (direct,)
+    rpath_prefix = "@rpath/"
+    if not dependency.startswith(rpath_prefix):
+        return ()
+    suffix = dependency[len(rpath_prefix):]
+    candidates = []
+    for directory in runtime_search_directories:
+        candidate = _joined_artifact_path(directory, suffix)
+        if candidate is not None:
+            candidates.append(candidate)
+    return tuple(dict.fromkeys(candidates))
+
+
+def _dynamic_dependency_issues(
+    bundle: Path,
+    executable_path: Path,
+    files_by_path: dict[Path, ArtifactFile],
+) -> list[BundleIssue]:
+    """Find required bundle-relative Mach-O dependencies that are absent.
+
+    :param bundle: Artifact-relative application bundle path.
+    :param executable_path: Artifact path of the app's main executable.
+    :param files_by_path: Analyzed files keyed by artifact-relative path.
+    :returns: Missing dependency issues in stable path and name order.
+    """
+    executable_file = files_by_path[executable_path]
+    if executable_file.binary is None:
+        return []
+    represented_files = set(files_by_path)
+    runtime_search_directories = []
+    for owner_path, artifact_file in sorted(files_by_path.items()):
+        binary = artifact_file.binary
+        if (
+            not _owned_by_bundle(owner_path, bundle)
+            or binary is None
+            or binary.format != "Mach-O"
+        ):
+            continue
+        for runtime_path in binary.runtime_search_paths:
+            expanded = _expand_runtime_path(
+                runtime_path,
+                owner_path.parent,
+                executable_path.parent,
+            )
+            if expanded is not None and _inside_bundle(expanded, bundle):
+                runtime_search_directories.append(expanded)
+    search_directories = tuple(dict.fromkeys(runtime_search_directories))
+    issues = []
+    for binary_path, artifact_file in sorted(files_by_path.items()):
+        binary = artifact_file.binary
+        if (
+            not _owned_by_bundle(binary_path, bundle)
+            or binary is None
+            or binary.format != "Mach-O"
+        ):
+            continue
+        for dependency in binary.dependencies:
+            if (
+                not dependency.required
+                or dependency.path.startswith(_SYSTEM_LIBRARY_PREFIXES)
+            ):
+                continue
+            candidates = tuple(
+                candidate
+                for candidate in _dependency_candidates(
+                    dependency.path,
+                    binary_path,
+                    executable_path,
+                    search_directories,
+                )
+                if _inside_bundle(candidate, bundle)
+            )
+            if not candidates or any(
+                _dependency_exists(candidate, represented_files)
+                for candidate in candidates
+            ):
+                continue
+            issues.append(BundleIssue(
+                f"missing-dynamic-dependency:{binary_path.as_posix()}:"
+                f"{dependency.path}",
+                f"Mach-O file '{binary_path.as_posix()}' requires missing "
+                f"bundled library '{dependency.path}'.",
+            ))
+    return issues
 
 
 def _string_value(
@@ -150,6 +354,7 @@ class AppBundleInspector:
             ))
         executable = strings["CFBundleExecutable"]
         executable_path: Path | None = None
+        executable_file: ArtifactFile | None = None
         if executable is None:
             if "CFBundleExecutable" not in values:
                 issues.append(BundleIssue(
@@ -199,6 +404,18 @@ class AppBundleInspector:
                     f"LSMinimumSystemVersion is '{declared_version}', but the "
                     f"main executable requires macOS {required_version}.",
                 ))
+
+        if (
+            executable_path is not None
+            and executable_file is not None
+            and executable_file.binary is not None
+            and executable_file.binary.format == "Mach-O"
+        ):
+            issues.extend(_dynamic_dependency_issues(
+                relative_path,
+                executable_path,
+                files_by_path,
+            ))
 
         package_type = strings["CFBundlePackageType"]
         if package_type is not None and package_type != "APPL":

@@ -216,6 +216,23 @@ class LintTests(unittest.TestCase):
         self.assertEqual(findings[0].identity, "extension:.ilk")
         self.assertTrue(all("Suspicious build artifact extension" in finding.message for finding in findings))
 
+    def test_build_artifact_rule_reports_debug_symbol_bundle_once(self) -> None:
+        """Report a containing dSYM directory instead of every nested file."""
+        bundle = Path("App.app/Contents/Resources/plugin.dSYM")
+        artifact = ReleaseArtifact(
+            Path("release.dmg"),
+            [
+                ArtifactFile(bundle / "Contents/Info.plist", 1, "a"),
+                ArtifactFile(bundle / "Contents/Resources/DWARF/plugin", 1, "b"),
+            ],
+        )
+
+        findings = BuildArtifactRule().check(artifact)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].relative_path, bundle)
+        self.assertEqual(findings[0].identity, "extension:.dsym")
+
     def test_unsigned_binary_rule_uses_binary_type(self) -> None:
         """Flag unsigned executables and libraries regardless of filename."""
         files = [

@@ -10,6 +10,7 @@ extensions = [
     ".ipdb",
     ".tlog",
     ".lastbuildstate",
+    ".dSYM",
     ".exp",
     ".lib",
     ".pdb",

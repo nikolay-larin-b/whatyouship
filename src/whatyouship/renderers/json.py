@@ -31,6 +31,11 @@ def _file_data(file: ArtifactFile) -> dict[str, Any]:
             "file_version": binary.file_version,
             "product_version": binary.product_version,
             "minimum_os_version": binary.minimum_os_version,
+            "dependencies": [
+                {"path": dependency.path, "required": dependency.required}
+                for dependency in binary.dependencies
+            ],
+            "runtime_search_paths": list(binary.runtime_search_paths),
             "signature": None if signature is None else {
                 "present": signature.present,
                 "valid": signature.valid,

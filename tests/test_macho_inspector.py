@@ -14,6 +14,7 @@ import lief
 
 from whatyouship.binary.macho import MachOInspector
 from whatyouship.inspectors.directory import DirectoryInspector
+from whatyouship.model import BinaryDependency
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
 
@@ -163,12 +164,18 @@ def _mock_slice(
     cpu_type: lief.MachO.Header.CPU_TYPE,
     file_type: lief.MachO.Header.FILE_TYPE,
     signature: bytes | None,
+    dependencies: tuple[
+        tuple[str, lief.MachO.LoadCommand.TYPE], ...
+    ] = (),
+    runtime_search_paths: tuple[str, ...] = (),
 ) -> SimpleNamespace:
     """Build the Mach-O slice interface used by the inspector.
 
     :param cpu_type: Slice architecture.
     :param file_type: Slice binary kind.
     :param signature: Embedded signature payload, or ``None``.
+    :param dependencies: Library names and load-command types.
+    :param runtime_search_paths: Runtime search paths.
     :returns: Minimal parsed-slice replacement.
     """
     code_signature = (
@@ -177,6 +184,11 @@ def _mock_slice(
     return SimpleNamespace(
         header=SimpleNamespace(cpu_type=cpu_type, file_type=file_type),
         code_signature=code_signature,
+        libraries=[
+            SimpleNamespace(name=name, command=command)
+            for name, command in dependencies
+        ],
+        rpaths=[SimpleNamespace(path=path) for path in runtime_search_paths],
     )
 
 
@@ -262,6 +274,53 @@ class MachOInspectorTests(unittest.TestCase):
         self.assertIsNotNone(incomplete)
         self.assertEqual(complete.minimum_os_version, "12.3")
         self.assertIsNone(incomplete.minimum_os_version)
+
+    def test_combines_dependencies_and_runtime_search_paths(self) -> None:
+        """Merge slice imports while excluding each library's install ID."""
+        load = lief.MachO.LoadCommand.TYPE.LOAD_DYLIB
+        weak = lief.MachO.LoadCommand.TYPE.LOAD_WEAK_DYLIB
+        identifier = lief.MachO.LoadCommand.TYPE.ID_DYLIB
+        slices = [
+            _mock_slice(
+                lief.MachO.Header.CPU_TYPE.X86_64,
+                lief.MachO.Header.FILE_TYPE.DYLIB,
+                None,
+                (
+                    ("@rpath/libShared.dylib", weak),
+                    ("@rpath/libOptional.dylib", weak),
+                    ("@rpath/libX86.dylib", load),
+                    ("@rpath/libSelf.dylib", identifier),
+                ),
+                ("@loader_path/../Frameworks",),
+            ),
+            _mock_slice(
+                lief.MachO.Header.CPU_TYPE.ARM64,
+                lief.MachO.Header.FILE_TYPE.DYLIB,
+                None,
+                (
+                    ("@rpath/libArm.dylib", load),
+                    ("@rpath/libShared.dylib", load),
+                ),
+                ("@loader_path",),
+            ),
+        ]
+        with patch(
+            "whatyouship.binary.macho.lief.MachO.parse",
+            return_value=slices,
+        ):
+            metadata = MachOInspector().inspect(_make_universal_macho())
+
+        self.assertIsNotNone(metadata)
+        self.assertEqual(metadata.dependencies, (
+            BinaryDependency("@rpath/libArm.dylib"),
+            BinaryDependency("@rpath/libOptional.dylib", required=False),
+            BinaryDependency("@rpath/libShared.dylib"),
+            BinaryDependency("@rpath/libX86.dylib"),
+        ))
+        self.assertEqual(
+            metadata.runtime_search_paths,
+            ("@loader_path", "@loader_path/../Frameworks"),
+        )
 
     def test_directory_inspector_attaches_macho_metadata(self) -> None:
         """Analyze and lint Mach-O files through the shared directory pipeline."""

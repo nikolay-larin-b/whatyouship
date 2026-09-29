@@ -15,7 +15,8 @@ directory, DMG, MSI, NSIS installer, Inno Setup installer, and ZIP artifacts:
 * ``compare <old-artifact> <new-artifact>`` to compare two releases.
 
 By default, the build artifact rule checks ``.ilk``, ``.obj``, ``.iobj``,
-``.ipdb``, ``.tlog``, and ``.lastbuildstate`` files.
+``.ipdb``, ``.tlog``, and ``.lastbuildstate`` files, along with ``.dSYM``
+debug-symbol bundles.
 
 For recognized binaries, ``inspect`` also reports architecture, executable or
 library kind, version metadata, and signature information when available.
@@ -23,9 +24,10 @@ PE inspection reports architecture, binary kind, version metadata, and
 signature information. Thin and universal Mach-O inspection reports all target
 architectures, the binary kind, and whether every architecture slice has an ad
 hoc or certificate signature. It also reads the macOS deployment target from
-modern and legacy Mach-O load commands. ``lint`` reports an executable or
-library when any slice is unsigned. Cryptographic validity of Mach-O signatures
-is not currently checked.
+modern and legacy Mach-O load commands, along with dynamic library dependencies
+and runtime search paths. ``lint`` reports an executable or library when any
+slice is unsigned. Cryptographic validity of Mach-O signatures is not currently
+checked.
 
 For macOS application bundles in directories, ZIP archives, and DMG images,
 WhatYouShip reads XML and binary ``Contents/Info.plist`` files without using
@@ -33,7 +35,9 @@ macOS APIs. ``inspect`` reports bundle identity, versions, the main executable,
 minimum system version, and package type. ``lint`` reports malformed bundles,
 including cases where ``LSMinimumSystemVersion`` is lower than the main
 executable's deployment target. ``compare`` reports bundle and binary metadata
-changes.
+changes. Bundle validation resolves ``@executable_path``, ``@loader_path``, and
+``@rpath`` references and reports required libraries that should be present
+inside the application bundle but are missing.
 
 For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking

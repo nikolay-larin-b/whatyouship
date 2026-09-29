@@ -20,6 +20,7 @@ from whatyouship.model import (
     AppBundleMetadata,
     ArtifactFile,
     ArtifactSignature,
+    BinaryDependency,
     BinaryMetadata,
     BundleIssue,
     Finding,
@@ -139,6 +140,8 @@ class ReportOutputTests(unittest.TestCase):
                 "format": "PE", "architecture": "x86_64", "kind": "executable",
                 "file_version": "1.2.3", "product_version": "4.5.6",
                 "minimum_os_version": None,
+                "dependencies": [],
+                "runtime_search_paths": [],
                 "signature": {
                     "present": True, "valid": True,
                     "signer": "CN=Publisher", "timestamp": True,
@@ -160,6 +163,14 @@ class ReportOutputTests(unittest.TestCase):
                     "arm64",
                     "executable",
                     minimum_os_version="13.0",
+                    dependencies=(
+                        BinaryDependency("@rpath/libSample.dylib"),
+                        BinaryDependency(
+                            "/usr/lib/libobjc.A.dylib",
+                            required=False,
+                        ),
+                    ),
+                    runtime_search_paths=("@executable_path/../Frameworks",),
                 ),
             )],
             bundles=[AppBundleMetadata(
@@ -188,6 +199,12 @@ class ReportOutputTests(unittest.TestCase):
         self.assertIn("Executable: sample", rendered)
         self.assertIn("Issue: A required value is missing.", rendered)
         self.assertIn("Minimum OS version: 13.0", rendered)
+        self.assertIn("Dependency: @rpath/libSample.dylib | required", rendered)
+        self.assertIn("Dependency: /usr/lib/libobjc.A.dylib | weak", rendered)
+        self.assertIn(
+            "Runtime search path: @executable_path/../Frameworks",
+            rendered,
+        )
 
     def test_lint_json_baseline_keeps_all_categories(self) -> None:
         """Retain existing findings even though text hides their details."""
@@ -286,6 +303,8 @@ class ReportOutputTests(unittest.TestCase):
                 "arm64",
                 "executable",
                 minimum_os_version="13.0",
+                dependencies=(BinaryDependency("@rpath/libSample.dylib"),),
+                runtime_search_paths=("@loader_path/../Frameworks",),
             ),
         )])
 
@@ -294,6 +313,14 @@ class ReportOutputTests(unittest.TestCase):
         )))
 
         self.assertEqual(rows[0]["minimum_os_version"], "13.0")
+        self.assertEqual(
+            json.loads(rows[0]["dependencies"]),
+            [{"path": "@rpath/libSample.dylib", "required": True}],
+        )
+        self.assertEqual(
+            json.loads(rows[0]["runtime_search_paths"]),
+            ["@loader_path/../Frameworks"],
+        )
 
     def test_lint_csv_has_one_row_per_finding_and_quotes_message(self) -> None:
         """Preserve punctuation and newlines in CSV finding messages."""

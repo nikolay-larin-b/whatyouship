@@ -23,6 +23,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.build_artifacts.severity, "error")
         self.assertIn(".exp", config.build_artifacts.extensions)
         self.assertIn(".lib", config.build_artifacts.extensions)
+        self.assertIn(".dsym", config.build_artifacts.extensions)
         self.assertEqual(config.app_bundle.severity, "error")
         self.assertEqual(config.unsigned_binary.severity, "warning")
         self.assertEqual(config.unsigned_artifact.severity, "warning")
