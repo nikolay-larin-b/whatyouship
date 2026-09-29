@@ -244,6 +244,129 @@ Mode = lrwxr-xr-x
         self.assertIn("-spd", link_command)
         self.assertIn("--", link_command)
 
+    def test_reads_windows_style_link_paths(self) -> None:
+        """Normalize separators emitted by 7-Zip on Windows."""
+        listing = _SINGLE_HFS_LISTING + """\
+
+Path = Release\\Framework.framework\\Versions\\Current
+Size = 1
+Mode = lrwxr-xr-x
+"""
+
+        def run(
+            command: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+            """Provide a Windows-style listing and one link target.
+
+            :param command: 7-Zip command line.
+            :param kwargs: Subprocess options supplied by the cache.
+            :returns: Successful completed process.
+            """
+            if command[1] == "l":
+                return subprocess.CompletedProcess(command, 0, listing, "")
+            if "-so" in command:
+                return subprocess.CompletedProcess(command, 0, b"A", b"")
+            return self._successful_run(command, **kwargs)
+
+        with patch(
+            "whatyouship.inspectors.dmg_7zip_cache.find_7zip", return_value="7z"
+        ), patch(
+            "whatyouship.inspectors.dmg_7zip_cache.subprocess.run",
+            side_effect=run,
+        ):
+            volume = DmgSevenZipExtractionCache().load_or_populate(
+                self.digest, self.source
+            )
+
+        self.assertEqual(
+            volume.symbolic_links[0].relative_path,
+            Path("Framework.framework/Versions/Current"),
+        )
+
+    def test_discards_hfs_private_directories_before_tree_validation(self) -> None:
+        """Omit HFS bookkeeping directories with restrictive modes."""
+        listing = _SINGLE_HFS_LISTING + """\
+
+Path = Release\\.HFS+ Private Directory Data_
+Folder = +
+Mode = dr-xr-xr-t
+
+Path = Release\\[HFS+ Private Data]
+Folder = +
+Mode = d---------
+"""
+
+        def run(
+            command: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            """Create regular payload and private HFS directories.
+
+            :param command: 7-Zip command line.
+            :param kwargs: Subprocess options supplied by the cache.
+            :returns: Successful completed process.
+            """
+            if command[1] == "l":
+                return subprocess.CompletedProcess(command, 0, listing, "")
+            result = self._successful_run(command, **kwargs)
+            output = Path(
+                next(argument[2:] for argument in command if argument.startswith("-o"))
+            )
+            for name in (
+                ".HFS+ Private Directory Data_",
+                "[HFS+ Private Data]",
+            ):
+                private = output / "Release" / name
+                private.mkdir()
+                private.chmod(0o555)
+            return result
+
+        with patch(
+            "whatyouship.inspectors.dmg_7zip_cache.find_7zip", return_value="7z"
+        ), patch(
+            "whatyouship.inspectors.dmg_7zip_cache.subprocess.run",
+            side_effect=run,
+        ):
+            volume = DmgSevenZipExtractionCache().load_or_populate(
+                self.digest, self.source
+            )
+
+        self.assertFalse(
+            (volume.root / ".HFS+ Private Directory Data_").exists()
+        )
+        self.assertFalse((volume.root / "[HFS+ Private Data]").exists())
+        self.assertTrue(
+            (volume.root / "Application.app" / "payload.bin").is_file()
+        )
+
+    def test_rejects_populated_hfs_private_directories(self) -> None:
+        """Do not discard storage that can back unresolved HFS hard links."""
+        listing = _SINGLE_HFS_LISTING + """\
+
+Path = Release\\[HFS+ Private Data]
+Folder = +
+Mode = d---------
+
+Path = Release\\[HFS+ Private Data]\\iNode42
+Folder = -
+Size = 7
+Mode = -rw-r--r--
+"""
+
+        with patch(
+            "whatyouship.inspectors.dmg_7zip_cache.find_7zip", return_value="7z"
+        ), patch(
+            "whatyouship.inspectors.dmg_7zip_cache.subprocess.run",
+            return_value=subprocess.CompletedProcess(["7z", "l"], 0, listing, ""),
+        ) as run, self.assertRaisesRegex(
+            ValueError, "HFS hard links are not supported"
+        ):
+            DmgSevenZipExtractionCache().load_or_populate(
+                self.digest, self.source
+            )
+
+        run.assert_called_once()
+        self.assertEqual(list(self.cache_root.iterdir()), [])
+
     def test_rejects_unsafe_link_paths_before_reading_targets(self) -> None:
         """Do not request link data for entries outside the extracted volume."""
         listing = _SINGLE_HFS_LISTING + """\

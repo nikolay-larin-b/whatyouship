@@ -3,7 +3,9 @@
 
 """Cache single-volume DMG trees extracted by 7-Zip."""
 
+import os
 import shutil
+import stat
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +24,10 @@ _SEVEN_ZIP_REQUIRED = (
 _FILESYSTEM_TYPES = {"APFS", "HFS"}
 _MAX_LINK_TARGET_SIZE = 1024 * 1024
 _LINK_ARGUMENT_LIMIT = 16 * 1024
+_HFS_PRIVATE_DIRECTORY_NAMES = {
+    ".HFS+ Private Directory Data_",
+    "[HFS+ Private Data]",
+}
 
 
 @dataclass(frozen=True)
@@ -147,7 +153,7 @@ def _relative_link_path(archive_path: str, volume_name: str) -> Path:
     :returns: Safe path relative to the volume root.
     :raises ValueError: If the path is absolute, ambiguous, or outside the volume.
     """
-    path = PurePosixPath(archive_path)
+    path = PurePosixPath(archive_path.replace("\\", "/"))
     if (
         path.is_absolute()
         or len(path.parts) < 2
@@ -156,6 +162,71 @@ def _relative_link_path(archive_path: str, volume_name: str) -> Path:
     ):
         raise ValueError("7-Zip reported an unsafe symbolic-link path")
     return Path(*path.parts[1:])
+
+
+def _hfs_private_directories(listing: str) -> tuple[Path, ...]:
+    """Find empty HFS implementation directories exposed by 7-Zip.
+
+    These directories contain filesystem bookkeeping rather than mounted-volume
+    contents. Populated directories can back HFS hard links and are rejected
+    until the 7-Zip backend can prove that every link was resolved correctly.
+
+    :param listing: Technical listing emitted by ``7z l -slt``.
+    :returns: Safe paths of empty private directories.
+    :raises ValueError: If a private-directory path is unsafe or populated.
+    """
+    records = _technical_records(listing)
+    listed_paths = tuple(
+        PurePosixPath(record["Path"].replace("\\", "/"))
+        for record in records
+        if "Path" in record
+    )
+    private_paths = []
+    for record in records:
+        archive_path = record.get("Path")
+        if (
+            archive_path is None
+            or record.get("Folder") != "+"
+            or record.get("Mode", "")[:1] != "d"
+        ):
+            continue
+        path = PurePosixPath(archive_path.replace("\\", "/"))
+        if len(path.parts) != 2 or path.name not in _HFS_PRIVATE_DIRECTORY_NAMES:
+            continue
+        if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+            raise ValueError("7-Zip reported an unsafe HFS private-directory path")
+        if any(
+            len(other.parts) > len(path.parts)
+            and other.parts[:len(path.parts)] == path.parts
+            for other in listed_paths
+        ):
+            raise ValueError(
+                "7-Zip reported a populated HFS private directory; "
+                "HFS hard links are not supported"
+            )
+        private_paths.append(Path(*path.parts))
+    return tuple(private_paths)
+
+
+def _discard_hfs_private_directories(
+    private_paths: tuple[Path, ...], files_root: Path
+) -> None:
+    """Remove empty HFS implementation directories extracted by 7-Zip.
+
+    7-Zip can apply their HFS modes on Windows, making the extracted tree
+    impossible to traverse or clean up until owner permissions are restored.
+
+    :param private_paths: Validated empty private-directory paths.
+    :param files_root: Temporary directory containing the extracted volume.
+    :raises ValueError: If a private directory materializes as a symbolic link.
+    """
+    for path in private_paths:
+        extracted = files_root / path
+        if extracted.is_symlink():
+            raise ValueError("7-Zip extracted an unsafe HFS private-directory link")
+        if extracted.is_dir():
+            os.chmod(extracted, stat.S_IRWXU)
+            shutil.rmtree(extracted)
 
 
 def _decode_target(data: bytes, expected_size: int) -> str:
@@ -275,6 +346,7 @@ class DmgSevenZipExtractionCache:
             raise ValueError(
                 "7-Zip did not find exactly one supported filesystem in the DMG"
             )
+        private_paths = _hfs_private_directories(listing.stdout)
 
         result = subprocess.run(
             [
@@ -301,6 +373,7 @@ class DmgSevenZipExtractionCache:
                 f"7-Zip DMG extraction failed with exit code "
                 f"{result.returncode}{suffix}"
             )
+        _discard_hfs_private_directories(private_paths, files_root)
         volume_root = self._volume_root(files_root)
         links = self._extract_links(
             executable,
