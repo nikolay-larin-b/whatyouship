@@ -4,21 +4,33 @@
 """Inspect ordinary files in a directory release artifact."""
 
 import hashlib
+import os
+from collections.abc import Iterable
 from pathlib import Path
 
 from whatyouship.binary.macho import MachOInspector
 from whatyouship.binary.pe import PeInspector
 from whatyouship.inspectors.app_bundle import AppBundleInspector
-from whatyouship.model import ArtifactFile, ReleaseArtifact
+from whatyouship.model import (
+    ArtifactFile,
+    ArtifactSymbolicLink,
+    ReleaseArtifact,
+    symbolic_link_is_external,
+)
 
 
 class DirectoryInspector:
     """Build a release artifact from a directory tree."""
 
-    def inspect(self, directory: Path) -> ReleaseArtifact:
+    def inspect(
+        self,
+        directory: Path,
+        symbolic_links: Iterable[ArtifactSymbolicLink] = (),
+    ) -> ReleaseArtifact:
         """Inspect all ordinary files below a directory.
 
         :param directory: Root directory of the release artifact.
+        :param symbolic_links: Links supplied by an extraction backend.
         :returns: An artifact with files ordered by relative path.
         :raises FileNotFoundError: If the directory does not exist.
         :raises NotADirectoryError: If the path is not a directory.
@@ -29,10 +41,20 @@ class DirectoryInspector:
             raise NotADirectoryError(f"Path is not a directory: {directory}")
 
         files = []
+        links_by_path = {link.relative_path: link for link in symbolic_links}
         pe_inspector = PeInspector()
         macho_inspector = MachOInspector()
         for path in sorted(directory.rglob("*")):
-            if path.is_symlink() or not path.is_file():
+            if path.is_symlink():
+                relative_path = path.relative_to(directory)
+                target = os.readlink(path)
+                links_by_path[relative_path] = ArtifactSymbolicLink(
+                    relative_path,
+                    target,
+                    symbolic_link_is_external(relative_path, target),
+                )
+                continue
+            if not path.is_file():
                 continue
 
             with path.open("rb") as stream:
@@ -49,4 +71,9 @@ class DirectoryInspector:
             )
 
         bundles = AppBundleInspector().inspect(directory, files)
-        return ReleaseArtifact(source_path=directory, files=files, bundles=bundles)
+        return ReleaseArtifact(
+            source_path=directory,
+            files=files,
+            symbolic_links=[links_by_path[path] for path in sorted(links_by_path)],
+            bundles=bundles,
+        )

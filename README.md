@@ -170,8 +170,9 @@ ZIP releases use the same file and binary analysis as ordinary directories.
 
 On macOS, DMG releases use the system `hdiutil` command. WhatYouShip mounts a
 single-volume image read-only at a private mount point, analyzes its regular
-files, and detaches it after inspection. It also reports whether the original
-image embeds a software license agreement; its absence is an error by default.
+files and symbolic links, and detaches it after inspection. It also reports
+whether the original image embeds a software license agreement; its absence is
+an error by default.
 An image with an agreement is converted to a normalized cached DMG without
 accepting the agreement on the user's behalf, then mounted read-only.
 
@@ -180,8 +181,9 @@ WhatYouShip supports single-volume images whose HFS or APFS filesystem is
 recognized by 7-Zip and analyzes the extracted regular files. Embedded software
 license agreement metadata is unavailable through this backend, so `lint` does
 not report the agreement as present or absent. Encrypted and multi-volume images
-are not supported. Symbolic links, extended attributes, alternate streams, and
-resource forks are not represented in reports.
+are not supported. Symbolic links are reported with their stored targets and
+whether they point outside the artifact, without being materialized or followed.
+Extended attributes, alternate streams, and resource forks are not represented.
 
 DMG container signatures are inspected independently from their files on every
 platform. WhatYouShip always detects unsigned images, verifies CodeDirectory
@@ -288,7 +290,7 @@ Extracted artifacts are cached by SHA-256:
 ~/.whatyouship/cache/inno/v1/
 ~/.whatyouship/cache/zip/v1/
 ~/.whatyouship/cache/dmg/v1/
-~/.whatyouship/cache/dmg-7zip/v1/
+~/.whatyouship/cache/dmg-7zip/v2/
 ```
 
 The cache avoids repeated extraction of the same artifact. Binary metadata and lint analysis are performed again on each run.
@@ -298,7 +300,8 @@ temporary read-only mount. Images with an agreement are converted once and
 cached by the original image's SHA-256 under `dmg/v1`. That cache stores a
 normalized disk image rather than an extracted file tree, preserving the
 contained filesystem for inspection. On Linux and Windows, the regular-file
-tree extracted by 7-Zip is cached separately under `dmg-7zip/v1`.
+tree and symbolic-link metadata extracted by 7-Zip are cached separately under
+`dmg-7zip/v2`.
 
 The cache hash identifies artifact content; it is not a signature or authenticity check.
 

@@ -5,9 +5,22 @@
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from whatyouship.inspectors.extraction_cache import ExtractionCache
+
+
+@dataclass(frozen=True)
+class ExtractedTreeEntry:
+    """Describe a validated extracted tree and its backend metadata.
+
+    :param files_root: Directory containing extracted regular files.
+    :param metadata: Validated backend-specific manifest metadata.
+    """
+
+    files_root: Path
+    metadata: dict[str, object]
 
 
 class ExtractedTreeCache:
@@ -35,7 +48,30 @@ class ExtractedTreeCache:
             digest, lambda entry: self._populate(entry, populate), self._load
         )
 
-    def _populate(self, entry: Path, populate: Callable[[Path], None]) -> None:
+    def load_or_populate_with_metadata(
+        self,
+        digest: str,
+        populate: Callable[[Path], dict[str, object]],
+        validate_metadata: Callable[[object], dict[str, object] | None],
+    ) -> ExtractedTreeEntry:
+        """Return a validated tree with backend-specific manifest metadata.
+
+        :param digest: SHA-256 of the complete source artifact.
+        :param populate: Callback that extracts files and returns metadata.
+        :param validate_metadata: Callback that validates cached metadata.
+        :returns: Extracted files and validated metadata.
+        """
+        return ExtractionCache(self._root).load_or_populate(
+            digest,
+            lambda entry: self._populate(entry, populate),
+            lambda entry: self._load_entry(entry, validate_metadata),
+        )
+
+    def _populate(
+        self,
+        entry: Path,
+        populate: Callable[[Path], dict[str, object] | None],
+    ) -> None:
         """Extract into staging and write a completion manifest.
 
         :param entry: Temporary cache entry.
@@ -44,7 +80,7 @@ class ExtractedTreeCache:
         """
         files_root = entry / "files"
         files_root.mkdir()
-        populate(files_root)
+        metadata = populate(files_root) or {}
 
         records: list[dict[str, str | int]] = []
         for path in sorted(files_root.rglob("*")):
@@ -64,7 +100,8 @@ class ExtractedTreeCache:
                     f"{path.name}"
                 )
         (entry / "manifest.json").write_text(
-            json.dumps({"version": 1, "files": records}), encoding="utf-8"
+            json.dumps({"version": 1, "files": records, "metadata": metadata}),
+            encoding="utf-8",
         )
 
     def _load(self, entry: Path) -> Path | None:
@@ -72,6 +109,23 @@ class ExtractedTreeCache:
 
         :param entry: Candidate content-addressed cache entry.
         :returns: Extracted tree, or ``None`` for an incomplete entry.
+        """
+        loaded = self._load_entry(
+            entry,
+            lambda metadata: metadata if isinstance(metadata, dict) else None,
+        )
+        return loaded.files_root if loaded is not None else None
+
+    def _load_entry(
+        self,
+        entry: Path,
+        validate_metadata: Callable[[object], dict[str, object] | None],
+    ) -> ExtractedTreeEntry | None:
+        """Validate files and backend metadata in one cache entry.
+
+        :param entry: Candidate content-addressed cache entry.
+        :param validate_metadata: Callback that validates manifest metadata.
+        :returns: Validated cache entry, or ``None`` when incomplete.
         """
         if entry.is_symlink() or not entry.is_dir():
             return None
@@ -91,6 +145,9 @@ class ExtractedTreeCache:
                 or manifest["version"] != 1
                 or not isinstance(manifest.get("files"), list)
             ):
+                return None
+            metadata = validate_metadata(manifest.get("metadata", {}))
+            if metadata is None:
                 return None
 
             expected: set[Path] = set()
@@ -124,6 +181,9 @@ class ExtractedTreeCache:
                     actual.add(path.relative_to(files_root))
                 elif not path.is_dir():
                     return None
-            return files_root if actual == expected else None
+            return (
+                ExtractedTreeEntry(files_root, metadata)
+                if actual == expected else None
+            )
         except (OSError, ValueError, TypeError, KeyError):
             return None

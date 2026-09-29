@@ -5,9 +5,13 @@
 
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
+from typing import Any
 
 from whatyouship.inspectors.extracted_tree_cache import ExtractedTreeCache
+from whatyouship.model import ArtifactSymbolicLink, symbolic_link_is_external
 from whatyouship.paths import cache_directory
 
 
@@ -16,6 +20,29 @@ _SEVEN_ZIP_REQUIRED = (
     "DMG extraction requires 7-Zip. Add '7z' or '7zz' to PATH."
 )
 _FILESYSTEM_TYPES = {"APFS", "HFS"}
+_MAX_LINK_TARGET_SIZE = 1024 * 1024
+_LINK_ARGUMENT_LIMIT = 16 * 1024
+
+
+@dataclass(frozen=True)
+class DmgExtractedVolume:
+    """Describe an extracted DMG volume and non-materialized links.
+
+    :param root: Directory containing extracted regular files.
+    :param symbolic_links: Symbolic links read from archive metadata.
+    """
+
+    root: Path
+    symbolic_links: tuple[ArtifactSymbolicLink, ...]
+
+
+@dataclass(frozen=True)
+class _ListedLink:
+    """Describe one symbolic-link entry in a 7-Zip listing."""
+
+    path: str
+    size: int
+    target: str | None = None
 
 
 def find_7zip() -> str:
@@ -31,13 +58,22 @@ def find_7zip() -> str:
     raise FileNotFoundError(_SEVEN_ZIP_REQUIRED)
 
 
-def _failure_detail(result: subprocess.CompletedProcess[str]) -> str:
+def _output_text(value: str | bytes) -> str:
+    """Decode subprocess output for diagnostics.
+
+    :param value: Text or raw process output.
+    :returns: Decoded text with invalid bytes replaced.
+    """
+    return value if isinstance(value, str) else value.decode("utf-8", "replace")
+
+
+def _failure_detail(result: subprocess.CompletedProcess[Any]) -> str:
     """Select bounded diagnostics from a failed 7-Zip command.
 
     :param result: Completed 7-Zip process.
     :returns: Diagnostic text suitable for a one-line error.
     """
-    output = result.stderr.strip() or result.stdout.strip()
+    output = _output_text(result.stderr).strip() or _output_text(result.stdout).strip()
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     return " | ".join(lines[-6:])[:1000]
 
@@ -56,37 +92,167 @@ def _archive_types(output: str) -> list[str]:
     ]
 
 
+def _technical_records(output: str) -> tuple[dict[str, str], ...]:
+    """Parse records from a 7-Zip technical listing.
+
+    :param output: Standard output from ``7z l -slt``.
+    :returns: Key/value records in archive order.
+    """
+    records = []
+    current: dict[str, str] = {}
+    for line in output.splitlines():
+        if not line:
+            if current:
+                records.append(current)
+                current = {}
+            continue
+        key, separator, value = line.partition(" = ")
+        if separator:
+            current[key] = value
+    if current:
+        records.append(current)
+    return tuple(records)
+
+
+def _listed_links(output: str) -> tuple[_ListedLink, ...]:
+    """Read symbolic-link records from a technical listing.
+
+    :param output: Standard output from ``7z l -slt``.
+    :returns: Link paths, target byte sizes, and directly reported targets.
+    :raises ValueError: If a link record is incomplete or unreasonable.
+    """
+    links = []
+    for record in _technical_records(output):
+        if not record.get("Mode", "").startswith("l"):
+            continue
+        path = record.get("Path")
+        size_text = record.get("Size")
+        if path is None or size_text is None:
+            raise ValueError("7-Zip reported an incomplete symbolic-link record")
+        try:
+            size = int(size_text)
+        except ValueError as error:
+            raise ValueError("7-Zip reported an invalid symbolic-link size") from error
+        if size <= 0 or size > _MAX_LINK_TARGET_SIZE:
+            raise ValueError("7-Zip reported an invalid symbolic-link target size")
+        links.append(_ListedLink(path, size, record.get("Symbolic Link")))
+    return tuple(links)
+
+
+def _relative_link_path(archive_path: str, volume_name: str) -> Path:
+    """Convert a listed archive path to a safe volume-relative path.
+
+    :param archive_path: POSIX path emitted by 7-Zip.
+    :param volume_name: Extracted top-level volume directory name.
+    :returns: Safe path relative to the volume root.
+    :raises ValueError: If the path is absolute, ambiguous, or outside the volume.
+    """
+    path = PurePosixPath(archive_path)
+    if (
+        path.is_absolute()
+        or len(path.parts) < 2
+        or path.parts[0] != volume_name
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise ValueError("7-Zip reported an unsafe symbolic-link path")
+    return Path(*path.parts[1:])
+
+
+def _decode_target(data: bytes, expected_size: int) -> str:
+    """Decode one bounded symbolic-link target.
+
+    :param data: Raw target bytes stored in the filesystem entry.
+    :param expected_size: Size reported by the technical listing.
+    :returns: UTF-8 target text.
+    :raises ValueError: If the data is truncated, invalid, or empty.
+    """
+    if len(data) != expected_size:
+        raise ValueError("7-Zip returned inconsistent symbolic-link target data")
+    try:
+        target = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("7-Zip returned a non-UTF-8 symbolic-link target") from error
+    if not target or "\x00" in target:
+        raise ValueError("7-Zip returned an invalid symbolic-link target")
+    return target
+
+
+def _link_batches(
+    links: tuple[_ListedLink, ...],
+) -> tuple[tuple[_ListedLink, ...], ...]:
+    """Bound command-line size while preserving archive entry order.
+
+    :param links: Listed links whose target data must be extracted.
+    :returns: Ordered link batches.
+    """
+    batches = []
+    current: list[_ListedLink] = []
+    size = 0
+    for link in links:
+        argument_size = len(link.path.encode("utf-8")) + 1
+        if current and size + argument_size > _LINK_ARGUMENT_LIMIT:
+            batches.append(tuple(current))
+            current = []
+            size = 0
+        current.append(link)
+        size += argument_size
+    if current:
+        batches.append(tuple(current))
+    return tuple(batches)
+
+
 class DmgSevenZipExtractionCache:
     """Store regular files from a single-volume DMG by source digest."""
 
     def __init__(self) -> None:
         """Select the versioned 7-Zip DMG cache directory."""
-        self._root = cache_directory("dmg-7zip")
+        self._root = cache_directory("dmg-7zip", "v2")
 
-    def load_or_populate(self, digest: str, source_path: Path) -> Path:
+    def load_or_populate(self, digest: str, source_path: Path) -> DmgExtractedVolume:
         """Return the single extracted volume root.
 
         :param digest: SHA-256 of the complete DMG artifact.
         :param source_path: DMG artifact to extract on a cache miss.
-        :returns: Directory representing the volume root.
+        :returns: Extracted volume and symbolic-link metadata.
         :raises FileNotFoundError: If 7-Zip is unavailable.
         :raises ValueError: If the image cannot be inspected or extracted.
         """
-        files_root = ExtractedTreeCache(self._root, "7-Zip").load_or_populate(
-            digest, lambda output: self._extract(source_path, output)
+        entry = ExtractedTreeCache(
+            self._root, "7-Zip"
+        ).load_or_populate_with_metadata(
+            digest,
+            lambda output: self._extract(source_path, output),
+            self._validate_metadata,
         )
-        return self._volume_root(files_root)
+        volume_root = self._volume_root(entry.files_root)
+        links = tuple(
+            ArtifactSymbolicLink(
+                Path(record["relative_path"]),
+                record["target"],
+                symbolic_link_is_external(
+                    Path(record["relative_path"]), record["target"]
+                ),
+            )
+            for record in entry.metadata["symbolic_links"]
+            if isinstance(record, dict)
+            and isinstance(record.get("relative_path"), str)
+            and isinstance(record.get("target"), str)
+        )
+        return DmgExtractedVolume(volume_root, links)
 
-    def _extract(self, source_path: Path, files_root: Path) -> None:
+    def _extract(
+        self, source_path: Path, files_root: Path
+    ) -> dict[str, object]:
         """Validate and extract one DMG filesystem into staging.
 
-        Symbolic links and alternate streams are deliberately omitted to match
-        the format-independent directory inspection model.
+        Symbolic links are read as metadata without creating or following them.
+        Alternate streams are omitted.
 
         :param source_path: DMG artifact to extract.
         :param files_root: Temporary directory for extracted files.
         :raises FileNotFoundError: If 7-Zip is unavailable.
-        :raises ValueError: If listing or extraction fails.
+        :returns: Symbolic-link records for the cache manifest.
+        :raises ValueError: If listing, extraction, or link parsing fails.
         """
         executable = find_7zip()
         listing = subprocess.run(
@@ -135,7 +301,138 @@ class DmgSevenZipExtractionCache:
                 f"7-Zip DMG extraction failed with exit code "
                 f"{result.returncode}{suffix}"
             )
-        self._volume_root(files_root)
+        volume_root = self._volume_root(files_root)
+        links = self._extract_links(
+            executable,
+            source_path,
+            volume_root.name,
+            _listed_links(listing.stdout),
+        )
+        return {
+            "symbolic_links": [
+                {
+                    "relative_path": link.relative_path.as_posix(),
+                    "target": link.target,
+                }
+                for link in links
+            ]
+        }
+
+    def _extract_links(
+        self,
+        executable: str,
+        source_path: Path,
+        volume_name: str,
+        listed: tuple[_ListedLink, ...],
+    ) -> tuple[ArtifactSymbolicLink, ...]:
+        """Read link targets through standard output without materializing them.
+
+        :param executable: Resolved 7-Zip executable.
+        :param source_path: DMG artifact containing the entries.
+        :param volume_name: Extracted volume directory name.
+        :param listed: Symbolic links found in the technical listing.
+        :returns: Safe volume-relative link metadata.
+        :raises ValueError: If target extraction or decoding fails.
+        """
+        relative_paths: dict[str, Path] = {}
+        seen: set[Path] = set()
+        for link in listed:
+            relative_path = _relative_link_path(link.path, volume_name)
+            if relative_path in seen or link.path in relative_paths:
+                raise ValueError("7-Zip reported a duplicate symbolic-link path")
+            seen.add(relative_path)
+            relative_paths[link.path] = relative_path
+
+        targets: dict[str, str] = {}
+        pending = tuple(link for link in listed if link.target is None)
+        for link in listed:
+            if link.target is not None:
+                targets[link.path] = _decode_target(
+                    link.target.encode("utf-8"), link.size
+                )
+        for batch in _link_batches(pending):
+            result = subprocess.run(
+                [
+                    executable,
+                    "x",
+                    "-so",
+                    "-snl-",
+                    "-spd",
+                    "-sccUTF-8",
+                    str(source_path),
+                    "--",
+                    *(link.path for link in batch),
+                ],
+                capture_output=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = _failure_detail(result)
+                suffix = f": {detail}" if detail else ""
+                raise ValueError(
+                    f"7-Zip symbolic-link extraction failed with exit code "
+                    f"{result.returncode}{suffix}"
+                )
+            output = bytes(result.stdout)
+            expected_size = sum(link.size for link in batch)
+            if len(output) != expected_size:
+                raise ValueError(
+                    "7-Zip returned inconsistent symbolic-link target data"
+                )
+            offset = 0
+            for link in batch:
+                targets[link.path] = _decode_target(
+                    output[offset:offset + link.size], link.size
+                )
+                offset += link.size
+
+        links = []
+        for link in listed:
+            relative_path = relative_paths[link.path]
+            target = targets[link.path]
+            links.append(ArtifactSymbolicLink(
+                relative_path,
+                target,
+                symbolic_link_is_external(relative_path, target),
+            ))
+        return tuple(links)
+
+    def _validate_metadata(self, value: object) -> dict[str, object] | None:
+        """Validate cached symbolic-link records.
+
+        :param value: Manifest metadata value.
+        :returns: Normalized metadata, or ``None`` when invalid.
+        """
+        if not isinstance(value, dict) or set(value) != {"symbolic_links"}:
+            return None
+        records = value["symbolic_links"]
+        if not isinstance(records, list):
+            return None
+        validated = []
+        seen: set[Path] = set()
+        for record in records:
+            if not isinstance(record, dict) or set(record) != {
+                "relative_path", "target"
+            }:
+                return None
+            name = record["relative_path"]
+            target = record["target"]
+            if not isinstance(name, str) or not isinstance(target, str):
+                return None
+            path = Path(name)
+            if (
+                path.is_absolute()
+                or path.parts in {(), (".",)}
+                or ".." in path.parts
+                or path in seen
+                or not target
+                or "\x00" in target
+                or len(target.encode("utf-8")) > _MAX_LINK_TARGET_SIZE
+            ):
+                return None
+            seen.add(path)
+            validated.append({"relative_path": path.as_posix(), "target": target})
+        return {"symbolic_links": validated}
 
     def _volume_root(self, files_root: Path) -> Path:
         """Select the only top-level directory produced for the volume.

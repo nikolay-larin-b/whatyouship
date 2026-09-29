@@ -113,6 +113,14 @@ def _artifact_data(artifact: ReleaseArtifact) -> dict[str, Any]:
         },
         "license_agreement_present": artifact.license_agreement_present,
         "bundles": [_bundle_data(bundle) for bundle in artifact.bundles],
+        "symbolic_links": [
+            {
+                "relative_path": link.relative_path.as_posix(),
+                "target": link.target,
+                "external": link.external,
+            }
+            for link in artifact.symbolic_links
+        ],
         "files": [_file_data(file) for file in artifact.files],
     }
 

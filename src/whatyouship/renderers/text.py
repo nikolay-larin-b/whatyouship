@@ -117,6 +117,11 @@ def _render_inspect(report: InspectReport) -> str:
                 if value is not None
             )
             lines.extend(f"    Issue: {issue.message}" for issue in bundle.issues)
+    if artifact.symbolic_links:
+        lines.extend(["", "Symbolic links:"])
+        for link in artifact.symbolic_links:
+            scope = " | external" if link.external else ""
+            lines.append(f"  {link.relative_path} -> {link.target}{scope}")
     lines.extend(["", "Relative path | Size (bytes) | SHA-256"])
     for file in artifact.files:
         lines.append(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")

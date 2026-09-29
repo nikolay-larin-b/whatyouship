@@ -11,6 +11,7 @@ from whatyouship.model import (
     AppBundleMetadata,
     ArtifactFile,
     ArtifactSignature,
+    ArtifactSymbolicLink,
     BinaryDependency,
     BinaryEntitlement,
     BinaryMetadata,
@@ -512,6 +513,53 @@ class CompareTests(unittest.TestCase):
         self.assertTrue(all(
             difference.relative_path == path for difference in differences
         ))
+
+    def test_reports_symbolic_link_additions_removals_and_target_changes(
+        self,
+    ) -> None:
+        """Compare link targets and whether they leave the artifact tree."""
+        old = ReleaseArtifact(Path("old.dmg"), symbolic_links=[
+            ArtifactSymbolicLink(Path("removed"), "Versions/A"),
+            ArtifactSymbolicLink(Path("changed"), "Versions/A"),
+        ])
+        new = ReleaseArtifact(Path("new.dmg"), symbolic_links=[
+            ArtifactSymbolicLink(Path("added"), "/Applications", True),
+            ArtifactSymbolicLink(Path("changed"), "../../../outside", True),
+        ])
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            [
+                (
+                    difference.relative_path,
+                    difference.field,
+                    difference.old_value,
+                    difference.new_value,
+                )
+                for difference in differences
+            ],
+            [
+                (
+                    Path("added"),
+                    "Symbolic link",
+                    "unavailable",
+                    "/Applications (external)",
+                ),
+                (
+                    Path("changed"),
+                    "Symbolic link",
+                    "Versions/A",
+                    "../../../outside (external)",
+                ),
+                (
+                    Path("removed"),
+                    "Symbolic link",
+                    "Versions/A",
+                    "unavailable",
+                ),
+            ],
+        )
 
     def test_does_not_compare_bundles_at_different_paths(self) -> None:
         """Leave bundle additions and removals to ordinary file comparison."""

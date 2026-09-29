@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from whatyouship.inspectors.directory import DirectoryInspector
-from whatyouship.model import ReleaseArtifact
+from whatyouship.model import ReleaseArtifact, symbolic_link_is_external
 
 
 class DirectoryInspectorTests(unittest.TestCase):
@@ -46,6 +46,41 @@ class DirectoryInspectorTests(unittest.TestCase):
             artifact = DirectoryInspector().inspect(Path(temporary_directory))
 
             self.assertEqual(artifact.files, [])
+
+    def test_records_native_links_without_following_them(self) -> None:
+        """Match native directory links with extracted DMG link metadata."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "data").mkdir()
+            (root / "data" / "payload.txt").write_bytes(b"payload")
+            (root / "current").symlink_to("data/payload.txt")
+            (root / "external").symlink_to("/Applications")
+
+            artifact = DirectoryInspector().inspect(root)
+
+        self.assertEqual(
+            [file.relative_path for file in artifact.files],
+            [Path("data/payload.txt")],
+        )
+        self.assertEqual(
+            [
+                (link.relative_path, link.target, link.external)
+                for link in artifact.symbolic_links
+            ],
+            [
+                (Path("current"), "data/payload.txt", False),
+                (Path("external"), "/Applications", True),
+            ],
+        )
+
+    def test_classifies_relative_link_targets_at_the_artifact_boundary(self) -> None:
+        """Allow parent traversal within the root and flag traversal above it."""
+        self.assertFalse(
+            symbolic_link_is_external(Path("nested/current"), "../data")
+        )
+        self.assertTrue(
+            symbolic_link_is_external(Path("nested/current"), "../../outside")
+        )
 
     def test_missing_directory_raises_file_not_found(self) -> None:
         """Reject a path that does not exist."""

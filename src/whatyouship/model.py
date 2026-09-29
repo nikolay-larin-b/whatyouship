@@ -148,6 +148,42 @@ class ArtifactFile:
     binary: BinaryMetadata | None = None
 
 
+def symbolic_link_is_external(relative_path: Path, target: str) -> bool:
+    """Determine whether a POSIX symbolic-link target escapes an artifact.
+
+    :param relative_path: Link path relative to the artifact root.
+    :param target: Target stored in the symbolic link.
+    :returns: Whether the target is absolute or walks above the root.
+    """
+    if target.startswith("/"):
+        return True
+    depth = len(relative_path.parent.parts)
+    for component in target.split("/"):
+        if component in {"", "."}:
+            continue
+        if component == "..":
+            if depth == 0:
+                return True
+            depth -= 1
+        else:
+            depth += 1
+    return False
+
+
+@dataclass(frozen=True)
+class ArtifactSymbolicLink:
+    """Describe a symbolic link without materializing or following it.
+
+    :param relative_path: Link path relative to the artifact root.
+    :param target: Link target exactly as stored in the artifact.
+    :param external: Whether resolving the target escapes the artifact root.
+    """
+
+    relative_path: Path
+    target: str
+    external: bool = False
+
+
 @dataclass(frozen=True)
 class BundleIssue:
     """Describe one structural application bundle problem.
@@ -199,6 +235,7 @@ class ReleaseArtifact:
     :param license_agreement_present: Whether the artifact embeds a license
         agreement, or ``None`` when the format does not expose that metadata.
     :param bundles: Application bundles found inside the artifact.
+    :param symbolic_links: Symbolic links contained in the artifact.
     """
 
     source_path: Path
@@ -207,6 +244,7 @@ class ReleaseArtifact:
     installation_scope: InstallationScope | None = None
     license_agreement_present: bool | None = None
     bundles: list[AppBundleMetadata] = field(default_factory=list)
+    symbolic_links: list[ArtifactSymbolicLink] = field(default_factory=list)
 
 
 @dataclass

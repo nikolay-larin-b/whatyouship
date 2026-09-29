@@ -20,6 +20,7 @@ from whatyouship.model import (
     AppBundleMetadata,
     ArtifactFile,
     ArtifactSignature,
+    ArtifactSymbolicLink,
     BinaryDependency,
     BinaryEntitlement,
     BinaryMetadata,
@@ -105,6 +106,10 @@ class ReportOutputTests(unittest.TestCase):
                 package_type="APPL",
                 issues=(BundleIssue("sample-issue", "Sample bundle issue."),),
             )],
+            symbolic_links=[
+                ArtifactSymbolicLink(Path("Current"), "Versions/A"),
+                ArtifactSymbolicLink(Path("Applications"), "/Applications", True),
+            ],
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
             target = Path(temporary_directory) / "inspect.json"
@@ -143,6 +148,18 @@ class ReportOutputTests(unittest.TestCase):
                 "message": "Sample bundle issue.",
             }],
         }])
+        self.assertEqual(data["artifact"]["symbolic_links"], [
+            {
+                "relative_path": "Current",
+                "target": "Versions/A",
+                "external": False,
+            },
+            {
+                "relative_path": "Applications",
+                "target": "/Applications",
+                "external": True,
+            },
+        ])
         self.assertEqual(data["artifact"]["files"][0], {
             "relative_path": "bin/app.exe", "size_bytes": 42, "sha256": "a" * 64,
             "binary": {
@@ -202,6 +219,10 @@ class ReportOutputTests(unittest.TestCase):
                 executable_path=Path("Sample.app/Contents/MacOS/sample"),
                 issues=(BundleIssue("missing-value", "A required value is missing."),),
             )],
+            symbolic_links=[
+                ArtifactSymbolicLink(Path("Current"), "Versions/A"),
+                ArtifactSymbolicLink(Path("Applications"), "/Applications", True),
+            ],
         )
         output = io.StringIO()
 
@@ -230,6 +251,8 @@ class ReportOutputTests(unittest.TestCase):
             "Entitlement: com.apple.security.app-sandbox = true",
             rendered,
         )
+        self.assertIn("Symbolic links:\n  Current -> Versions/A", rendered)
+        self.assertIn("  Applications -> /Applications | external", rendered)
 
     def test_lint_json_baseline_keeps_all_categories(self) -> None:
         """Retain existing findings even though text hides their details."""

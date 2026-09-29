@@ -82,7 +82,10 @@ class DmgInspector:
         with source_path.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         volume = DmgSevenZipExtractionCache().load_or_populate(digest, source_path)
-        artifact = DirectoryInspector().inspect(volume)
+        artifact = DirectoryInspector().inspect(
+            volume.root,
+            volume.symbolic_links,
+        )
         return replace(
             artifact,
             source_path=source_path,

@@ -278,6 +278,16 @@ def _bundle_differences(
     return differences
 
 
+def _symbolic_link_state(target: str, external: bool) -> str:
+    """Format a symbolic link for semantic comparison.
+
+    :param target: Link target stored in the artifact.
+    :param external: Whether the target escapes the artifact root.
+    :returns: Target with its external scope when applicable.
+    """
+    return target + (" (external)" if external else "")
+
+
 def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonResult:
     """Compare files and available semantic metadata in two artifacts.
 
@@ -330,6 +340,25 @@ def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonR
         result.semantic_differences.extend(
             _bundle_differences(path, old_bundles[path], new_bundles[path])
         )
+    old_links = {link.relative_path: link for link in old.symbolic_links}
+    new_links = {link.relative_path: link for link in new.symbolic_links}
+    for path in sorted(old_links.keys() | new_links.keys()):
+        earlier = old_links.get(path)
+        later = new_links.get(path)
+        old_state = (
+            "unavailable"
+            if earlier is None
+            else _symbolic_link_state(earlier.target, earlier.external)
+        )
+        new_state = (
+            "unavailable"
+            if later is None
+            else _symbolic_link_state(later.target, later.external)
+        )
+        if old_state != new_state:
+            result.semantic_differences.append(
+                SemanticDifference(path, "Symbolic link", old_state, new_state)
+            )
     for path in sorted(common_paths):
         earlier = old_files[path]
         later = new_files[path]

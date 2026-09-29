@@ -15,7 +15,9 @@ from unittest.mock import patch
 from whatyouship.cli import main
 from whatyouship.inspectors import inspect_artifact
 from whatyouship.inspectors.dmg import DmgInspector
+from whatyouship.inspectors.dmg_7zip_cache import DmgExtractedVolume
 from whatyouship.inspectors.macos_disk_image import DiskImageMetadata
+from whatyouship.model import ArtifactSymbolicLink
 
 
 @contextlib.contextmanager
@@ -85,7 +87,10 @@ class DmgInspectorTests(unittest.TestCase):
             "whatyouship.inspectors.dmg.sys.platform", "linux"
         ), patch(
             "whatyouship.inspectors.dmg.DmgSevenZipExtractionCache.load_or_populate",
-            return_value=self.volume,
+            return_value=DmgExtractedVolume(
+                self.volume,
+                (ArtifactSymbolicLink(Path("current"), "payload.txt"),),
+            ),
         ) as cache, patch(
             "whatyouship.inspectors.dmg.inspect_disk_image_metadata"
         ) as metadata:
@@ -97,6 +102,10 @@ class DmgInspectorTests(unittest.TestCase):
         self.assertEqual(
             [file.relative_path for file in artifact.files],
             [Path("payload.txt")],
+        )
+        self.assertEqual(
+            artifact.symbolic_links,
+            [ArtifactSymbolicLink(Path("current"), "payload.txt")],
         )
         self.assertIsNone(artifact.license_agreement_present)
 
