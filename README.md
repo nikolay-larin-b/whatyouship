@@ -71,7 +71,10 @@ Current checks and comparisons include:
 * file and product version changes;
 * signature and signer changes between releases.
 
-For recognized Windows binaries, WhatYouShip also extracts architecture, binary kind, version metadata, and signature information.
+For recognized PE binaries, WhatYouShip extracts architecture, binary kind,
+version metadata, and signature information. For thin and universal Mach-O
+binaries, it reports all target architectures and the binary kind; Mach-O
+signature metadata is not currently inspected.
 
 ## Inspect, lint, compare
 

@@ -6,6 +6,7 @@
 import hashlib
 from pathlib import Path
 
+from whatyouship.binary.macho import MachOInspector
 from whatyouship.binary.pe import PeInspector
 from whatyouship.model import ArtifactFile, ReleaseArtifact
 
@@ -27,7 +28,8 @@ class DirectoryInspector:
             raise NotADirectoryError(f"Path is not a directory: {directory}")
 
         files = []
-        binary_inspector = PeInspector()
+        pe_inspector = PeInspector()
+        macho_inspector = MachOInspector()
         for path in sorted(directory.rglob("*")):
             if path.is_symlink() or not path.is_file():
                 continue
@@ -39,7 +41,9 @@ class DirectoryInspector:
                     relative_path=path.relative_to(directory),
                     size_bytes=path.stat().st_size,
                     sha256=sha256,
-                    binary=binary_inspector.inspect(path),
+                    binary=(
+                        pe_inspector.inspect(path) or macho_inspector.inspect(path)
+                    ),
                 )
             )
 

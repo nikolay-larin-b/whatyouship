@@ -19,7 +19,10 @@ By default, the build artifact rule checks ``.ilk``, ``.obj``, ``.iobj``,
 
 For recognized binaries, ``inspect`` also reports architecture, executable or
 library kind, version metadata, and signature information when available.
-Binary inspection currently supports Windows executables and libraries.
+PE inspection reports architecture, binary kind, version metadata, and
+signature information. Thin and universal Mach-O inspection reports all target
+architectures and the binary kind; Mach-O signature metadata is not currently
+inspected.
 
 For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking
