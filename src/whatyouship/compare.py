@@ -92,6 +92,33 @@ def _runtime_search_path_state(binary: BinaryMetadata) -> str:
     return ", ".join(binary.runtime_search_paths) or "none"
 
 
+def _hardened_runtime_state(binary: BinaryMetadata) -> str:
+    """Describe the Hardened Runtime state of a binary.
+
+    :param binary: Binary metadata to examine.
+    :returns: Enabled, disabled, or unknown state.
+    """
+    signature = binary.signature
+    if signature is None or signature.hardened_runtime is None:
+        return "unknown"
+    return "enabled" if signature.hardened_runtime else "disabled"
+
+
+def _entitlement_state(binary: BinaryMetadata) -> str:
+    """Format embedded entitlements for semantic comparison.
+
+    :param binary: Binary metadata to describe.
+    :returns: Comma-separated entitlement assignments, or ``none``.
+    """
+    signature = binary.signature
+    if signature is None:
+        return "none"
+    return ", ".join(
+        f"{entitlement.key}={entitlement.value}"
+        for entitlement in signature.entitlements
+    ) or "none"
+
+
 def _version_components(value: str) -> tuple[int, ...] | None:
     """Parse an unambiguous dotted or comma-separated numeric version.
 
@@ -153,6 +180,12 @@ def _binary_differences(
             _runtime_search_path_state(old),
             _runtime_search_path_state(new),
         ),
+        (
+            "Hardened Runtime",
+            _hardened_runtime_state(old),
+            _hardened_runtime_state(new),
+        ),
+        ("Entitlements", _entitlement_state(old), _entitlement_state(new)),
         ("Signature", _signature_state(old), _signature_state(new)),
         (
             "Signature type",

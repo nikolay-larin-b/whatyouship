@@ -17,7 +17,7 @@ INSPECT_COLUMNS = (
     "architecture", "binary_kind", "file_version", "product_version",
     "minimum_os_version", "dependencies", "runtime_search_paths",
     "signature_present", "signature_valid", "signature_signer", "signature_timestamp",
-    "signature_type",
+    "signature_type", "hardened_runtime", "entitlements",
 )
 LINT_COLUMNS = ("category", "rule_id", "severity", "relative_path", "message")
 
@@ -79,6 +79,15 @@ def render_csv(report: Report) -> str:
                 signature.signer if signature is not None else "",
                 _boolean(signature.timestamp) if signature is not None else "",
                 signature.signature_type if signature is not None else "",
+                _boolean(signature.hardened_runtime)
+                if signature is not None else "",
+                json.dumps([
+                    {
+                        "key": entitlement.key,
+                        "value": json.loads(entitlement.value),
+                    }
+                    for entitlement in signature.entitlements
+                ]) if signature is not None else "",
             ))
     else:
         writer.writerow(LINT_COLUMNS)

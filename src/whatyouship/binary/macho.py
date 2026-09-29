@@ -3,6 +3,8 @@
 
 """Read basic Apple Mach-O metadata with LIEF."""
 
+import json
+import plistlib
 import struct
 from pathlib import Path
 from typing import Literal
@@ -11,6 +13,7 @@ import lief
 
 from whatyouship.model import (
     BinaryDependency,
+    BinaryEntitlement,
     BinaryMetadata,
     BinarySignatureType,
     SignatureMetadata,
@@ -55,8 +58,11 @@ _CSMAGIC_EMBEDDED_SIGNATURE = 0xFADE0CC0
 _CSMAGIC_CODEDIRECTORY = 0xFADE0C02
 _CSMAGIC_BLOBWRAPPER = 0xFADE0B01
 _CSSLOT_CODEDIRECTORY = 0
+_CSSLOT_ENTITLEMENTS = 5
 _CSSLOT_SIGNATURESLOT = 0x10000
+_CSMAGIC_EMBEDDED_ENTITLEMENTS = 0xFADE7171
 _CS_ADHOC = 0x00000002
+_CS_RUNTIME = 0x00010000
 
 _DEPENDENCY_COMMANDS = {
     lief.MachO.LoadCommand.TYPE.LAZY_LOAD_DYLIB,
@@ -113,6 +119,95 @@ def _code_directory_type(content: bytes, offset: int) -> BinarySignatureType | N
     return "ad-hoc" if flags & _CS_ADHOC else None
 
 
+def _superblob_entries(content: bytes) -> tuple[tuple[int, int, int, int], ...] | None:
+    """Read validated slot records from an embedded signature superblob.
+
+    :param content: Complete embedded signature payload.
+    :returns: Slot, offset, magic, and length records, or ``None`` if invalid.
+    """
+    header = _blob_header(content, 0)
+    if header is None or header[0] != _CSMAGIC_EMBEDDED_SIGNATURE or header[1] < 12:
+        return None
+    length = header[1]
+    count = struct.unpack_from(">I", content, 8)[0]
+    if count > (length - 12) // 8:
+        return None
+    index_end = 12 + count * 8
+    entries = []
+    for index in range(count):
+        slot, offset = struct.unpack_from(">II", content, 12 + index * 8)
+        blob = _blob_header(content, offset)
+        if (
+            blob is None
+            or offset < index_end
+            or offset + blob[1] > length
+        ):
+            return None
+        entries.append((slot, offset, blob[0], blob[1]))
+    return tuple(entries)
+
+
+def _code_directory_flags(content: bytes) -> int | None:
+    """Read flags from the primary CodeDirectory.
+
+    :param content: Raw bytes referenced by ``LC_CODE_SIGNATURE``.
+    :returns: CodeDirectory flags, or ``None`` when unavailable.
+    """
+    header = _blob_header(content, 0)
+    if header is not None and header[0] == _CSMAGIC_CODEDIRECTORY:
+        return (
+            struct.unpack_from(">I", content, 12)[0]
+            if header[1] >= 16 else None
+        )
+    entries = _superblob_entries(content)
+    if entries is None:
+        return None
+    for slot, offset, magic, length in entries:
+        if slot == _CSSLOT_CODEDIRECTORY and magic == _CSMAGIC_CODEDIRECTORY:
+            return struct.unpack_from(">I", content, offset + 12)[0] if length >= 16 else None
+    return None
+
+
+def _entitlements(content: bytes) -> tuple[BinaryEntitlement, ...]:
+    """Parse XML entitlements from an embedded signature superblob.
+
+    :param content: Raw bytes referenced by ``LC_CODE_SIGNATURE``.
+    :returns: Entitlements ordered by key and canonical value.
+    :raises ValueError: If an entitlement blob is malformed or unsupported.
+    """
+    entries = _superblob_entries(content)
+    if entries is None:
+        return ()
+    entitlements: set[BinaryEntitlement] = set()
+    for slot, offset, magic, length in entries:
+        if slot != _CSSLOT_ENTITLEMENTS:
+            continue
+        if magic != _CSMAGIC_EMBEDDED_ENTITLEMENTS:
+            raise ValueError("Invalid embedded entitlements blob")
+        values = plistlib.loads(
+            content[offset + 8:offset + length].rstrip(b"\x00")
+        )
+        if not isinstance(values, dict) or any(
+            not isinstance(key, str) for key in values
+        ):
+            raise ValueError("Embedded entitlements must contain a dictionary")
+        for key, value in values.items():
+            try:
+                serialized = json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                )
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"Unsupported entitlement value for '{key}'"
+                ) from error
+            entitlements.add(BinaryEntitlement(key, serialized))
+    return tuple(sorted(entitlements, key=lambda item: (item.key, item.value)))
+
+
 def _signature_type(content: bytes) -> BinarySignatureType | Literal["unknown"]:
     """Classify one embedded Mach-O code-signature payload.
 
@@ -127,17 +222,11 @@ def _signature_type(content: bytes) -> BinarySignatureType | Literal["unknown"]:
         return _code_directory_type(content, 0) or "unknown"
     if magic != _CSMAGIC_EMBEDDED_SIGNATURE or length < 12:
         return "unknown"
-
-    count = struct.unpack_from(">I", content, 8)[0]
-    if count > (length - 12) // 8:
+    entries = _superblob_entries(content)
+    if entries is None:
         return "unknown"
     code_directory_type: BinarySignatureType | None = None
-    for index in range(count):
-        slot, offset = struct.unpack_from(">II", content, 12 + index * 8)
-        blob = _blob_header(content, offset)
-        if blob is None:
-            return "unknown"
-        blob_magic, blob_length = blob
+    for slot, offset, blob_magic, blob_length in entries:
         if (
             slot == _CSSLOT_SIGNATURESLOT
             and blob_magic == _CSMAGIC_BLOBWRAPPER
@@ -159,16 +248,30 @@ def _signature(slices: list[lief.MachO.Binary]) -> SignatureMetadata:
     types: set[BinarySignatureType] = set()
     missing = False
     unknown = False
+    hardened_states: list[bool] = []
+    hardened_unknown = False
+    entitlements: set[BinaryEntitlement] = set()
     for binary in slices:
         code_signature = binary.code_signature
         if code_signature is None:
             missing = True
+            hardened_unknown = True
             continue
-        signature_type = _signature_type(bytes(code_signature.content))
+        content = bytes(code_signature.content)
+        signature_type = _signature_type(content)
         if signature_type == "unknown":
             unknown = True
         else:
             types.add(signature_type)
+        flags = _code_directory_flags(content)
+        if flags is None:
+            hardened_unknown = True
+        else:
+            hardened_states.append(bool(flags & _CS_RUNTIME))
+        try:
+            entitlements.update(_entitlements(content))
+        except ValueError:
+            pass
 
     aggregate_type: BinarySignatureType | None
     if len(types) == 1 and not missing and not unknown:
@@ -178,19 +281,35 @@ def _signature(slices: list[lief.MachO.Binary]) -> SignatureMetadata:
     else:
         aggregate_type = None
 
+    hardened_runtime = (
+        None
+        if hardened_unknown or not hardened_states
+        else all(hardened_states)
+    )
+    signature_entitlements = tuple(sorted(
+        entitlements,
+        key=lambda item: (item.key, item.value),
+    ))
+
     if missing:
         return SignatureMetadata(
             present=False,
             signature_type=aggregate_type,
+            hardened_runtime=hardened_runtime,
+            entitlements=signature_entitlements,
         )
     if unknown:
         return SignatureMetadata(
             present=None,
             signature_type=aggregate_type,
+            hardened_runtime=hardened_runtime,
+            entitlements=signature_entitlements,
         )
     return SignatureMetadata(
         present=True,
         signature_type=aggregate_type,
+        hardened_runtime=hardened_runtime,
+        entitlements=signature_entitlements,
     )
 
 

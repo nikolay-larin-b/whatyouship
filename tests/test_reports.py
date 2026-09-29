@@ -21,6 +21,7 @@ from whatyouship.model import (
     ArtifactFile,
     ArtifactSignature,
     BinaryDependency,
+    BinaryEntitlement,
     BinaryMetadata,
     BundleIssue,
     Finding,
@@ -146,6 +147,8 @@ class ReportOutputTests(unittest.TestCase):
                     "present": True, "valid": True,
                     "signer": "CN=Publisher", "timestamp": True,
                     "type": "certificate",
+                    "hardened_runtime": None,
+                    "entitlements": [],
                 },
             },
         })
@@ -162,6 +165,15 @@ class ReportOutputTests(unittest.TestCase):
                     "Mach-O",
                     "arm64",
                     "executable",
+                    signature=SignatureMetadata(
+                        True,
+                        signature_type="certificate",
+                        hardened_runtime=True,
+                        entitlements=(BinaryEntitlement(
+                            "com.apple.security.app-sandbox",
+                            "true",
+                        ),),
+                    ),
                     minimum_os_version="13.0",
                     dependencies=(
                         BinaryDependency("@rpath/libSample.dylib"),
@@ -203,6 +215,11 @@ class ReportOutputTests(unittest.TestCase):
         self.assertIn("Dependency: /usr/lib/libobjc.A.dylib | weak", rendered)
         self.assertIn(
             "Runtime search path: @executable_path/../Frameworks",
+            rendered,
+        )
+        self.assertIn("Hardened Runtime: enabled", rendered)
+        self.assertIn(
+            "Entitlement: com.apple.security.app-sandbox = true",
             rendered,
         )
 
@@ -302,6 +319,14 @@ class ReportOutputTests(unittest.TestCase):
                 "Mach-O",
                 "arm64",
                 "executable",
+                signature=SignatureMetadata(
+                    True,
+                    hardened_runtime=True,
+                    entitlements=(BinaryEntitlement(
+                        "com.apple.security.app-sandbox",
+                        "true",
+                    ),),
+                ),
                 minimum_os_version="13.0",
                 dependencies=(BinaryDependency("@rpath/libSample.dylib"),),
                 runtime_search_paths=("@loader_path/../Frameworks",),
@@ -320,6 +345,11 @@ class ReportOutputTests(unittest.TestCase):
         self.assertEqual(
             json.loads(rows[0]["runtime_search_paths"]),
             ["@loader_path/../Frameworks"],
+        )
+        self.assertEqual(rows[0]["hardened_runtime"], "true")
+        self.assertEqual(
+            json.loads(rows[0]["entitlements"]),
+            [{"key": "com.apple.security.app-sandbox", "value": True}],
         )
 
     def test_lint_csv_has_one_row_per_finding_and_quotes_message(self) -> None:

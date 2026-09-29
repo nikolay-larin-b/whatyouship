@@ -24,6 +24,10 @@ severity = "warning" # Report unsigned executables and libraries as warnings.
 enabled = true
 severity = "error" # Report malformed macOS application bundles.
 
+[rules.debug-entitlement]
+enabled = true
+severity = "error" # Report release binaries that allow debugger attachment.
+
 [rules.unsigned-artifact]
 enabled = true
 severity = "warning" # Report missing release artifact signatures.

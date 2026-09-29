@@ -67,6 +67,7 @@ Current checks and comparisons include:
 * DMG releases without an embedded software license agreement;
 * malformed macOS application bundles;
 * missing required Mach-O libraries expected inside an application bundle;
+* release Mach-O binaries with debugger attachment enabled;
 * added, removed, and changed files between releases;
 * binary architecture changes;
 * executable/library kind changes;
@@ -78,8 +79,10 @@ version metadata, and signature information. For thin and universal Mach-O
 binaries, it reports all target architectures, the binary kind, and whether
 every architecture slice has an ad hoc or certificate signature. It also reads
 the macOS deployment target, dynamic library dependencies, and runtime search
-paths from Mach-O load commands. Cryptographic validity of Mach-O signatures is
-not currently checked.
+paths from Mach-O load commands. Embedded signatures also expose the Hardened
+Runtime flag and XML entitlements. `lint` treats an enabled
+`com.apple.security.get-task-allow` entitlement as an error. Cryptographic
+validity of Mach-O signatures is not currently checked.
 
 For macOS application bundles in directories, ZIP archives, and DMG images,
 WhatYouShip reads XML and binary `Contents/Info.plist` files without using

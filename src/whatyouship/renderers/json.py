@@ -42,6 +42,14 @@ def _file_data(file: ArtifactFile) -> dict[str, Any]:
                 "signer": signature.signer,
                 "timestamp": signature.timestamp,
                 "type": signature.signature_type,
+                "hardened_runtime": signature.hardened_runtime,
+                "entitlements": [
+                    {
+                        "key": entitlement.key,
+                        "value": json.loads(entitlement.value),
+                    }
+                    for entitlement in signature.entitlements
+                ],
             },
         }
     return {

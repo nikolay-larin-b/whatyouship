@@ -55,6 +55,18 @@ class ArtifactSignature:
     timestamp: datetime | None = None
 
 
+@dataclass(frozen=True)
+class BinaryEntitlement:
+    """Describe one code-signing entitlement.
+
+    :param key: Entitlement property-list key.
+    :param value: Canonical JSON representation of the entitlement value.
+    """
+
+    key: str
+    value: str
+
+
 @dataclass
 class SignatureMetadata:
     """Describe a binary signature without assuming a specific format.
@@ -64,6 +76,8 @@ class SignatureMetadata:
     :param signer: Signer certificate subject, when available.
     :param timestamp: Whether a timestamp is present, or ``None`` if unknown.
     :param signature_type: Ad hoc, certificate, or mixed signature type.
+    :param hardened_runtime: Whether every Mach-O slice enables Hardened Runtime.
+    :param entitlements: Embedded code-signing entitlements.
     """
 
     present: bool | None
@@ -71,6 +85,8 @@ class SignatureMetadata:
     signer: str | None = None
     timestamp: bool | None = None
     signature_type: BinarySignatureType | None = None
+    hardened_runtime: bool | None = None
+    entitlements: tuple[BinaryEntitlement, ...] = ()
 
 
 @dataclass(frozen=True)

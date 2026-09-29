@@ -25,9 +25,11 @@ signature information. Thin and universal Mach-O inspection reports all target
 architectures, the binary kind, and whether every architecture slice has an ad
 hoc or certificate signature. It also reads the macOS deployment target from
 modern and legacy Mach-O load commands, along with dynamic library dependencies
-and runtime search paths. ``lint`` reports an executable or library when any
-slice is unsigned. Cryptographic validity of Mach-O signatures is not currently
-checked.
+and runtime search paths. Embedded signatures also expose the Hardened Runtime
+flag and XML entitlements. ``lint`` reports an executable or library when any
+slice is unsigned and treats an enabled
+``com.apple.security.get-task-allow`` entitlement as an error. Cryptographic
+validity of Mach-O signatures is not currently checked.
 
 For macOS application bundles in directories, ZIP archives, and DMG images,
 WhatYouShip reads XML and binary ``Contents/Info.plist`` files without using

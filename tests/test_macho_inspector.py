@@ -4,6 +4,7 @@
 """Tests for Mach-O binary inspection."""
 
 import struct
+import plistlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +15,7 @@ import lief
 
 from whatyouship.binary.macho import MachOInspector
 from whatyouship.inspectors.directory import DirectoryInspector
-from whatyouship.model import BinaryDependency
+from whatyouship.model import BinaryDependency, BinaryEntitlement
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
 
@@ -129,13 +130,22 @@ def _make_universal_macho(
     return payload
 
 
-def _make_embedded_signature(signature_type: str) -> bytes:
+def _make_embedded_signature(
+    signature_type: str,
+    *,
+    hardened_runtime: bool = False,
+    entitlements: dict[str, object] | None = None,
+) -> bytes:
     """Create a minimal ad hoc or certificate signature superblob.
 
     :param signature_type: ``ad-hoc`` or ``certificate``.
+    :param hardened_runtime: Whether to set the CodeDirectory runtime flag.
+    :param entitlements: Optional embedded entitlement property list.
     :returns: Serialized embedded signature payload.
     """
     flags = 0x2 if signature_type == "ad-hoc" else 0
+    if hardened_runtime:
+        flags |= 0x10000
     code_directory = struct.pack(
         ">IIII",
         0xFADE0C02,
@@ -144,6 +154,9 @@ def _make_embedded_signature(signature_type: str) -> bytes:
         flags,
     )
     entries = [(0, code_directory)]
+    if entitlements is not None:
+        payload = plistlib.dumps(entitlements, fmt=plistlib.FMT_XML)
+        entries.append((5, struct.pack(">II", 0xFADE7171, len(payload) + 8) + payload))
     if signature_type == "certificate":
         entries.append((0x10000, struct.pack(">II", 0xFADE0B01, 9) + b"\x30"))
     offset = 12 + 8 * len(entries)
@@ -359,6 +372,60 @@ class MachOInspectorTests(unittest.TestCase):
             self.assertTrue(metadata.signature.present)
             self.assertEqual(metadata.signature.signature_type, signature_type)
             self.assertIsNone(metadata.signature.valid)
+
+    def test_reads_hardened_runtime_and_embedded_entitlements(self) -> None:
+        """Extract release-signing metadata without invoking macOS tools."""
+        signature = _make_embedded_signature(
+            "certificate",
+            hardened_runtime=True,
+            entitlements={
+                "com.apple.security.app-sandbox": True,
+                "com.apple.security.network.client": True,
+                "com.example.groups": ["first", "second"],
+            },
+        )
+        with patch(
+            "whatyouship.binary.macho.lief.MachO.parse",
+            return_value=[_mock_slice(
+                lief.MachO.Header.CPU_TYPE.ARM64,
+                lief.MachO.Header.FILE_TYPE.EXECUTE,
+                signature,
+            )],
+        ):
+            metadata = MachOInspector().inspect(
+                _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+            )
+
+        self.assertIsNotNone(metadata)
+        self.assertTrue(metadata.signature.hardened_runtime)
+        self.assertEqual(metadata.signature.entitlements, (
+            BinaryEntitlement("com.apple.security.app-sandbox", "true"),
+            BinaryEntitlement("com.apple.security.network.client", "true"),
+            BinaryEntitlement("com.example.groups", '["first","second"]'),
+        ))
+
+    def test_requires_hardened_runtime_in_every_universal_slice(self) -> None:
+        """Aggregate Hardened Runtime conservatively across slices."""
+        slices = [
+            _mock_slice(
+                lief.MachO.Header.CPU_TYPE.X86_64,
+                lief.MachO.Header.FILE_TYPE.EXECUTE,
+                _make_embedded_signature("certificate", hardened_runtime=True),
+            ),
+            _mock_slice(
+                lief.MachO.Header.CPU_TYPE.ARM64,
+                lief.MachO.Header.FILE_TYPE.EXECUTE,
+                _make_embedded_signature("certificate"),
+            ),
+        ]
+        with patch(
+            "whatyouship.binary.macho.lief.MachO.parse",
+            return_value=slices,
+        ):
+            metadata = MachOInspector().inspect(_make_universal_macho())
+
+        self.assertIsNotNone(metadata)
+        self.assertFalse(metadata.signature.hardened_runtime)
 
     def test_requires_every_universal_slice_to_be_signed(self) -> None:
         """Treat a partially signed universal binary as unsigned."""

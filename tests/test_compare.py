@@ -11,6 +11,7 @@ from whatyouship.model import (
     AppBundleMetadata,
     ArtifactFile,
     BinaryDependency,
+    BinaryEntitlement,
     BinaryMetadata,
     InstallationScope,
     ReleaseArtifact,
@@ -246,6 +247,50 @@ class CompareTests(unittest.TestCase):
                     "Runtime search paths",
                     "@loader_path/../Frameworks",
                     "@executable_path/../Frameworks",
+                ),
+            ],
+        )
+
+    def test_reports_hardened_runtime_and_entitlement_changes(self) -> None:
+        """Compare release-signing policy metadata across Mach-O binaries."""
+        path = Path("Sample.app/Contents/MacOS/sample")
+        old_binary = BinaryMetadata(
+            "Mach-O",
+            "arm64",
+            "executable",
+            signature=SignatureMetadata(True, hardened_runtime=True),
+        )
+        new_binary = BinaryMetadata(
+            "Mach-O",
+            "arm64",
+            "executable",
+            signature=SignatureMetadata(
+                True,
+                hardened_runtime=False,
+                entitlements=(BinaryEntitlement(
+                    "com.apple.security.get-task-allow",
+                    "true",
+                ),),
+            ),
+        )
+        old = ReleaseArtifact(
+            Path("old"), [ArtifactFile(path, 1, "a", old_binary)]
+        )
+        new = ReleaseArtifact(
+            Path("new"), [ArtifactFile(path, 1, "b", new_binary)]
+        )
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            [(difference.field, difference.old_value, difference.new_value)
+             for difference in differences],
+            [
+                ("Hardened Runtime", "enabled", "disabled"),
+                (
+                    "Entitlements",
+                    "none",
+                    "com.apple.security.get-task-allow=true",
                 ),
             ],
         )

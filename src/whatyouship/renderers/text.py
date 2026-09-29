@@ -162,6 +162,13 @@ def _render_inspect(report: InspectReport) -> str:
                             f"Timestamp: {'present' if signature.timestamp else 'absent'}"
                         )
                     lines.append("  Signature: " + " | ".join(details))
+                if signature.hardened_runtime is not None:
+                    state = "enabled" if signature.hardened_runtime else "disabled"
+                    lines.append(f"  Hardened Runtime: {state}")
+                lines.extend(
+                    f"  Entitlement: {entitlement.key} = {entitlement.value}"
+                    for entitlement in signature.entitlements
+                )
     return "\n".join(lines) + "\n"
 
 

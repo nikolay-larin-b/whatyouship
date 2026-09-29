@@ -12,6 +12,7 @@ from whatyouship.model import (
     ArtifactFile,
     ArtifactSignature,
     BinaryMetadata,
+    BinaryEntitlement,
     Finding,
     InstallationScope,
     InstallationScopeConflict,
@@ -19,6 +20,7 @@ from whatyouship.model import (
     SignatureMetadata,
 )
 from whatyouship.rules.build_artifacts import BuildArtifactRule
+from whatyouship.rules.debug_entitlement import DebugEntitlementRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
 from whatyouship.rules.missing_license_agreement import MissingLicenseAgreementRule
@@ -232,6 +234,43 @@ class LintTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].relative_path, bundle)
         self.assertEqual(findings[0].identity, "extension:.dsym")
+
+    def test_debug_entitlement_rule_reports_only_enabled_values(self) -> None:
+        """Reject debugger attachment in release Mach-O signatures."""
+        files = [
+            ArtifactFile(
+                Path(name),
+                1,
+                name,
+                BinaryMetadata(
+                    "Mach-O",
+                    "arm64",
+                    "executable",
+                    signature=SignatureMetadata(
+                        True,
+                        entitlements=(BinaryEntitlement(key, value),),
+                    ),
+                ),
+            )
+            for name, key, value in (
+                ("debuggable", "com.apple.security.get-task-allow", "true"),
+                ("release", "com.apple.security.get-task-allow", "false"),
+                ("sandboxed", "com.apple.security.app-sandbox", "true"),
+            )
+        ]
+
+        findings = DebugEntitlementRule().check(
+            ReleaseArtifact(Path("release.dmg"), files)
+        )
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].rule_id, "debug-entitlement")
+        self.assertEqual(findings[0].severity, "error")
+        self.assertEqual(findings[0].relative_path, Path("debuggable"))
+        self.assertEqual(
+            findings[0].identity,
+            "entitlement:com.apple.security.get-task-allow",
+        )
 
     def test_unsigned_binary_rule_uses_binary_type(self) -> None:
         """Flag unsigned executables and libraries regardless of filename."""
