@@ -121,6 +121,10 @@ def _render_inspect(report: InspectReport) -> str:
                 details.append(f"File version: {file.binary.file_version}")
             if file.binary.product_version is not None:
                 details.append(f"Product version: {file.binary.product_version}")
+            if file.binary.minimum_os_version is not None:
+                details.append(
+                    f"Minimum OS version: {file.binary.minimum_os_version}"
+                )
             lines.append("  Binary: " + " | ".join(details))
             if file.binary.signature is not None:
                 signature = file.binary.signature

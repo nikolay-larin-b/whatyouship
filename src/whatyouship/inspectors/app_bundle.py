@@ -4,6 +4,7 @@
 """Inspect macOS application bundle metadata without platform APIs."""
 
 import plistlib
+import re
 from pathlib import Path
 
 from whatyouship.model import AppBundleMetadata, ArtifactFile, BundleIssue
@@ -19,6 +20,36 @@ _STRING_KEYS = (
     "LSMinimumSystemVersion",
     "CFBundlePackageType",
 )
+
+_VERSION_PATTERN = re.compile(r"\d+(?:\.\d+)*", re.ASCII)
+
+
+def _version_components(value: str) -> tuple[int, ...] | None:
+    """Parse a dotted numeric version for semantic comparison.
+
+    :param value: Version string to parse.
+    :returns: Numeric components, or ``None`` for another version syntax.
+    """
+    if _VERSION_PATTERN.fullmatch(value) is None:
+        return None
+    return tuple(int(component) for component in value.split("."))
+
+
+def _version_is_lower(declared: str, required: str) -> bool:
+    """Check whether a declared deployment target is below a requirement.
+
+    :param declared: Version declared by the application bundle.
+    :param required: Version required by the main executable.
+    :returns: Whether both versions are numeric and the declaration is lower.
+    """
+    declared_components = _version_components(declared)
+    required_components = _version_components(required)
+    if declared_components is None or required_components is None:
+        return False
+    width = max(len(declared_components), len(required_components))
+    return declared_components + (0,) * (
+        width - len(declared_components)
+    ) < required_components + (0,) * (width - len(required_components))
 
 
 def _string_value(
@@ -152,6 +183,21 @@ class AppBundleInspector:
                     "non-macho-executable",
                     f"Main executable is not a Mach-O binary: "
                     f"{executable_path.as_posix()}.",
+                ))
+            elif (
+                strings["LSMinimumSystemVersion"] is not None
+                and executable_file.binary.minimum_os_version is not None
+                and _version_is_lower(
+                    strings["LSMinimumSystemVersion"],
+                    executable_file.binary.minimum_os_version,
+                )
+            ):
+                declared_version = strings["LSMinimumSystemVersion"]
+                required_version = executable_file.binary.minimum_os_version
+                issues.append(BundleIssue(
+                    "minimum-system-version-mismatch",
+                    f"LSMinimumSystemVersion is '{declared_version}', but the "
+                    f"main executable requires macOS {required_version}.",
                 ))
 
         package_type = strings["CFBundlePackageType"]

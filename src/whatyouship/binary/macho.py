@@ -181,6 +181,56 @@ def _signature(slices: list[lief.MachO.Binary]) -> SignatureMetadata:
     )
 
 
+def _minimum_os_components(binary: lief.MachO.Binary) -> tuple[int, ...] | None:
+    """Read the macOS deployment target from one architecture slice.
+
+    :param binary: Parsed Mach-O architecture slice.
+    :returns: Numeric version components, or ``None`` when unavailable.
+    """
+    build_version = getattr(binary, "build_version", None)
+    if (
+        build_version is not None
+        and build_version.platform == lief.MachO.BuildVersion.PLATFORMS.MACOS
+    ):
+        return tuple(int(component) for component in build_version.minos)
+
+    for command in getattr(binary, "commands", ()):
+        if (
+            isinstance(command, lief.MachO.VersionMin)
+            and command.command
+            == lief.MachO.LoadCommand.TYPE.VERSION_MIN_MACOSX
+        ):
+            return tuple(int(component) for component in command.version)
+    return None
+
+
+def _format_version(components: tuple[int, ...]) -> str:
+    """Format numeric version components without a redundant patch zero.
+
+    :param components: Numeric version components.
+    :returns: Dotted version with at least major and minor components.
+    """
+    normalized = list(components)
+    while len(normalized) > 2 and normalized[-1] == 0:
+        normalized.pop()
+    return ".".join(str(component) for component in normalized)
+
+
+def _minimum_os_version(slices: list[lief.MachO.Binary]) -> str | None:
+    """Combine deployment targets across all architecture slices.
+
+    The highest target is the earliest macOS release capable of running every
+    slice. A missing target in any slice makes the aggregate unknown.
+
+    :param slices: Parsed slices from one thin or universal Mach-O file.
+    :returns: Effective minimum macOS version, or ``None`` when unavailable.
+    """
+    versions = [_minimum_os_components(binary) for binary in slices]
+    if not versions or any(version is None for version in versions):
+        return None
+    return _format_version(max(version for version in versions if version is not None))
+
+
 class MachOInspector:
     """Identify thin and universal Mach-O binaries."""
 
@@ -221,11 +271,16 @@ class MachOInspector:
                 signature = _signature(slices)
             except Exception:
                 signature = SignatureMetadata(present=None)
+            try:
+                minimum_os_version = _minimum_os_version(slices)
+            except Exception:
+                minimum_os_version = None
             return BinaryMetadata(
                 format="Mach-O",
                 architecture="+".join(sorted(architectures)),
                 kind=kinds.pop() if len(kinds) == 1 else "other",
                 signature=signature,
+                minimum_os_version=minimum_os_version,
             )
         except Exception:
             return None

@@ -170,6 +170,39 @@ class CompareTests(unittest.TestCase):
             [("Signature type", "ad-hoc", "certificate")],
         )
 
+    def test_reports_macho_minimum_os_version_changes(self) -> None:
+        """Compare Mach-O deployment targets as ordinary metadata changes."""
+        path = Path("Sample.app/Contents/MacOS/sample")
+        old = ReleaseArtifact(Path("old"), [ArtifactFile(
+            path,
+            1,
+            "a",
+            BinaryMetadata(
+                "Mach-O",
+                "arm64",
+                "executable",
+                minimum_os_version="12.0",
+            ),
+        )])
+        new = ReleaseArtifact(Path("new"), [ArtifactFile(
+            path,
+            1,
+            "b",
+            BinaryMetadata(
+                "Mach-O",
+                "arm64",
+                "executable",
+                minimum_os_version="13.0",
+            ),
+        )])
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            differences,
+            [SemanticDifference(path, "Minimum OS version", "12.0", "13.0")],
+        )
+
     def test_hash_only_change_has_no_semantic_difference(self) -> None:
         """Keep a digest change separate when binary metadata is identical."""
         path = Path("app.exe")

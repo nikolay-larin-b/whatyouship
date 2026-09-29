@@ -15,22 +15,39 @@ from whatyouship.lint import LintEngine
 from whatyouship.rules.invalid_app_bundle import InvalidAppBundleRule
 
 
-def _macho_executable() -> bytes:
+def _macho_executable(
+    minimum_os_version: tuple[int, int, int] | None = None,
+) -> bytes:
     """Create a minimal arm64 Mach-O executable.
 
+    :param minimum_os_version: Optional macOS deployment target.
     :returns: Serialized Mach-O header.
     """
-    return struct.pack(
+    command = b""
+    if minimum_os_version is not None:
+        major, minor, patch = minimum_os_version
+        encoded_version = major << 16 | minor << 8 | patch
+        command = struct.pack(
+            "<IIIIII",
+            0x32,
+            24,
+            1,
+            encoded_version,
+            14 << 16,
+            0,
+        )
+    header = struct.pack(
         "<IIIIIIII",
         0xFEEDFACF,
         0x0100000C,
         0,
         0x2,
-        0,
-        0,
+        1 if command else 0,
+        len(command),
         0,
         0,
     )
+    return header + command
 
 
 def _write_bundle(
@@ -177,6 +194,16 @@ class AppBundleInspectorTests(unittest.TestCase):
                 },
                 executable_payload=b"plain text",
             )
+            _write_bundle(
+                root / "TargetMismatch.app",
+                {
+                    "CFBundleIdentifier": "com.example.target-mismatch",
+                    "CFBundleExecutable": "program",
+                    "CFBundlePackageType": "APPL",
+                    "LSMinimumSystemVersion": "13.5",
+                },
+                executable_payload=_macho_executable((14, 2, 0)),
+            )
 
             artifact = DirectoryInspector().inspect(root)
 
@@ -201,6 +228,10 @@ class AppBundleInspectorTests(unittest.TestCase):
             {"missing-executable"},
         )
         self.assertEqual(issues[Path("Text.app")], {"non-macho-executable"})
+        self.assertEqual(
+            issues[Path("TargetMismatch.app")],
+            {"minimum-system-version-mismatch"},
+        )
 
     def test_lint_rule_reports_every_bundle_issue(self) -> None:
         """Convert bundle validation issues into configurable lint findings."""
@@ -222,6 +253,26 @@ class AppBundleInspectorTests(unittest.TestCase):
             [(finding.rule_id, finding.severity) for finding in default_findings],
             [("invalid-app-bundle", "error")],
         )
+
+    def test_accepts_a_bundle_target_at_or_above_the_executable_target(self) -> None:
+        """Allow an application to require a newer system than its executable."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            for name, declared in (("Equal", "13.0"), ("Higher", "14.0")):
+                _write_bundle(
+                    root / f"{name}.app",
+                    {
+                        "CFBundleIdentifier": f"com.example.{name.lower()}",
+                        "CFBundleExecutable": "program",
+                        "CFBundlePackageType": "APPL",
+                        "LSMinimumSystemVersion": declared,
+                    },
+                    executable_payload=_macho_executable((13, 0, 0)),
+                )
+
+            artifact = DirectoryInspector().inspect(root)
+
+        self.assertTrue(all(not bundle.issues for bundle in artifact.bundles))
 
 
 if __name__ == "__main__":

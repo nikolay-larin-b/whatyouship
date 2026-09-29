@@ -121,6 +121,11 @@ def _binary_differences(
         ("Architecture", old.architecture, new.architecture),
         ("File version", old.file_version, new.file_version),
         ("Product version", old.product_version, new.product_version),
+        (
+            "Minimum OS version",
+            old.minimum_os_version,
+            new.minimum_os_version,
+        ),
         ("Signature", _signature_state(old), _signature_state(new)),
         (
             "Signature type",

@@ -75,15 +75,17 @@ Current checks and comparisons include:
 For recognized PE binaries, WhatYouShip extracts architecture, binary kind,
 version metadata, and signature information. For thin and universal Mach-O
 binaries, it reports all target architectures, the binary kind, and whether
-every architecture slice has an ad hoc or certificate signature. Cryptographic
-validity of Mach-O signatures is not currently checked.
+every architecture slice has an ad hoc or certificate signature. It also reads
+the macOS deployment target from modern and legacy Mach-O load commands.
+Cryptographic validity of Mach-O signatures is not currently checked.
 
 For macOS application bundles in directories, ZIP archives, and DMG images,
 WhatYouShip reads XML and binary `Contents/Info.plist` files without using
 macOS APIs. `inspect` reports the bundle identifier, name, versions, main
 executable, minimum system version, and package type. `lint` checks required
-metadata and the main executable, while `compare` reports bundle metadata and
-version changes.
+metadata, the main executable, and consistency between
+`LSMinimumSystemVersion` and the executable deployment target, while `compare`
+reports bundle and binary metadata changes.
 
 ## Inspect, lint, compare
 

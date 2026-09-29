@@ -83,6 +83,8 @@ class BinaryMetadata:
     :param file_version: Embedded file version, when available.
     :param product_version: Embedded product version, when available.
     :param signature: Embedded signature metadata, when available.
+    :param minimum_os_version: Minimum operating system version required by
+        the binary, when available.
     """
 
     format: str
@@ -91,6 +93,7 @@ class BinaryMetadata:
     file_version: str | None = None
     product_version: str | None = None
     signature: SignatureMetadata | None = None
+    minimum_os_version: str | None = None
 
 
 @dataclass

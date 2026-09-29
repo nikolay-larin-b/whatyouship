@@ -28,7 +28,7 @@ from whatyouship.model import (
     ReleaseArtifact,
     SignatureMetadata,
 )
-from whatyouship.report import CompareReport, LintReport
+from whatyouship.report import CompareReport, InspectReport, LintReport
 from whatyouship.renderers.csv import INSPECT_COLUMNS, LINT_COLUMNS, render_csv
 
 
@@ -138,6 +138,7 @@ class ReportOutputTests(unittest.TestCase):
             "binary": {
                 "format": "PE", "architecture": "x86_64", "kind": "executable",
                 "file_version": "1.2.3", "product_version": "4.5.6",
+                "minimum_os_version": None,
                 "signature": {
                     "present": True, "valid": True,
                     "signer": "CN=Publisher", "timestamp": True,
@@ -150,6 +151,17 @@ class ReportOutputTests(unittest.TestCase):
         """Include bundle identity, versions, executable, and issues in text."""
         artifact = ReleaseArtifact(
             Path("release.dmg"),
+            [ArtifactFile(
+                Path("Sample.app/Contents/MacOS/sample"),
+                32,
+                "a" * 64,
+                BinaryMetadata(
+                    "Mach-O",
+                    "arm64",
+                    "executable",
+                    minimum_os_version="13.0",
+                ),
+            )],
             bundles=[AppBundleMetadata(
                 Path("Sample.app"),
                 identifier="com.example.sample",
@@ -175,6 +187,7 @@ class ReportOutputTests(unittest.TestCase):
         self.assertIn("Build version: 45", rendered)
         self.assertIn("Executable: sample", rendered)
         self.assertIn("Issue: A required value is missing.", rendered)
+        self.assertIn("Minimum OS version: 13.0", rendered)
 
     def test_lint_json_baseline_keeps_all_categories(self) -> None:
         """Retain existing findings even though text hides their details."""
@@ -261,6 +274,26 @@ class ReportOutputTests(unittest.TestCase):
         self.assertEqual(rows[0]["size_bytes"], "4")
         self.assertIn('"name,""quoted"".txt"', raw)
         self.assertNotIn(str(artifact), raw)
+
+    def test_inspect_csv_includes_macho_minimum_os_version(self) -> None:
+        """Serialize the Mach-O deployment target in file-oriented CSV output."""
+        artifact = ReleaseArtifact(Path("release.dmg"), [ArtifactFile(
+            Path("Sample.app/Contents/MacOS/sample"),
+            32,
+            "a" * 64,
+            BinaryMetadata(
+                "Mach-O",
+                "arm64",
+                "executable",
+                minimum_os_version="13.0",
+            ),
+        )])
+
+        rows = list(csv.DictReader(io.StringIO(
+            render_csv(InspectReport(artifact))
+        )))
+
+        self.assertEqual(rows[0]["minimum_os_version"], "13.0")
 
     def test_lint_csv_has_one_row_per_finding_and_quotes_message(self) -> None:
         """Preserve punctuation and newlines in CSV finding messages."""

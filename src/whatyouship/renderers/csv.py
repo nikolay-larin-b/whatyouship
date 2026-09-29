@@ -14,6 +14,7 @@ from whatyouship.report import CompareReport, InspectReport, LintReport, Report
 INSPECT_COLUMNS = (
     "relative_path", "size_bytes", "sha256", "binary_format",
     "architecture", "binary_kind", "file_version", "product_version",
+    "minimum_os_version",
     "signature_present", "signature_valid", "signature_signer", "signature_timestamp",
     "signature_type",
 )
@@ -65,6 +66,7 @@ def render_csv(report: Report) -> str:
                 binary.kind if binary is not None else "",
                 binary.file_version if binary is not None else "",
                 binary.product_version if binary is not None else "",
+                binary.minimum_os_version if binary is not None else "",
                 _boolean(signature.present) if signature is not None else "",
                 _boolean(signature.valid) if signature is not None else "",
                 signature.signer if signature is not None else "",

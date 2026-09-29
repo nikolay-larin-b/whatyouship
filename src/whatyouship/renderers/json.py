@@ -30,6 +30,7 @@ def _file_data(file: ArtifactFile) -> dict[str, Any]:
             "kind": binary.kind,
             "file_version": binary.file_version,
             "product_version": binary.product_version,
+            "minimum_os_version": binary.minimum_os_version,
             "signature": None if signature is None else {
                 "present": signature.present,
                 "valid": signature.valid,

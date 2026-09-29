@@ -24,34 +24,81 @@ _FILE_DYLIB = 0x6
 _FILE_OBJECT = 0x1
 
 
-def _make_thin_macho(cpu_type: int, file_type: int) -> bytes:
+def _packed_version(version: tuple[int, int, int]) -> int:
+    """Encode a Mach-O load-command version.
+
+    :param version: Major, minor, and patch components.
+    :returns: Packed Mach-O version integer.
+    """
+    major, minor, patch = version
+    return major << 16 | minor << 8 | patch
+
+
+def _make_thin_macho(
+    cpu_type: int,
+    file_type: int,
+    minimum_os_version: tuple[int, int, int] | None = None,
+    *,
+    legacy_version_command: bool = False,
+) -> bytes:
     """Create a minimal 64-bit little-endian Mach-O payload.
 
     :param cpu_type: Mach-O CPU type value.
     :param file_type: Mach-O file type value.
+    :param minimum_os_version: Optional macOS deployment target.
+    :param legacy_version_command: Whether to use ``LC_VERSION_MIN_MACOSX``.
     :returns: Serialized Mach-O header.
     """
     cpu_subtype = 3 if cpu_type == _CPU_X86_64 else 0
-    return struct.pack(
+    command = b""
+    if minimum_os_version is not None:
+        encoded_version = _packed_version(minimum_os_version)
+        if legacy_version_command:
+            command = struct.pack(
+                "<IIII",
+                0x24,
+                16,
+                encoded_version,
+                _packed_version((14, 4, 0)),
+            )
+        else:
+            command = struct.pack(
+                "<IIIIII",
+                0x32,
+                24,
+                1,
+                encoded_version,
+                _packed_version((14, 4, 0)),
+                0,
+            )
+    header = struct.pack(
         "<IIIIIIII",
         0xFEEDFACF,
         cpu_type,
         cpu_subtype,
         file_type,
-        0,
-        0,
+        1 if command else 0,
+        len(command),
         0,
         0,
     )
+    return header + command
 
 
-def _make_universal_macho() -> bytes:
+def _make_universal_macho(
+    x86_64_minimum: tuple[int, int, int] | None = None,
+    arm64_minimum: tuple[int, int, int] | None = None,
+) -> bytes:
     """Create a minimal universal executable with two slices.
 
+    :param x86_64_minimum: Optional x86-64 macOS deployment target.
+    :param arm64_minimum: Optional arm64 macOS deployment target.
     :returns: Serialized fat Mach-O payload.
     """
-    x86_64 = _make_thin_macho(_CPU_X86_64, _FILE_EXECUTE)
-    arm64 = _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+    x86_64 = _make_thin_macho(
+        _CPU_X86_64, _FILE_EXECUTE, x86_64_minimum
+    )
+    arm64 = _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE, arm64_minimum)
     x86_64_offset = 0x100
     arm64_offset = 0x200
     header = struct.pack(">II", 0xCAFEBABE, 2)
@@ -179,6 +226,43 @@ class MachOInspectorTests(unittest.TestCase):
         self.assertEqual(library.kind, "library")
         self.assertEqual(other.kind, "other")
 
+    def test_reads_modern_and_legacy_macos_deployment_targets(self) -> None:
+        """Read both deployment-target load commands without macOS tools."""
+        modern = MachOInspector().inspect(
+            _make_thin_macho(
+                _CPU_ARM64,
+                _FILE_EXECUTE,
+                (13, 2, 0),
+            )
+        )
+        legacy = MachOInspector().inspect(
+            _make_thin_macho(
+                _CPU_X86_64,
+                _FILE_EXECUTE,
+                (10, 15, 7),
+                legacy_version_command=True,
+            )
+        )
+
+        self.assertIsNotNone(modern)
+        self.assertIsNotNone(legacy)
+        self.assertEqual(modern.minimum_os_version, "13.2")
+        self.assertEqual(legacy.minimum_os_version, "10.15.7")
+
+    def test_uses_highest_complete_universal_deployment_target(self) -> None:
+        """Require every universal slice and report their highest target."""
+        complete = MachOInspector().inspect(
+            _make_universal_macho((11, 0, 0), (12, 3, 0))
+        )
+        incomplete = MachOInspector().inspect(
+            _make_universal_macho((11, 0, 0), None)
+        )
+
+        self.assertIsNotNone(complete)
+        self.assertIsNotNone(incomplete)
+        self.assertEqual(complete.minimum_os_version, "12.3")
+        self.assertIsNone(incomplete.minimum_os_version)
+
     def test_directory_inspector_attaches_macho_metadata(self) -> None:
         """Analyze and lint Mach-O files through the shared directory pipeline."""
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -259,6 +343,20 @@ class MachOInspectorTests(unittest.TestCase):
         self.assertIsNotNone(metadata)
         self.assertIsNone(metadata.signature.present)
         self.assertIsNone(metadata.signature.signature_type)
+
+    def test_preserves_metadata_when_deployment_target_is_unreadable(self) -> None:
+        """Keep other Mach-O properties when target extraction fails."""
+        with patch(
+            "whatyouship.binary.macho._minimum_os_version",
+            side_effect=RuntimeError("bad deployment target"),
+        ):
+            metadata = MachOInspector().inspect(
+                _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+            )
+
+        self.assertIsNotNone(metadata)
+        self.assertEqual(metadata.architecture, "arm64")
+        self.assertIsNone(metadata.minimum_os_version)
 
     def test_skips_other_files_and_parse_failures(self) -> None:
         """Return no metadata for non-Mach-O and malformed payloads."""
