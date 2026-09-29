@@ -35,6 +35,7 @@ def _file_data(file: ArtifactFile) -> dict[str, Any]:
                 "valid": signature.valid,
                 "signer": signature.signer,
                 "timestamp": signature.timestamp,
+                "type": signature.signature_type,
             },
         }
     return {

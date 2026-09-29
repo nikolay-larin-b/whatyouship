@@ -101,15 +101,23 @@ def _render_inspect(report: InspectReport) -> str:
             if file.binary.signature is not None:
                 signature = file.binary.signature
                 if signature.present is None:
-                    lines.append("  Signature: unknown")
+                    details = ["unknown"]
+                    if signature.signature_type is not None:
+                        details.append(f"Type: {signature.signature_type}")
+                    lines.append("  Signature: " + " | ".join(details))
                 elif not signature.present:
-                    lines.append("  Signature: absent")
+                    details = ["absent"]
+                    if signature.signature_type is not None:
+                        details.append(f"Type: {signature.signature_type}")
+                    lines.append("  Signature: " + " | ".join(details))
                 else:
                     validity = (
                         "unknown" if signature.valid is None else
                         "valid" if signature.valid else "invalid"
                     )
                     details = [validity]
+                    if signature.signature_type is not None:
+                        details.append(f"Type: {signature.signature_type}")
                     if signature.signer is not None:
                         details.append(f"Signer: {signature.signer}")
                     if signature.timestamp is not None:

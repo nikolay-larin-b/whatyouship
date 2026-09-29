@@ -15,6 +15,7 @@ INSPECT_COLUMNS = (
     "relative_path", "size_bytes", "sha256", "binary_format",
     "architecture", "binary_kind", "file_version", "product_version",
     "signature_present", "signature_valid", "signature_signer", "signature_timestamp",
+    "signature_type",
 )
 LINT_COLUMNS = ("category", "rule_id", "severity", "relative_path", "message")
 
@@ -68,6 +69,7 @@ def render_csv(report: Report) -> str:
                 _boolean(signature.valid) if signature is not None else "",
                 signature.signer if signature is not None else "",
                 _boolean(signature.timestamp) if signature is not None else "",
+                signature.signature_type if signature is not None else "",
             ))
     else:
         writer.writerow(LINT_COLUMNS)

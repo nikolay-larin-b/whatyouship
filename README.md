@@ -61,7 +61,7 @@ WhatYouShip analyzes the final release rather than assumptions made by the build
 Current checks and comparisons include:
 
 * suspicious build artifacts accidentally included in a release;
-* unsigned Windows executables and libraries;
+* unsigned executables and libraries;
 * untrusted signers and invalid artifact signatures where platform verification is available;
 * inconsistent MSI installation scope;
 * DMG releases without an embedded software license agreement;
@@ -73,8 +73,9 @@ Current checks and comparisons include:
 
 For recognized PE binaries, WhatYouShip extracts architecture, binary kind,
 version metadata, and signature information. For thin and universal Mach-O
-binaries, it reports all target architectures and the binary kind; Mach-O
-signature metadata is not currently inspected.
+binaries, it reports all target architectures, the binary kind, and whether
+every architecture slice has an ad hoc or certificate signature. Cryptographic
+validity of Mach-O signatures is not currently checked.
 
 ## Inspect, lint, compare
 

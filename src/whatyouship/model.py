@@ -10,6 +10,7 @@ from typing import Literal
 
 
 Severity = Literal["warning", "error"]
+BinarySignatureType = Literal["ad-hoc", "certificate", "mixed"]
 ArtifactSignatureStatus = Literal[
     "unsupported", "unsigned", "valid", "untrusted", "invalid"
 ]
@@ -62,12 +63,14 @@ class SignatureMetadata:
     :param valid: Whether signature verification succeeded, or ``None`` if unknown.
     :param signer: Signer certificate subject, when available.
     :param timestamp: Whether a timestamp is present, or ``None`` if unknown.
+    :param signature_type: Ad hoc, certificate, or mixed signature type.
     """
 
     present: bool | None
     valid: bool | None = None
     signer: str | None = None
     timestamp: bool | None = None
+    signature_type: BinarySignatureType | None = None
 
 
 @dataclass

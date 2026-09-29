@@ -121,6 +121,48 @@ class CompareTests(unittest.TestCase):
         )
         self.assertFalse(any(difference.potentially_dangerous for difference in result.semantic_differences))
 
+    def test_reports_binary_signature_type_changes(self) -> None:
+        """Distinguish ad hoc and certificate-backed binary signatures."""
+        path = Path("application")
+        old = ReleaseArtifact(Path("old"), [ArtifactFile(
+            path,
+            1,
+            "a",
+            BinaryMetadata(
+                "Mach-O",
+                "arm64",
+                "executable",
+                signature=SignatureMetadata(
+                    True,
+                    signature_type="ad-hoc",
+                ),
+            ),
+        )])
+        new = ReleaseArtifact(Path("new"), [ArtifactFile(
+            path,
+            1,
+            "b",
+            BinaryMetadata(
+                "Mach-O",
+                "arm64",
+                "executable",
+                signature=SignatureMetadata(
+                    True,
+                    signature_type="certificate",
+                ),
+            ),
+        )])
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            [
+                (difference.field, difference.old_value, difference.new_value)
+                for difference in differences
+            ],
+            [("Signature type", "ad-hoc", "certificate")],
+        )
+
     def test_hash_only_change_has_no_semantic_difference(self) -> None:
         """Keep a digest change separate when binary metadata is identical."""
         path = Path("app.exe")

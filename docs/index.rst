@@ -21,8 +21,10 @@ For recognized binaries, ``inspect`` also reports architecture, executable or
 library kind, version metadata, and signature information when available.
 PE inspection reports architecture, binary kind, version metadata, and
 signature information. Thin and universal Mach-O inspection reports all target
-architectures and the binary kind; Mach-O signature metadata is not currently
-inspected.
+architectures, the binary kind, and whether every architecture slice has an ad
+hoc or certificate signature. ``lint`` reports an executable or library when
+any slice is unsigned. Cryptographic validity of Mach-O signatures is not
+currently checked.
 
 For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking

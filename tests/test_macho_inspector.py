@@ -7,12 +7,14 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import lief
 
 from whatyouship.binary.macho import MachOInspector
 from whatyouship.inspectors.directory import DirectoryInspector
+from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
 
 _CPU_X86_64 = 0x01000007
@@ -79,6 +81,58 @@ def _make_universal_macho() -> bytes:
     return payload
 
 
+def _make_embedded_signature(signature_type: str) -> bytes:
+    """Create a minimal ad hoc or certificate signature superblob.
+
+    :param signature_type: ``ad-hoc`` or ``certificate``.
+    :returns: Serialized embedded signature payload.
+    """
+    flags = 0x2 if signature_type == "ad-hoc" else 0
+    code_directory = struct.pack(
+        ">IIII",
+        0xFADE0C02,
+        16,
+        0x20400,
+        flags,
+    )
+    entries = [(0, code_directory)]
+    if signature_type == "certificate":
+        entries.append((0x10000, struct.pack(">II", 0xFADE0B01, 9) + b"\x30"))
+    offset = 12 + 8 * len(entries)
+    indexes = []
+    blobs = []
+    for slot, blob in entries:
+        indexes.append(struct.pack(">II", slot, offset))
+        blobs.append(blob)
+        offset += len(blob)
+    return (
+        struct.pack(">III", 0xFADE0CC0, offset, len(entries))
+        + b"".join(indexes)
+        + b"".join(blobs)
+    )
+
+
+def _mock_slice(
+    cpu_type: lief.MachO.Header.CPU_TYPE,
+    file_type: lief.MachO.Header.FILE_TYPE,
+    signature: bytes | None,
+) -> SimpleNamespace:
+    """Build the Mach-O slice interface used by the inspector.
+
+    :param cpu_type: Slice architecture.
+    :param file_type: Slice binary kind.
+    :param signature: Embedded signature payload, or ``None``.
+    :returns: Minimal parsed-slice replacement.
+    """
+    code_signature = (
+        None if signature is None else SimpleNamespace(content=signature)
+    )
+    return SimpleNamespace(
+        header=SimpleNamespace(cpu_type=cpu_type, file_type=file_type),
+        code_signature=code_signature,
+    )
+
+
 class MachOInspectorTests(unittest.TestCase):
     """Verify thin and universal Mach-O metadata extraction."""
 
@@ -99,7 +153,9 @@ class MachOInspectorTests(unittest.TestCase):
         self.assertEqual(from_path.kind, "executable")
         self.assertIsNone(from_path.file_version)
         self.assertIsNone(from_path.product_version)
-        self.assertIsNone(from_path.signature)
+        self.assertIsNotNone(from_path.signature)
+        self.assertFalse(from_path.signature.present)
+        self.assertIsNone(from_path.signature.signature_type)
 
     def test_inspects_universal_binary_with_canonical_architecture_order(self) -> None:
         """Combine and sort architecture names from all universal slices."""
@@ -124,7 +180,7 @@ class MachOInspectorTests(unittest.TestCase):
         self.assertEqual(other.kind, "other")
 
     def test_directory_inspector_attaches_macho_metadata(self) -> None:
-        """Analyze Mach-O files through the shared directory pipeline."""
+        """Analyze and lint Mach-O files through the shared directory pipeline."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             (root / "application").write_bytes(_make_universal_macho())
@@ -133,6 +189,76 @@ class MachOInspectorTests(unittest.TestCase):
 
         self.assertEqual(artifact.files[0].binary.format, "Mach-O")
         self.assertEqual(artifact.files[0].binary.architecture, "arm64+x86_64")
+        findings = UnsignedBinaryRule().check(artifact)
+        self.assertEqual(
+            [finding.relative_path for finding in findings],
+            [Path("application")],
+        )
+
+    def test_classifies_ad_hoc_and_certificate_signatures(self) -> None:
+        """Distinguish ad hoc CodeDirectory flags from CMS signatures."""
+        for signature_type in ("ad-hoc", "certificate"):
+            with self.subTest(signature_type=signature_type), patch(
+                "whatyouship.binary.macho.lief.MachO.parse",
+                return_value=[
+                    _mock_slice(
+                        lief.MachO.Header.CPU_TYPE.ARM64,
+                        lief.MachO.Header.FILE_TYPE.EXECUTE,
+                        _make_embedded_signature(signature_type),
+                    )
+                ],
+            ):
+                metadata = MachOInspector().inspect(
+                    _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+                )
+
+            self.assertIsNotNone(metadata)
+            self.assertTrue(metadata.signature.present)
+            self.assertEqual(metadata.signature.signature_type, signature_type)
+            self.assertIsNone(metadata.signature.valid)
+
+    def test_requires_every_universal_slice_to_be_signed(self) -> None:
+        """Treat a partially signed universal binary as unsigned."""
+        slices = [
+            _mock_slice(
+                lief.MachO.Header.CPU_TYPE.X86_64,
+                lief.MachO.Header.FILE_TYPE.DYLIB,
+                _make_embedded_signature("certificate"),
+            ),
+            _mock_slice(
+                lief.MachO.Header.CPU_TYPE.ARM64,
+                lief.MachO.Header.FILE_TYPE.DYLIB,
+                None,
+            ),
+        ]
+        with patch(
+            "whatyouship.binary.macho.lief.MachO.parse",
+            return_value=slices,
+        ):
+            metadata = MachOInspector().inspect(_make_universal_macho())
+
+        self.assertIsNotNone(metadata)
+        self.assertFalse(metadata.signature.present)
+        self.assertEqual(metadata.signature.signature_type, "mixed")
+
+    def test_preserves_metadata_when_signature_type_is_unreadable(self) -> None:
+        """Keep Mach-O properties when a signature payload is malformed."""
+        binary = _mock_slice(
+            lief.MachO.Header.CPU_TYPE.ARM64,
+            lief.MachO.Header.FILE_TYPE.EXECUTE,
+            b"invalid signature",
+        )
+        with patch(
+            "whatyouship.binary.macho.lief.MachO.parse",
+            return_value=[binary],
+        ):
+            metadata = MachOInspector().inspect(
+                _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+            )
+
+        self.assertIsNotNone(metadata)
+        self.assertIsNone(metadata.signature.present)
+        self.assertIsNone(metadata.signature.signature_type)
 
     def test_skips_other_files_and_parse_failures(self) -> None:
         """Return no metadata for non-Mach-O and malformed payloads."""
@@ -147,16 +273,16 @@ class MachOInspectorTests(unittest.TestCase):
 
     def test_mixed_slice_kinds_are_other(self) -> None:
         """Do not choose an arbitrary kind for inconsistent universal slices."""
-        executable = type("Binary", (), {})()
-        executable.header = type("Header", (), {
-            "cpu_type": lief.MachO.Header.CPU_TYPE.X86_64,
-            "file_type": lief.MachO.Header.FILE_TYPE.EXECUTE,
-        })()
-        library = type("Binary", (), {})()
-        library.header = type("Header", (), {
-            "cpu_type": lief.MachO.Header.CPU_TYPE.ARM64,
-            "file_type": lief.MachO.Header.FILE_TYPE.DYLIB,
-        })()
+        executable = _mock_slice(
+            lief.MachO.Header.CPU_TYPE.X86_64,
+            lief.MachO.Header.FILE_TYPE.EXECUTE,
+            None,
+        )
+        library = _mock_slice(
+            lief.MachO.Header.CPU_TYPE.ARM64,
+            lief.MachO.Header.FILE_TYPE.DYLIB,
+            None,
+        )
 
         with patch(
             "whatyouship.binary.macho.lief.MachO.parse",

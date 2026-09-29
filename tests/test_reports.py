@@ -69,7 +69,13 @@ class ReportOutputTests(unittest.TestCase):
                 Path("bin/app.exe"), 42, "a" * 64,
                 binary=BinaryMetadata(
                     "PE", "x86_64", "executable", "1.2.3", "4.5.6",
-                    SignatureMetadata(True, True, "CN=Publisher", True),
+                    SignatureMetadata(
+                        True,
+                        True,
+                        "CN=Publisher",
+                        True,
+                        "certificate",
+                    ),
                 ),
             )],
             signature=ArtifactSignature("valid", "CN=Package Publisher", timestamp),
@@ -106,6 +112,7 @@ class ReportOutputTests(unittest.TestCase):
                 "signature": {
                     "present": True, "valid": True,
                     "signer": "CN=Publisher", "timestamp": True,
+                    "type": "certificate",
                 },
             },
         })

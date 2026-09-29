@@ -291,7 +291,13 @@ class CliTests(unittest.TestCase):
             Path("release"),
             [ArtifactFile(Path("app.exe"), 1, "a" * 64, binary=BinaryMetadata(
                 "PE", "x86_64", "executable",
-                signature=SignatureMetadata(True, True, "CN=Example Publisher", True),
+                signature=SignatureMetadata(
+                    True,
+                    True,
+                    "CN=Example Publisher",
+                    True,
+                    "certificate",
+                ),
             ))],
         )
         output = io.StringIO()
@@ -300,7 +306,11 @@ class CliTests(unittest.TestCase):
             result = main(["inspect", "release"])
 
         self.assertEqual(result, 0)
-        self.assertIn("Signature: valid | Signer: CN=Example Publisher | Timestamp: present", output.getvalue())
+        self.assertIn(
+            "Signature: valid | Type: certificate | "
+            "Signer: CN=Example Publisher | Timestamp: present",
+            output.getvalue(),
+        )
 
     def test_inspect_prints_artifact_signature_separately(self) -> None:
         """Show the package signature before signatures of contained files."""

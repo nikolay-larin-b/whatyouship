@@ -123,6 +123,11 @@ def _binary_differences(
         ("Product version", old.product_version, new.product_version),
         ("Signature", _signature_state(old), _signature_state(new)),
         (
+            "Signature type",
+            old.signature.signature_type if old.signature is not None else None,
+            new.signature.signature_type if new.signature is not None else None,
+        ),
+        (
             "Signer",
             old.signature.signer if old.signature is not None else None,
             new.signature.signer if new.signature is not None else None,
