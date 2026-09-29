@@ -10,6 +10,7 @@ from whatyouship.compare import ComparisonResult, SemanticDifference, compare_ar
 from whatyouship.model import (
     AppBundleMetadata,
     ArtifactFile,
+    ArtifactSignature,
     BinaryDependency,
     BinaryEntitlement,
     BinaryMetadata,
@@ -74,6 +75,43 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(result.changed, [Path("b-changed"), Path("z-changed")])
         self.assertEqual(result.unchanged, [Path("same")])
         self.assertEqual(result.semantic_differences, [])
+
+    def test_reports_artifact_signature_and_notarization_changes(self) -> None:
+        """Compare DMG container identity and stapled ticket state."""
+        old = ReleaseArtifact(
+            Path("old.dmg"),
+            signature=ArtifactSignature(
+                "valid",
+                "CN=Old Publisher",
+                team_id="OLDTEAM123",
+                notarization_ticket=True,
+            ),
+        )
+        new = ReleaseArtifact(
+            Path("new.dmg"),
+            signature=ArtifactSignature(
+                "invalid",
+                "CN=New Publisher",
+                team_id="NEWTEAM456",
+                notarization_ticket=False,
+            ),
+        )
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            [(item.field, item.old_value, item.new_value) for item in differences],
+            [
+                ("Artifact signature", "valid", "invalid"),
+                ("Artifact signer", "CN=Old Publisher", "CN=New Publisher"),
+                ("Artifact Team ID", "OLDTEAM123", "NEWTEAM456"),
+                ("Stapled notarization ticket", "True", "False"),
+            ],
+        )
+        self.assertEqual(
+            [item.field for item in differences if item.potentially_dangerous],
+            ["Artifact signature"],
+        )
 
     def test_reports_pe_metadata_changes_separately_from_hashes(self) -> None:
         """Report binary field changes and highlight a signature regression."""

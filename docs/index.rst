@@ -45,9 +45,9 @@ For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking
 is unsupported on Linux and macOS. ``lint`` reports unsigned artifacts,
 signatures whose signer is not trusted, and cryptographically invalid artifact
-signatures when verification is supported. Directory, DMG, and ZIP
-artifact signatures are unsupported. Package and contained binary signatures
-are checked independently.
+signatures when verification is supported. Directory and ZIP artifact
+signatures are unsupported. Package and contained binary signatures are checked
+independently.
 
 MSI installation scope is inferred statically from the ``Property``,
 ``Directory``, ``Registry``, ``Component``, ``Shortcut``, and explicit scope-setting
@@ -89,8 +89,15 @@ SHA-256 under ``~/.whatyouship/cache/dmg-7zip/v1/``. Embedded software license
 agreement metadata is unavailable through this backend, so ``lint`` does not
 report the agreement as present or absent. Encrypted and multi-volume images are
 not supported. Symbolic links, extended attributes, alternate streams, and
-resource forks are not represented in reports. DMG artifact signatures and
-notarization status are not currently checked.
+resource forks are not represented in reports.
+
+DMG container signatures are inspected independently from their files on every
+platform. WhatYouShip detects unsigned images, verifies CodeDirectory content
+and trailer digests, and reports the Team ID and presence of a stapled
+notarization ticket. If ``rcodesign`` is available in ``PATH``, it also verifies
+the CMS signature and reports the signer and timestamp. A cryptographically
+valid signature that does not chain to an Apple root is reported as untrusted.
+Current Gatekeeper policy and online notarization status are not evaluated.
 
 NSIS installer ``.exe`` files are detected before extraction and require
 ``7z`` or ``7zz`` from 7-Zip in ``PATH``. Their payloads are cached by installer

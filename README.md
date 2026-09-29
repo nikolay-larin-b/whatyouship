@@ -65,6 +65,7 @@ Current checks and comparisons include:
 * untrusted signers and invalid artifact signatures where platform verification is available;
 * inconsistent MSI installation scope;
 * DMG releases without an embedded software license agreement;
+* unsigned, untrusted, or invalid DMG container signatures;
 * malformed macOS application bundles;
 * missing required Mach-O libraries expected inside an application bundle;
 * release Mach-O binaries with debugger attachment enabled;
@@ -180,8 +181,16 @@ recognized by 7-Zip and analyzes the extracted regular files. Embedded software
 license agreement metadata is unavailable through this backend, so `lint` does
 not report the agreement as present or absent. Encrypted and multi-volume images
 are not supported. Symbolic links, extended attributes, alternate streams, and
-resource forks are not represented in reports. DMG artifact signatures and
-notarization status are not currently checked.
+resource forks are not represented in reports.
+
+DMG container signatures are inspected independently from their files on every
+platform. WhatYouShip always detects unsigned images, verifies CodeDirectory
+content and trailer digests, and reports the Team ID and presence of a stapled
+notarization ticket. If `rcodesign` is available in `PATH`, it also verifies the
+CMS signature and reports the signer and timestamp. A signature with valid
+digests and CMS cryptography that does not chain to an Apple root is reported as
+untrusted. Current Gatekeeper policy and online notarization status are not
+evaluated.
 
 NSIS installers require `7z` or `7zz` from 7-Zip to be available in `PATH`.
 WhatYouShip inspects the extracted payload; extracted paths are not an exact

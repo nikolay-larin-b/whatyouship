@@ -83,6 +83,11 @@ def _render_inspect(report: InspectReport) -> str:
         lines.append(f"  Signer: {artifact.signature.signer}")
     if artifact.signature.timestamp is not None:
         lines.append(f"  Timestamp: {artifact.signature.timestamp.isoformat()}")
+    if artifact.signature.team_id is not None:
+        lines.append(f"  Team ID: {artifact.signature.team_id}")
+    if artifact.signature.notarization_ticket is not None:
+        state = "present" if artifact.signature.notarization_ticket else "absent"
+        lines.append(f"  Stapled notarization ticket: {state}")
     if artifact.installation_scope is not None:
         lines.append(f"Installation scope: {artifact.installation_scope.kind}")
     if artifact.license_agreement_present is not None:

@@ -294,6 +294,29 @@ def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonR
         added=sorted(new_paths - old_paths),
         removed=sorted(old_paths - new_paths),
     )
+    signature_fields = (
+        ("Artifact signature", old.signature.status, new.signature.status),
+        ("Artifact signer", old.signature.signer, new.signature.signer),
+        ("Artifact Team ID", old.signature.team_id, new.signature.team_id),
+        (
+            "Stapled notarization ticket",
+            old.signature.notarization_ticket,
+            new.signature.notarization_ticket,
+        ),
+    )
+    for field_name, old_value, new_value in signature_fields:
+        if old_value != new_value:
+            result.semantic_differences.append(SemanticDifference(
+                Path("."),
+                field_name,
+                str(old_value) if old_value is not None else "unavailable",
+                str(new_value) if new_value is not None else "unavailable",
+                potentially_dangerous=(
+                    field_name == "Artifact signature"
+                    and old_value == "valid"
+                    and new_value != "valid"
+                ),
+            ))
     if old.installation_scope is not None and new.installation_scope is not None:
         old_scope = old.installation_scope.kind
         new_scope = new.installation_scope.kind

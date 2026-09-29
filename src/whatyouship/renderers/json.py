@@ -104,6 +104,8 @@ def _artifact_data(artifact: ReleaseArtifact) -> dict[str, Any]:
                 artifact.signature.timestamp.isoformat()
                 if artifact.signature.timestamp is not None else None
             ),
+            "team_id": artifact.signature.team_id,
+            "notarization_ticket": artifact.signature.notarization_ticket,
         },
         "installation_scope": None if scope is None else {
             "kind": scope.kind,

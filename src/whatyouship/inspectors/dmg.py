@@ -11,6 +11,7 @@ from pathlib import Path
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.dmg_7zip_cache import DmgSevenZipExtractionCache
 from whatyouship.inspectors.dmg_cache import DmgConversionCache
+from whatyouship.inspectors.dmg_signature import DmgSignatureInspector
 from whatyouship.inspectors.macos_disk_image import (
     MacOSDiskImageMounter,
     inspect_disk_image_metadata,
@@ -68,6 +69,7 @@ class DmgInspector:
         return replace(
             artifact,
             source_path=source_path,
+            signature=DmgSignatureInspector().inspect(source_path),
             license_agreement_present=metadata.license_agreement_present,
         )
 
@@ -81,4 +83,8 @@ class DmgInspector:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         volume = DmgSevenZipExtractionCache().load_or_populate(digest, source_path)
         artifact = DirectoryInspector().inspect(volume)
-        return replace(artifact, source_path=source_path)
+        return replace(
+            artifact,
+            source_path=source_path,
+            signature=DmgSignatureInspector().inspect(source_path),
+        )

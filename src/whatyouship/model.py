@@ -48,11 +48,15 @@ class ArtifactSignature:
     :param status: Verification result, or ``unsupported`` when not applicable.
     :param signer: Signer certificate subject, when available.
     :param timestamp: Countersignature time, when available.
+    :param team_id: Apple code-signing Team ID, when available.
+    :param notarization_ticket: Whether a stapled notarization ticket is present.
     """
 
     status: ArtifactSignatureStatus = "unsupported"
     signer: str | None = None
     timestamp: datetime | None = None
+    team_id: str | None = None
+    notarization_ticket: bool | None = None
 
 
 @dataclass(frozen=True)

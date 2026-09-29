@@ -82,7 +82,13 @@ class ReportOutputTests(unittest.TestCase):
                     ),
                 ),
             )],
-            signature=ArtifactSignature("valid", "CN=Package Publisher", timestamp),
+            signature=ArtifactSignature(
+                "valid",
+                "CN=Package Publisher",
+                timestamp,
+                team_id="TEAM123456",
+                notarization_ticket=True,
+            ),
             installation_scope=InstallationScope(
                 "ambiguous",
                 (InstallationScopeConflict("registry:conflict", "Conflicting registry root"),),
@@ -115,6 +121,8 @@ class ReportOutputTests(unittest.TestCase):
         self.assertEqual(data["artifact"]["signature"], {
             "status": "valid", "signer": "CN=Package Publisher",
             "timestamp": timestamp.isoformat(),
+            "team_id": "TEAM123456",
+            "notarization_ticket": True,
         })
         self.assertEqual(data["artifact"]["installation_scope"], {
             "kind": "ambiguous", "conflicts": ["Conflicting registry root"],
