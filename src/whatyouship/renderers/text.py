@@ -17,7 +17,7 @@ def _finding_line(finding: Finding) -> str:
     """
     return (
         f"{finding.rule_id} | {finding.severity} | "
-        f"{finding.relative_path} | {finding.message}"
+        f"{finding.relative_path.as_posix()} | {finding.message}"
     )
 
 
@@ -44,7 +44,7 @@ def _render_compare(report: CompareReport) -> str:
     ):
         if paths:
             lines.extend(["", f"{label} files:"])
-            lines.extend(f"  {path}" for path in paths)
+            lines.extend(f"  {path.as_posix()}" for path in paths)
     if comparison.semantic_differences:
         lines.extend(["", "Semantic differences:"])
         for difference in comparison.semantic_differences:
@@ -56,7 +56,7 @@ def _render_compare(report: CompareReport) -> str:
                 warning += f" [WARNING: {difference.warning_message}]"
             location = (
                 "" if difference.relative_path == Path(".")
-                else f"{difference.relative_path} | "
+                else f"{difference.relative_path.as_posix()} | "
             )
             lines.append(
                 f"  {location}{difference.field}: "
@@ -96,7 +96,7 @@ def _render_inspect(report: InspectReport) -> str:
     if artifact.bundles:
         lines.extend(["", "Application bundles:"])
         for bundle in artifact.bundles:
-            lines.append(f"  {bundle.relative_path}")
+            lines.append(f"  {bundle.relative_path.as_posix()}")
             fields = (
                 ("Identifier", bundle.identifier),
                 ("Name", bundle.name),
@@ -105,7 +105,7 @@ def _render_inspect(report: InspectReport) -> str:
                 ("Executable", bundle.executable),
                 (
                     "Executable path",
-                    str(bundle.executable_path)
+                    bundle.executable_path.as_posix()
                     if bundle.executable_path is not None else None,
                 ),
                 ("Minimum system version", bundle.minimum_system_version),
@@ -121,10 +121,15 @@ def _render_inspect(report: InspectReport) -> str:
         lines.extend(["", "Symbolic links:"])
         for link in artifact.symbolic_links:
             scope = " | external" if link.external else ""
-            lines.append(f"  {link.relative_path} -> {link.target}{scope}")
+            lines.append(
+                f"  {link.relative_path.as_posix()} -> {link.target}{scope}"
+            )
     lines.extend(["", "Relative path | Size (bytes) | SHA-256"])
     for file in artifact.files:
-        lines.append(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")
+        lines.append(
+            f"{file.relative_path.as_posix()} | {file.size_bytes} | "
+            f"{file.sha256}"
+        )
         if file.binary is not None:
             details = [file.binary.kind, f"Architecture: {file.binary.architecture}"]
             if file.binary.file_version is not None:

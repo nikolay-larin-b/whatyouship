@@ -4,6 +4,7 @@
 """Tests for cross-platform DMG container signature verification."""
 
 import hashlib
+import os
 import struct
 import tempfile
 import unittest
@@ -197,7 +198,7 @@ class DmgSignatureInspectorTests(unittest.TestCase):
             [
                 "rcodesign",
                 "-C",
-                "/dev/null",
+                os.devnull,
                 "print-signature-info",
                 str(self.source.resolve()),
             ],

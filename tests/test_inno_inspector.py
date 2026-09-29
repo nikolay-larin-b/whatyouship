@@ -378,7 +378,7 @@ class InnoInspectorTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIn(
-            f"build-artifact-extension | warning | {Path('app/module.obj')}",
+            "build-artifact-extension | warning | app/module.obj",
             output.getvalue(),
         )
 

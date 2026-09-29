@@ -247,7 +247,7 @@ class NsisInspectorTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIn(
-            f"build-artifact-extension | warning | {Path('build/module.obj')}",
+            "build-artifact-extension | warning | build/module.obj",
             output.getvalue(),
         )
 

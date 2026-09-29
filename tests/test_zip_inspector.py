@@ -17,7 +17,7 @@ import lief
 
 from whatyouship.cli import main
 from whatyouship.inspectors.zip import ZipInspector
-from whatyouship.inspectors.zip_cache import ZipExtractionCache
+from whatyouship.inspectors.zip_cache import ZipExtractionCache, _safe_path
 
 
 def _write_zip(path: Path, files: dict[str, bytes]) -> None:
@@ -146,7 +146,7 @@ class ZipInspectorTests(unittest.TestCase):
 
     def test_unsafe_entry_paths_are_rejected(self) -> None:
         """Reject traversal, absolute, drive, and backslash paths."""
-        for index, name in enumerate(("../outside.txt", "/absolute.txt", "C:/drive.txt", "dir\\escape.txt")):
+        for index, name in enumerate(("../outside.txt", "/absolute.txt", "C:/drive.txt")):
             with self.subTest(name=name):
                 source = self.root / f"unsafe-{index}.zip"
                 _write_zip(source, {name: b"payload"})
@@ -156,6 +156,9 @@ class ZipInspectorTests(unittest.TestCase):
 
                 self.assertFalse(self._entry(source).exists())
                 self.assertFalse((self.root / "outside.txt").exists())
+
+        with self.assertRaisesRegex(ValueError, "Unsafe ZIP entry path"):
+            _safe_path("dir\\escape.txt")
 
     def test_symlink_entry_is_rejected(self) -> None:
         """Never materialize archive symlinks in the extracted tree."""

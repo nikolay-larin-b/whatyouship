@@ -319,18 +319,12 @@ class ReportOutputTests(unittest.TestCase):
 
     def test_inspect_csv_has_one_row_per_file_and_quotes_values(self) -> None:
         """Use the standard CSV writer for file paths containing delimiters."""
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            artifact = root / "release"
-            artifact.mkdir()
-            (artifact / 'name,"quoted".txt').write_bytes(b"data")
-            (artifact / "other.txt").write_bytes(b"other")
-            target = root / "inspect.csv"
-
-            self.assertEqual(main(["inspect", str(artifact), "-o", str(target)]), 0)
-            raw = target.read_text(encoding="utf-8")
-            with target.open(newline="", encoding="utf-8") as stream:
-                rows = list(csv.DictReader(stream))
+        artifact = ReleaseArtifact(Path("release"), [
+            ArtifactFile(Path('name,"quoted".txt'), 4, "a" * 64),
+            ArtifactFile(Path("other.txt"), 5, "b" * 64),
+        ])
+        raw = render_csv(InspectReport(artifact))
+        rows = list(csv.DictReader(io.StringIO(raw)))
 
         self.assertEqual(len(rows), 2)
         self.assertEqual(tuple(rows[0]), INSPECT_COLUMNS)
@@ -338,7 +332,7 @@ class ReportOutputTests(unittest.TestCase):
         self.assertEqual(rows[0]["relative_path"], 'name,"quoted".txt')
         self.assertEqual(rows[0]["size_bytes"], "4")
         self.assertIn('"name,""quoted"".txt"', raw)
-        self.assertNotIn(str(artifact), raw)
+        self.assertNotIn(str(artifact.source_path), raw)
 
     def test_inspect_csv_includes_macho_minimum_os_version(self) -> None:
         """Serialize the Mach-O deployment target in file-oriented CSV output."""

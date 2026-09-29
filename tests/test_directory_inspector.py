@@ -53,8 +53,13 @@ class DirectoryInspectorTests(unittest.TestCase):
             root = Path(temporary_directory)
             (root / "data").mkdir()
             (root / "data" / "payload.txt").write_bytes(b"payload")
-            (root / "current").symlink_to("data/payload.txt")
-            (root / "external").symlink_to("/Applications")
+            try:
+                (root / "current").symlink_to("data/payload.txt")
+                (root / "external").symlink_to("/Applications")
+            except OSError as error:
+                if getattr(error, "winerror", None) == 1314:
+                    self.skipTest("Creating symbolic links requires Windows privilege")
+                raise
 
             artifact = DirectoryInspector().inspect(root)
 
