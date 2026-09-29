@@ -88,6 +88,30 @@ def _render_inspect(report: InspectReport) -> str:
     if artifact.license_agreement_present is not None:
         state = "present" if artifact.license_agreement_present else "absent"
         lines.append(f"Embedded license agreement: {state}")
+    if artifact.bundles:
+        lines.extend(["", "Application bundles:"])
+        for bundle in artifact.bundles:
+            lines.append(f"  {bundle.relative_path}")
+            fields = (
+                ("Identifier", bundle.identifier),
+                ("Name", bundle.name),
+                ("Version", bundle.short_version),
+                ("Build version", bundle.bundle_version),
+                ("Executable", bundle.executable),
+                (
+                    "Executable path",
+                    str(bundle.executable_path)
+                    if bundle.executable_path is not None else None,
+                ),
+                ("Minimum system version", bundle.minimum_system_version),
+                ("Package type", bundle.package_type),
+            )
+            lines.extend(
+                f"    {label}: {value}"
+                for label, value in fields
+                if value is not None
+            )
+            lines.extend(f"    Issue: {issue.message}" for issue in bundle.issues)
     lines.extend(["", "Relative path | Size (bytes) | SHA-256"])
     for file in artifact.files:
         lines.append(f"{file.relative_path} | {file.size_bytes} | {file.sha256}")

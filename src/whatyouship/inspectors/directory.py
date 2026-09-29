@@ -8,6 +8,7 @@ from pathlib import Path
 
 from whatyouship.binary.macho import MachOInspector
 from whatyouship.binary.pe import PeInspector
+from whatyouship.inspectors.app_bundle import AppBundleInspector
 from whatyouship.model import ArtifactFile, ReleaseArtifact
 
 
@@ -47,4 +48,5 @@ class DirectoryInspector:
                 )
             )
 
-        return ReleaseArtifact(source_path=directory, files=files)
+        bundles = AppBundleInspector().inspect(directory, files)
+        return ReleaseArtifact(source_path=directory, files=files, bundles=bundles)

@@ -26,6 +26,12 @@ hoc or certificate signature. ``lint`` reports an executable or library when
 any slice is unsigned. Cryptographic validity of Mach-O signatures is not
 currently checked.
 
+For macOS application bundles in directories, ZIP archives, and DMG images,
+WhatYouShip reads XML and binary ``Contents/Info.plist`` files without using
+macOS APIs. ``inspect`` reports bundle identity, versions, the main executable,
+minimum system version, and package type. ``lint`` reports malformed bundles,
+and ``compare`` reports bundle metadata and version changes.
+
 For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking
 is unsupported on Linux and macOS. ``lint`` reports unsigned artifacts,

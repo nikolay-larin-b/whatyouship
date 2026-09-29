@@ -7,7 +7,14 @@ import unittest
 from pathlib import Path
 
 from whatyouship.compare import ComparisonResult, SemanticDifference, compare_artifacts
-from whatyouship.model import ArtifactFile, BinaryMetadata, InstallationScope, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import (
+    AppBundleMetadata,
+    ArtifactFile,
+    BinaryMetadata,
+    InstallationScope,
+    ReleaseArtifact,
+    SignatureMetadata,
+)
 
 
 def _version_differences(
@@ -295,6 +302,66 @@ class CompareTests(unittest.TestCase):
             compare_artifacts(old, ReleaseArtifact(Path("directory"))).semantic_differences,
             [],
         )
+
+    def test_reports_application_bundle_metadata_changes(self) -> None:
+        """Compare shared bundles and warn about version regressions."""
+        path = Path("Sample.app")
+        old = ReleaseArtifact(Path("old.dmg"), bundles=[AppBundleMetadata(
+            path,
+            identifier="com.example.old",
+            name="Old Name",
+            short_version="2.1",
+            bundle_version="210",
+            executable="old-app",
+            minimum_system_version="13.0",
+            package_type="APPL",
+        )])
+        new = ReleaseArtifact(Path("new.dmg"), bundles=[AppBundleMetadata(
+            path,
+            identifier="com.example.new",
+            name="New Name",
+            short_version="2.0",
+            bundle_version=None,
+            executable="new-app",
+            minimum_system_version="14.0",
+            package_type="BNDL",
+        )])
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            [difference.field for difference in differences],
+            [
+                "Bundle identifier",
+                "Bundle name",
+                "Bundle version",
+                "Bundle build version",
+                "Bundle executable",
+                "Minimum system version",
+                "Bundle package type",
+            ],
+        )
+        self.assertEqual(differences[2].warning_message, "version downgrade")
+        self.assertEqual(
+            differences[3].warning_message,
+            "version metadata removed",
+        )
+        self.assertTrue(all(
+            difference.relative_path == path for difference in differences
+        ))
+
+    def test_does_not_compare_bundles_at_different_paths(self) -> None:
+        """Leave bundle additions and removals to ordinary file comparison."""
+        old = ReleaseArtifact(
+            Path("old"),
+            bundles=[AppBundleMetadata(Path("Old.app"), identifier="com.example.old")],
+        )
+        new = ReleaseArtifact(
+            Path("new"),
+            bundles=[AppBundleMetadata(Path("New.app"), identifier="com.example.new")],
+        )
+
+        self.assertEqual(compare_artifacts(old, new).semantic_differences, [])
 
 
 if __name__ == "__main__":

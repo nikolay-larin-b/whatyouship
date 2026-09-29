@@ -7,7 +7,7 @@ import json
 from typing import Any
 
 from whatyouship import __version__
-from whatyouship.model import ArtifactFile, Finding, ReleaseArtifact
+from whatyouship.model import AppBundleMetadata, ArtifactFile, Finding, ReleaseArtifact
 from whatyouship.report import CompareReport, InspectReport, LintReport, Report
 
 
@@ -46,6 +46,32 @@ def _file_data(file: ArtifactFile) -> dict[str, Any]:
     }
 
 
+def _bundle_data(bundle: AppBundleMetadata) -> dict[str, Any]:
+    """Convert application bundle metadata to JSON data.
+
+    :param bundle: Application bundle to describe.
+    :returns: JSON-compatible bundle data.
+    """
+    return {
+        "relative_path": bundle.relative_path.as_posix(),
+        "identifier": bundle.identifier,
+        "name": bundle.name,
+        "short_version": bundle.short_version,
+        "bundle_version": bundle.bundle_version,
+        "executable": bundle.executable,
+        "executable_path": (
+            bundle.executable_path.as_posix()
+            if bundle.executable_path is not None else None
+        ),
+        "minimum_system_version": bundle.minimum_system_version,
+        "package_type": bundle.package_type,
+        "issues": [
+            {"identity": issue.identity, "message": issue.message}
+            for issue in bundle.issues
+        ],
+    }
+
+
 def _artifact_data(artifact: ReleaseArtifact) -> dict[str, Any]:
     """Convert complete available artifact metadata to JSON data.
 
@@ -70,6 +96,7 @@ def _artifact_data(artifact: ReleaseArtifact) -> dict[str, Any]:
             "conflicts": [conflict.message for conflict in scope.conflicts],
         },
         "license_agreement_present": artifact.license_agreement_present,
+        "bundles": [_bundle_data(bundle) for bundle in artifact.bundles],
         "files": [_file_data(file) for file in artifact.files],
     }
 

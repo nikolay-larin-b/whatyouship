@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from whatyouship.model import BinaryMetadata, ReleaseArtifact, Severity
+from whatyouship.model import AppBundleMetadata, BinaryMetadata, ReleaseArtifact, Severity
 
 
 _VERSION_PATTERN = re.compile(r"\s*\d+(?:\s*[.,]\s*\d+)*\s*[.,]?\s*", re.ASCII)
@@ -170,6 +170,49 @@ def _binary_differences(
     return differences
 
 
+def _bundle_differences(
+    path: Path, old: AppBundleMetadata, new: AppBundleMetadata
+) -> list[SemanticDifference]:
+    """Find application bundle metadata changes.
+
+    :param path: Shared application bundle path.
+    :param old: Earlier bundle metadata.
+    :param new: Later bundle metadata.
+    :returns: Differences in a stable field order.
+    """
+    differences = []
+    fields = (
+        ("Bundle identifier", old.identifier, new.identifier),
+        ("Bundle name", old.name, new.name),
+        ("Bundle version", old.short_version, new.short_version),
+        ("Bundle build version", old.bundle_version, new.bundle_version),
+        ("Bundle executable", old.executable, new.executable),
+        (
+            "Minimum system version",
+            old.minimum_system_version,
+            new.minimum_system_version,
+        ),
+        ("Bundle package type", old.package_type, new.package_type),
+    )
+    for field_name, old_value, new_value in fields:
+        if old_value == new_value:
+            continue
+        warning_message = (
+            _version_warning(old_value, new_value)
+            if field_name in {"Bundle version", "Bundle build version"}
+            else None
+        )
+        differences.append(SemanticDifference(
+            path,
+            field_name,
+            old_value if old_value is not None else "unavailable",
+            new_value if new_value is not None else "unavailable",
+            severity="warning" if warning_message is not None else None,
+            warning_message=warning_message,
+        ))
+    return differences
+
+
 def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonResult:
     """Compare files and available semantic metadata in two artifacts.
 
@@ -193,6 +236,12 @@ def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonR
             result.semantic_differences.append(
                 SemanticDifference(Path("."), "Installation scope", old_scope, new_scope)
             )
+    old_bundles = {bundle.relative_path: bundle for bundle in old.bundles}
+    new_bundles = {bundle.relative_path: bundle for bundle in new.bundles}
+    for path in sorted(old_bundles.keys() & new_bundles.keys()):
+        result.semantic_differences.extend(
+            _bundle_differences(path, old_bundles[path], new_bundles[path])
+        )
     for path in sorted(common_paths):
         earlier = old_files[path]
         later = new_files[path]

@@ -65,6 +65,7 @@ Current checks and comparisons include:
 * untrusted signers and invalid artifact signatures where platform verification is available;
 * inconsistent MSI installation scope;
 * DMG releases without an embedded software license agreement;
+* malformed macOS application bundles;
 * added, removed, and changed files between releases;
 * binary architecture changes;
 * executable/library kind changes;
@@ -76,6 +77,13 @@ version metadata, and signature information. For thin and universal Mach-O
 binaries, it reports all target architectures, the binary kind, and whether
 every architecture slice has an ad hoc or certificate signature. Cryptographic
 validity of Mach-O signatures is not currently checked.
+
+For macOS application bundles in directories, ZIP archives, and DMG images,
+WhatYouShip reads XML and binary `Contents/Info.plist` files without using
+macOS APIs. `inspect` reports the bundle identifier, name, versions, main
+executable, minimum system version, and package type. `lint` checks required
+metadata and the main executable, while `compare` reports bundle metadata and
+version changes.
 
 ## Inspect, lint, compare
 
@@ -129,7 +137,9 @@ Compares the actual contents of two releases:
 whatyouship compare previous.msi release.msi
 ```
 
-In addition to added, removed, changed, and unchanged files, WhatYouShip reports semantic binary changes such as version, architecture, and signature changes.
+In addition to added, removed, changed, and unchanged files, WhatYouShip reports
+semantic binary and application bundle changes such as version, architecture,
+signature, bundle identifier, and minimum system version changes.
 
 ## Supported artifacts
 

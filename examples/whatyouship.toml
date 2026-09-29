@@ -19,6 +19,10 @@ extensions = [
 enabled = true
 severity = "warning" # Report unsigned executables and libraries as warnings.
 
+[rules.invalid-app-bundle]
+enabled = true
+severity = "error" # Report malformed macOS application bundles.
+
 [rules.unsigned-artifact]
 enabled = true
 severity = "warning" # Report missing release artifact signatures.

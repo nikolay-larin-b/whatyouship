@@ -17,9 +17,11 @@ from whatyouship import __version__
 from whatyouship.cli import main
 from whatyouship.compare import ComparisonResult, SemanticDifference
 from whatyouship.model import (
+    AppBundleMetadata,
     ArtifactFile,
     ArtifactSignature,
     BinaryMetadata,
+    BundleIssue,
     Finding,
     InstallationScope,
     InstallationScopeConflict,
@@ -83,6 +85,18 @@ class ReportOutputTests(unittest.TestCase):
                 "ambiguous",
                 (InstallationScopeConflict("registry:conflict", "Conflicting registry root"),),
             ),
+            bundles=[AppBundleMetadata(
+                Path("Sample.app"),
+                identifier="com.example.sample",
+                name="Sample",
+                short_version="1.2.3",
+                bundle_version="45",
+                executable="sample",
+                executable_path=Path("Sample.app/Contents/MacOS/sample"),
+                minimum_system_version="13.0",
+                package_type="APPL",
+                issues=(BundleIssue("sample-issue", "Sample bundle issue."),),
+            )],
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
             target = Path(temporary_directory) / "inspect.json"
@@ -104,6 +118,21 @@ class ReportOutputTests(unittest.TestCase):
             "kind": "ambiguous", "conflicts": ["Conflicting registry root"],
         })
         self.assertIsNone(data["artifact"]["license_agreement_present"])
+        self.assertEqual(data["artifact"]["bundles"], [{
+            "relative_path": "Sample.app",
+            "identifier": "com.example.sample",
+            "name": "Sample",
+            "short_version": "1.2.3",
+            "bundle_version": "45",
+            "executable": "sample",
+            "executable_path": "Sample.app/Contents/MacOS/sample",
+            "minimum_system_version": "13.0",
+            "package_type": "APPL",
+            "issues": [{
+                "identity": "sample-issue",
+                "message": "Sample bundle issue.",
+            }],
+        }])
         self.assertEqual(data["artifact"]["files"][0], {
             "relative_path": "bin/app.exe", "size_bytes": 42, "sha256": "a" * 64,
             "binary": {
@@ -116,6 +145,36 @@ class ReportOutputTests(unittest.TestCase):
                 },
             },
         })
+
+    def test_inspect_text_displays_application_bundle_metadata(self) -> None:
+        """Include bundle identity, versions, executable, and issues in text."""
+        artifact = ReleaseArtifact(
+            Path("release.dmg"),
+            bundles=[AppBundleMetadata(
+                Path("Sample.app"),
+                identifier="com.example.sample",
+                short_version="1.2.3",
+                bundle_version="45",
+                executable="sample",
+                executable_path=Path("Sample.app/Contents/MacOS/sample"),
+                issues=(BundleIssue("missing-value", "A required value is missing."),),
+            )],
+        )
+        output = io.StringIO()
+
+        with (
+            patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(main(["inspect", "release.dmg"]), 0)
+
+        rendered = output.getvalue()
+        self.assertIn("Application bundles:\n  Sample.app", rendered)
+        self.assertIn("Identifier: com.example.sample", rendered)
+        self.assertIn("Version: 1.2.3", rendered)
+        self.assertIn("Build version: 45", rendered)
+        self.assertIn("Executable: sample", rendered)
+        self.assertIn("Issue: A required value is missing.", rendered)
 
     def test_lint_json_baseline_keeps_all_categories(self) -> None:
         """Retain existing findings even though text hides their details."""

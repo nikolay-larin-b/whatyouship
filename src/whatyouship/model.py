@@ -109,6 +109,46 @@ class ArtifactFile:
     binary: BinaryMetadata | None = None
 
 
+@dataclass(frozen=True)
+class BundleIssue:
+    """Describe one structural application bundle problem.
+
+    :param identity: Stable rule-facing identity.
+    :param message: Human-readable explanation of the problem.
+    """
+
+    identity: str
+    message: str
+
+
+@dataclass
+class AppBundleMetadata:
+    """Describe a macOS application bundle.
+
+    :param relative_path: Bundle path relative to the artifact root.
+    :param identifier: ``CFBundleIdentifier`` value.
+    :param name: Display name or bundle name.
+    :param short_version: User-visible ``CFBundleShortVersionString`` value.
+    :param bundle_version: Build ``CFBundleVersion`` value.
+    :param executable: ``CFBundleExecutable`` value.
+    :param executable_path: Main executable path relative to the artifact root.
+    :param minimum_system_version: ``LSMinimumSystemVersion`` value.
+    :param package_type: ``CFBundlePackageType`` value.
+    :param issues: Structural or metadata problems found in the bundle.
+    """
+
+    relative_path: Path
+    identifier: str | None = None
+    name: str | None = None
+    short_version: str | None = None
+    bundle_version: str | None = None
+    executable: str | None = None
+    executable_path: Path | None = None
+    minimum_system_version: str | None = None
+    package_type: str | None = None
+    issues: tuple[BundleIssue, ...] = ()
+
+
 @dataclass
 class ReleaseArtifact:
     """Describe a release artifact and the files it contains.
@@ -119,6 +159,7 @@ class ReleaseArtifact:
     :param installation_scope: Installation context metadata, when supported.
     :param license_agreement_present: Whether the artifact embeds a license
         agreement, or ``None`` when the format does not expose that metadata.
+    :param bundles: Application bundles found inside the artifact.
     """
 
     source_path: Path
@@ -126,6 +167,7 @@ class ReleaseArtifact:
     signature: ArtifactSignature = field(default_factory=ArtifactSignature)
     installation_scope: InstallationScope | None = None
     license_agreement_present: bool | None = None
+    bundles: list[AppBundleMetadata] = field(default_factory=list)
 
 
 @dataclass
