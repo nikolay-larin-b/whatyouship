@@ -29,7 +29,7 @@ def _mounted_at(directory: Path) -> Iterator[Path]:
 
 
 class DmgInspectorTests(unittest.TestCase):
-    """Verify DMG inspection through the native mount abstraction."""
+    """Verify native and cross-platform DMG inspection routing."""
 
     def setUp(self) -> None:
         """Create disposable source and mounted-volume paths."""
@@ -40,6 +40,9 @@ class DmgInspectorTests(unittest.TestCase):
         self.source.write_bytes(b"synthetic disk image")
         self.volume = self.root / "volume"
         self.volume.mkdir()
+        platform = patch("whatyouship.inspectors.dmg.sys.platform", "darwin")
+        platform.start()
+        self.addCleanup(platform.stop)
         metadata = patch(
             "whatyouship.inspectors.dmg.inspect_disk_image_metadata",
             return_value=DiskImageMetadata(False, False),
@@ -70,6 +73,32 @@ class DmgInspectorTests(unittest.TestCase):
         )
         self.assertEqual(artifact.signature.status, "unsupported")
         self.assertFalse(artifact.license_agreement_present)
+
+    def test_non_macos_uses_cached_7zip_volume_without_license_metadata(
+        self,
+    ) -> None:
+        """Use the cross-platform extraction backend outside macOS."""
+        (self.volume / "payload.txt").write_bytes(b"payload")
+        digest = hashlib.sha256(self.source.read_bytes()).hexdigest()
+
+        with patch(
+            "whatyouship.inspectors.dmg.sys.platform", "linux"
+        ), patch(
+            "whatyouship.inspectors.dmg.DmgSevenZipExtractionCache.load_or_populate",
+            return_value=self.volume,
+        ) as cache, patch(
+            "whatyouship.inspectors.dmg.inspect_disk_image_metadata"
+        ) as metadata:
+            artifact = DmgInspector().inspect(self.source)
+
+        cache.assert_called_once_with(digest, self.source)
+        metadata.assert_not_called()
+        self.assertEqual(artifact.source_path, self.source)
+        self.assertEqual(
+            [file.relative_path for file in artifact.files],
+            [Path("payload.txt")],
+        )
+        self.assertIsNone(artifact.license_agreement_present)
 
     def test_license_image_uses_cached_normalized_image(self) -> None:
         """Mount a normalized cached image without losing source metadata."""
