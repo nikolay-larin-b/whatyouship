@@ -300,13 +300,32 @@ Persistently cached artifacts are keyed by SHA-256:
 The persistent cache avoids repeated extraction of the same artifact. Binary
 metadata and lint analysis are performed again on each run.
 
+Inspect persistent cache usage with:
+
+```text
+whatyouship cache info
+```
+
+Cache information includes completed entries, interrupted temporary entries,
+logical file size, and the cache layouts present for each artifact format.
+
+Clear the complete persistent cache or selected artifact formats with:
+
+```text
+whatyouship cache clear --all
+whatyouship cache clear --format zip
+whatyouship cache clear --format dmg --format msi
+```
+
+The target is mandatory, so cache removal cannot accidentally default to the
+complete cache. Clearing `dmg` removes both native and 7-Zip DMG cache layouts.
+
 On macOS, DMGs without an embedded agreement are inspected directly from a
-temporary read-only mount. Images with an agreement are converted once and
-cached by the original image's SHA-256 under `dmg/v1`. That cache stores a
-normalized disk image rather than an extracted file tree, preserving the
-contained filesystem for inspection. On Linux and Windows, the regular-file
-tree and symbolic-link metadata extracted by 7-Zip are cached separately under
-`dmg-7zip/v2`.
+temporary read-only mount. Images with an agreement are converted to a
+normalized image that preserves the contained filesystem for inspection. With
+`--cache`, that image is stored by the original image's SHA-256 under `dmg/v1`.
+On Linux and Windows, `--cache` stores the regular-file tree and symbolic-link
+metadata extracted by 7-Zip separately under `dmg-7zip/v2`.
 
 The cache hash identifies artifact content; it is not a signature or authenticity check.
 

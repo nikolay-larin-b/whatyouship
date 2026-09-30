@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from whatyouship import __version__
+from whatyouship.cache import CacheFormatInfo, CacheInfo
 from whatyouship.cli import main
 from whatyouship.model import (
     ArtifactFile,
@@ -47,12 +48,14 @@ class CliTests(unittest.TestCase):
         self.assertIn("--version", output.getvalue())
         self.assertIn("lint", output.getvalue())
         self.assertIn("compare", output.getvalue())
+        self.assertIn("cache", output.getvalue())
         help_text = output.getvalue()
         expected_footer = (
             "Command-specific help:\n"
             "  `whatyouship inspect --help`\n"
             "  `whatyouship lint --help`\n"
             "  `whatyouship compare --help`\n"
+            "  `whatyouship cache --help`\n"
             "\n"
             "Report output:\n"
             "  Use `-o/--output <file>`; the extension selects the format.\n"
@@ -65,7 +68,7 @@ class CliTests(unittest.TestCase):
 
     def test_subcommand_help_uses_project_header(self) -> None:
         """Prepend the shared project identity to every subcommand help screen."""
-        for command in ("inspect", "lint", "compare"):
+        for command in ("inspect", "lint", "compare", "cache"):
             with self.subTest(command=command):
                 output = io.StringIO()
                 with (
@@ -77,6 +80,70 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(result.exception.code, 0)
                 self.assertTrue(output.getvalue().startswith(self._HELP_HEADER))
                 self.assertIn(f"usage: whatyouship {command}", output.getvalue())
+
+    def test_cache_info_renders_persistent_cache_usage(self) -> None:
+        """Show aggregate and per-format persistent cache information."""
+        info = CacheInfo(
+            root=Path("cache-root"),
+            entries=2,
+            temporary_entries=1,
+            size_bytes=12,
+            formats=(CacheFormatInfo("zip", 2, 1, 12, ("zip/v1",)),),
+        )
+        output = io.StringIO()
+
+        with (
+            patch("whatyouship.cli.inspect_cache", return_value=info),
+            contextlib.redirect_stdout(output),
+        ):
+            result = main(["cache", "info"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            output.getvalue(),
+            "Persistent cache: cache-root\n"
+            "Entries: 2\n"
+            "Temporary entries: 1\n"
+            "Size: 12 bytes\n"
+            "\n"
+            "Format | Entries | Temporary | Size (bytes) | Layouts\n"
+            "zip | 2 | 1 | 12 | zip/v1\n",
+        )
+
+    def test_cache_clear_requires_and_forwards_an_explicit_target(self) -> None:
+        """Clear all data or selected formats without an interactive prompt."""
+        empty = CacheInfo(Path("cache-root"), 0, 0, 0, ())
+        error_output = io.StringIO()
+        with (
+            contextlib.redirect_stderr(error_output),
+            self.assertRaises(SystemExit) as result,
+        ):
+            main(["cache", "clear"])
+
+        self.assertEqual(result.exception.code, 2)
+        self.assertIn(
+            "one of the arguments --all --format is required",
+            error_output.getvalue(),
+        )
+
+        with (
+            patch("whatyouship.cli.clear_cache", return_value=empty) as clear,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(
+                main(
+                    [
+                        "cache",
+                        "clear",
+                        "--format",
+                        "zip",
+                        "--format",
+                        "dmg",
+                    ]
+                ),
+                0,
+            )
+        clear.assert_called_once_with(("zip", "dmg"))
 
     def test_version(self) -> None:
         """Verify that ``--version`` prints the package version and exits."""

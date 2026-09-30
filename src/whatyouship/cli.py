@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Literal
 
 from whatyouship import __version__
+from whatyouship.cache import (
+    CACHE_FORMAT_NAMESPACES,
+    CacheInfo,
+    clear_cache,
+    inspect_cache,
+)
 from whatyouship.compare import compare_artifacts
 from whatyouship.config import LintConfiguration, load_config
 from whatyouship.inspectors import inspect_artifact
@@ -90,6 +96,48 @@ def _add_cache_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _render_cache_info(info: CacheInfo) -> str:
+    """Render persistent cache statistics as stable text.
+
+    :param info: Cache information to render.
+    :returns: Human-readable cache summary.
+    """
+    lines = [
+        f"Persistent cache: {info.root}",
+        f"Entries: {info.entries}",
+        f"Temporary entries: {info.temporary_entries}",
+        f"Size: {info.size_bytes} bytes",
+    ]
+    if info.formats:
+        lines.extend(
+            [
+                "",
+                "Format | Entries | Temporary | Size (bytes) | Layouts",
+                *(
+                    f"{item.format_name} | {item.entries} | "
+                    f"{item.temporary_entries} | {item.size_bytes} | "
+                    f"{', '.join(item.layouts) or '-'}"
+                    for item in info.formats
+                ),
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _render_cleared_cache(info: CacheInfo) -> str:
+    """Render a summary of persistent cache data removed by a command.
+
+    :param info: Information captured before cache removal.
+    :returns: Human-readable removal summary.
+    """
+    return (
+        f"Persistent cache: {info.root}\n"
+        f"Entries removed: {info.entries}\n"
+        f"Temporary entries removed: {info.temporary_entries}\n"
+        f"Size removed: {info.size_bytes} bytes\n"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the WhatYouShip command-line interface.
 
@@ -105,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
             "  `whatyouship inspect --help`\n"
             "  `whatyouship lint --help`\n"
             "  `whatyouship compare --help`\n"
+            "  `whatyouship cache --help`\n"
             "\n"
             "Report output:\n"
             "  Use `-o/--output <file>`; the extension selects the format.\n"
@@ -159,10 +208,38 @@ def main(argv: list[str] | None = None) -> int:
     )
     compare_parser.add_argument("-o", "--output", type=Path, help="Write a .txt or .json report.")
     _add_cache_argument(compare_parser)
+    cache_parser = subparsers.add_parser(
+        "cache", help="Inspect or clear the persistent artifact cache."
+    )
+    cache_subparsers = cache_parser.add_subparsers(
+        dest="cache_command", required=True
+    )
+    cache_subparsers.add_parser("info", help="Show persistent cache usage.")
+    clear_parser = cache_subparsers.add_parser(
+        "clear", help="Remove persistent cache data."
+    )
+    clear_target = clear_parser.add_mutually_exclusive_group(required=True)
+    clear_target.add_argument(
+        "--all", action="store_true", help="Remove the complete persistent cache."
+    )
+    clear_target.add_argument(
+        "--format",
+        action="append",
+        choices=tuple(CACHE_FORMAT_NAMESPACES),
+        dest="formats",
+        help="Remove one artifact format; may be repeated.",
+    )
 
     args = parser.parse_args(argv)
     exit_code = 0
     try:
+        if args.command == "cache":
+            if args.cache_command == "info":
+                print(_render_cache_info(inspect_cache()), end="")
+            else:
+                formats = None if args.all else tuple(args.formats)
+                print(_render_cleared_cache(clear_cache(formats)), end="")
+            return 0
         with cache_scope(args.cache):
             output_format = _output_format(args.output, args.command)
             if args.command == "compare":

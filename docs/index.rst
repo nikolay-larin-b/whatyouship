@@ -80,14 +80,16 @@ as directories, and detaches it afterwards. It also reports whether the
 original image embeds a software license agreement; ``lint`` treats its absence
 as an error by default.
 Images with an agreement are converted to a normalized DMG without accepting
-the agreement on the user's behalf and cached by the original image's SHA-256
-under ``~/.whatyouship/cache/dmg/v1/``. The cached image preserves the contained
-filesystem instead of copying it into an extracted file tree.
+the agreement on the user's behalf. With ``--cache``, the normalized image is
+cached by the original image's SHA-256 under
+``~/.whatyouship/cache/dmg/v1/``. It preserves the contained filesystem instead
+of copying it into an extracted file tree.
 
 On Linux and Windows, DMG releases require ``7z`` or ``7zz`` from 7-Zip in
 ``PATH``. WhatYouShip supports single-volume images whose HFS or APFS filesystem
-is recognized by 7-Zip. Extracted regular-file trees are cached by the image's
-SHA-256 under ``~/.whatyouship/cache/dmg-7zip/v2/``. Embedded software license
+is recognized by 7-Zip. With ``--cache``, extracted regular-file trees are
+cached by the image's SHA-256 under
+``~/.whatyouship/cache/dmg-7zip/v2/``. Embedded software license
 agreement metadata is unavailable through this backend, so ``lint`` does not
 report the agreement as present or absent. Encrypted and multi-volume images are
 not supported. Symbolic links are reported with their stored targets and whether
@@ -103,20 +105,21 @@ valid signature that does not chain to an Apple root is reported as untrusted.
 Current Gatekeeper policy and online notarization status are not evaluated.
 
 NSIS installer ``.exe`` files are detected before extraction and require
-``7z`` or ``7zz`` from 7-Zip in ``PATH``. Their payloads are cached by installer
-SHA-256 under ``~/.whatyouship/cache/nsis/v1/`` and use the same inspection,
-binary analysis, lint rules, and comparison logic as directories. Extracted
-paths describe the payload and are not an exact simulation of runtime
-installation paths. On Windows, the outer installer's Authenticode signature
-is checked separately from signatures of binaries in the payload.
+``7z`` or ``7zz`` from 7-Zip in ``PATH``. With ``--cache``, their payloads are
+cached by installer SHA-256 under ``~/.whatyouship/cache/nsis/v1/`` and use the
+same inspection, binary analysis, lint rules, and comparison logic as
+directories. Extracted paths describe the payload and are not an exact
+simulation of runtime installation paths. On Windows, the outer installer's
+Authenticode signature is checked separately from signatures of binaries in
+the payload.
 
 Inno Setup installer ``.exe`` files are detected independently from NSIS and
-require ``innoextract`` in ``PATH``. Their payloads are cached by installer
-SHA-256 under ``~/.whatyouship/cache/inno/v1/`` and use the same inspection,
-binary analysis, lint rules, and comparison logic as directories. Extracted
-paths are a payload representation rather than an exact simulation of runtime
-installation paths. On Windows, the outer installer's Authenticode signature
-is checked separately from signatures of binaries in the payload.
+require ``innoextract`` in ``PATH``. With ``--cache``, their payloads are cached
+by installer SHA-256 under ``~/.whatyouship/cache/inno/v1/`` and use the same
+inspection, binary analysis, lint rules, and comparison logic as directories.
+Extracted paths are a payload representation rather than an exact simulation
+of runtime installation paths. On Windows, the outer installer's Authenticode
+signature is checked separately from signatures of binaries in the payload.
 
 By default, extracted data is kept only for the duration of the command. Pass
 ``--cache`` to ``inspect``, ``lint``, or ``compare`` to reuse persistent data
@@ -125,6 +128,12 @@ between commands. WhatYouShip keeps persistent user data below
 normalized DMG images, including separate
 ``dmg/v1`` and ``dmg-7zip/v2`` backend caches, while ``config/`` is reserved for
 user configuration.
+Use ``whatyouship cache info`` to display persistent cache entries, interrupted
+temporary entries, sizes, and layout versions. Use
+``whatyouship cache clear --all`` to remove the complete cache or repeat
+``--format`` to remove selected artifact formats. Clearing the ``dmg`` format
+removes both native and 7-Zip DMG caches.
+
 Existing caches in platform-specific cache directories are not migrated.
 
 To configure lint rules for a product, provide a TOML file explicitly:
