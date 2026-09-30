@@ -7,6 +7,8 @@ import contextlib
 import io
 import tempfile
 import unittest
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -85,6 +87,61 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(result.exception.code, 0)
         self.assertEqual(output.getvalue(), f"whatyouship {__version__}\n")
+
+    def test_artifact_commands_use_temporary_cache_by_default(self) -> None:
+        """Keep persistent caching opt-in for every artifact command."""
+        selected: list[bool] = []
+
+        @contextmanager
+        def record_cache_scope(persistent: bool) -> Iterator[None]:
+            """Record the selected cache mode.
+
+            :param persistent: Whether persistent caching was requested.
+            :yields: Control to the command under test.
+            """
+            selected.append(persistent)
+            yield
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory)
+            commands = (
+                ["inspect", str(source)],
+                ["lint", str(source)],
+                ["compare", str(source), str(source)],
+            )
+            with patch(
+                "whatyouship.cli.cache_scope", side_effect=record_cache_scope
+            ):
+                for command in commands:
+                    with self.subTest(command=command[0]), contextlib.redirect_stdout(
+                        io.StringIO()
+                    ):
+                        self.assertEqual(main(command), 0)
+
+        self.assertEqual(selected, [False, False, False])
+
+    def test_cache_flag_selects_persistent_cache(self) -> None:
+        """Enable the persistent cache only when explicitly requested."""
+        selected: list[bool] = []
+
+        @contextmanager
+        def record_cache_scope(persistent: bool) -> Iterator[None]:
+            """Record the selected cache mode.
+
+            :param persistent: Whether persistent caching was requested.
+            :yields: Control to the command under test.
+            """
+            selected.append(persistent)
+            yield
+
+        with tempfile.TemporaryDirectory() as temporary_directory, patch(
+            "whatyouship.cli.cache_scope", side_effect=record_cache_scope
+        ), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(
+                main(["inspect", temporary_directory, "--cache"]), 0
+            )
+
+        self.assertEqual(selected, [True])
 
     def test_inspect_prints_summary_and_sorted_files(self) -> None:
         """Print source, counts, sizes, and digests in path order."""

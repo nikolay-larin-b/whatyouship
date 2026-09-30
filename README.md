@@ -276,13 +276,17 @@ whatyouship lint release.msi --baseline previous.msi --fail-on error -o lint.jso
 
 ## Cache
 
-WhatYouShip keeps its user data under:
+By default, WhatYouShip extracts artifacts into a temporary cache that is
+removed when the command finishes. Pass `--cache` to `inspect`, `lint`, or
+`compare` to reuse and populate the persistent cache between commands.
+
+WhatYouShip keeps persistent user data under:
 
 ```text
 ~/.whatyouship/
 ```
 
-Extracted artifacts are cached by SHA-256:
+Persistently cached artifacts are keyed by SHA-256:
 
 ```text
 ~/.whatyouship/cache/msi/v1/
@@ -293,7 +297,8 @@ Extracted artifacts are cached by SHA-256:
 ~/.whatyouship/cache/dmg-7zip/v2/
 ```
 
-The cache avoids repeated extraction of the same artifact. Binary metadata and lint analysis are performed again on each run.
+The persistent cache avoids repeated extraction of the same artifact. Binary
+metadata and lint analysis are performed again on each run.
 
 On macOS, DMGs without an embedded agreement are inspected directly from a
 temporary read-only mount. Images with an agreement are converted once and

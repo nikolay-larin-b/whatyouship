@@ -62,12 +62,13 @@ statically.
 
 MSI paths follow the package's target directory layout; runtime directory
 properties are not resolved.
-Extracted MSI files are cached by the MSI's SHA-256 under
+With ``--cache``, extracted MSI files are cached by the MSI's SHA-256 under
 ``~/.whatyouship/cache/msi/v1/``. Binary metadata is inspected again on each run.
 The cache hash identifies extracted content and does not verify the package's
 signature or authenticity.
 
-ZIP distributions are safely extracted under ``~/.whatyouship/cache/zip/v1/``,
+With ``--cache``, ZIP distributions are safely extracted under
+``~/.whatyouship/cache/zip/v1/``,
 keyed by the ZIP file's SHA-256. Their extracted files use the same inspection,
 binary analysis, lint rules, and comparison logic as directories. ZIP artifact
 signatures are not checked. On Windows, ``~`` is the user profile directory.
@@ -117,8 +118,11 @@ paths are a payload representation rather than an exact simulation of runtime
 installation paths. On Windows, the outer installer's Authenticode signature
 is checked separately from signatures of binaries in the payload.
 
-WhatYouShip keeps user data below ``~/.whatyouship/``; ``cache/`` contains
-extracted artifact caches and normalized DMG images, including separate
+By default, extracted data is kept only for the duration of the command. Pass
+``--cache`` to ``inspect``, ``lint``, or ``compare`` to reuse persistent data
+between commands. WhatYouShip keeps persistent user data below
+``~/.whatyouship/``; ``cache/`` contains extracted artifact caches and
+normalized DMG images, including separate
 ``dmg/v1`` and ``dmg-7zip/v2`` backend caches, while ``config/`` is reserved for
 user configuration.
 Existing caches in platform-specific cache directories are not migrated.
