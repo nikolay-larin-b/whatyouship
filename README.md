@@ -52,6 +52,7 @@ whatyouship --help
 whatyouship inspect --help
 whatyouship lint --help
 whatyouship compare --help
+whatyouship cache --help
 ```
 
 ## What it looks for
@@ -95,7 +96,7 @@ reports bundle and binary metadata changes. Bundle validation resolves
 `@executable_path`, `@loader_path`, and `@rpath` references and reports required
 libraries that should be present inside the application bundle but are missing.
 
-## Inspect, lint, compare
+## Commands
 
 ### `inspect`
 
@@ -151,6 +152,17 @@ In addition to added, removed, changed, and unchanged files, WhatYouShip reports
 semantic binary and application bundle changes such as version, architecture,
 signature, bundle identifier, and minimum system version changes.
 
+### `cache`
+
+Shows or removes persistent artifact cache data:
+
+```text
+whatyouship cache info
+whatyouship cache clear --format zip
+```
+
+See [Cache](#cache) for persistent cache behavior and removal options.
+
 ## Supported artifacts
 
 | Artifact       | Inspect | Lint | Compare |
@@ -173,8 +185,9 @@ single-volume image read-only at a private mount point, analyzes its regular
 files and symbolic links, and detaches it after inspection. It also reports
 whether the original image embeds a software license agreement; its absence is
 an error by default.
-An image with an agreement is converted to a normalized cached DMG without
-accepting the agreement on the user's behalf, then mounted read-only.
+An image with an agreement is converted to a normalized DMG without accepting
+the agreement on the user's behalf, then mounted read-only. The normalized
+image is temporary by default and is stored persistently only with `--cache`.
 
 On Linux and Windows, DMG releases require `7z` or `7zz` from 7-Zip in `PATH`.
 WhatYouShip supports single-volume images whose HFS or APFS filesystem is
@@ -318,7 +331,11 @@ whatyouship cache clear --format dmg --format msi
 ```
 
 The target is mandatory, so cache removal cannot accidentally default to the
-complete cache. Clearing `dmg` removes both native and 7-Zip DMG cache layouts.
+complete cache. Supported format names are `msi`, `nsis`, `inno`, `zip`, and
+`dmg`. Clearing `dmg` removes both native and 7-Zip DMG cache layouts.
+
+Do not run `cache clear` concurrently with `inspect`, `lint`, or `compare`
+using `--cache`. Cache removal is not coordinated with active cache readers.
 
 On macOS, DMGs without an embedded agreement are inspected directly from a
 temporary read-only mount. Images with an agreement are converted to a
