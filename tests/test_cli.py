@@ -30,7 +30,7 @@ class CliTests(unittest.TestCase):
     """Verify the supported command-line options."""
 
     _HELP_HEADER = (
-        "WhatYouShip 0.1.0b1\n"
+        f"WhatYouShip {__version__}\n"
         "Copyright (c) 2026 Nikolay Larin\n"
         "\n"
         "Know what you ship. Know what you install.\n"
@@ -147,7 +147,6 @@ class CliTests(unittest.TestCase):
 
     def test_version(self) -> None:
         """Verify that ``--version`` prints the package version and exits."""
-        self.assertEqual(__version__, "0.1.0b1")
         output = io.StringIO()
         with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as result:
             main(["--version"])

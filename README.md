@@ -116,13 +116,13 @@ Runs release rules and reports findings.
 whatyouship lint release.msi
 ```
 
-A product-specific TOML configuration can change rule settings:
+A product-specific TOML configuration can change rule settings. Download or
+adapt [`examples/whatyouship.toml`](https://github.com/nikolay-larin-b/whatyouship/blob/main/examples/whatyouship.toml),
+then pass its local path:
 
 ```text
-whatyouship lint release.msi --config examples/whatyouship.toml
+whatyouship lint release.msi --config whatyouship.toml
 ```
-
-See [`examples/whatyouship.toml`](examples/whatyouship.toml) for supported rule settings.
 
 ### Baseline linting
 
