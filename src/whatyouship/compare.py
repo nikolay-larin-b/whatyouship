@@ -22,8 +22,8 @@ class SemanticDifference:
     :param old_value: Earlier value formatted for display.
     :param new_value: Later value formatted for display.
     :param potentially_dangerous: Whether the change is signed to unsigned.
-    :param severity: Severity of a version regression, when applicable.
-    :param warning_message: Explanation of a version regression, when applicable.
+    :param severity: Severity of a semantic regression, when applicable.
+    :param warning_message: Explanation of a semantic regression, when applicable.
     """
 
     relative_path: Path
@@ -131,6 +131,24 @@ def _version_components(value: str) -> tuple[int, ...] | None:
     return tuple(int(component.strip()) for component in re.split(r"[.,]", normalized))
 
 
+def _compare_numeric_versions(old: str, new: str) -> int | None:
+    """Compare two unambiguous numeric versions.
+
+    :param old: Earlier version metadata.
+    :param new: Later version metadata.
+    :returns: A negative, zero, or positive value when the new version is lower,
+        equal, or higher, or ``None`` when either value is ambiguous.
+    """
+    old_components = _version_components(old)
+    new_components = _version_components(new)
+    if old_components is None or new_components is None:
+        return None
+    width = max(len(old_components), len(new_components))
+    padded_old = old_components + (0,) * (width - len(old_components))
+    padded_new = new_components + (0,) * (width - len(new_components))
+    return (padded_new > padded_old) - (padded_new < padded_old)
+
+
 def _version_warning(old: str | None, new: str | None) -> str | None:
     """Identify a missing or numerically lower new version.
 
@@ -142,15 +160,22 @@ def _version_warning(old: str | None, new: str | None) -> str | None:
         return None
     if new is None:
         return "version metadata removed"
-    old_components = _version_components(old)
-    new_components = _version_components(new)
-    if old_components is None or new_components is None:
-        return None
-    width = max(len(old_components), len(new_components))
-    if new_components + (0,) * (width - len(new_components)) < old_components + (0,) * (
-        width - len(old_components)
-    ):
+    if _compare_numeric_versions(old, new) == -1:
         return "version downgrade"
+    return None
+
+
+def _minimum_os_warning(old: str | None, new: str | None) -> str | None:
+    """Identify a numerically higher minimum operating system version.
+
+    :param old: Earlier minimum operating system version.
+    :param new: Later minimum operating system version.
+    :returns: Compatibility warning, or ``None`` when no increase is known.
+    """
+    if old is None or new is None:
+        return None
+    if _compare_numeric_versions(old, new) == 1:
+        return "minimum OS version increased"
     return None
 
 
@@ -209,11 +234,12 @@ def _binary_differences(
         )
     for field_name, old_value, new_value in fields:
         if old_value != new_value:
-            warning_message = (
-                _version_warning(old_value, new_value)
-                if field_name in {"File version", "Product version"}
-                else None
-            )
+            if field_name in {"File version", "Product version"}:
+                warning_message = _version_warning(old_value, new_value)
+            elif field_name == "Minimum OS version":
+                warning_message = _minimum_os_warning(old_value, new_value)
+            else:
+                warning_message = None
             regression = (
                 field_name == "Signature"
                 and old.signature is not None
@@ -262,11 +288,12 @@ def _bundle_differences(
     for field_name, old_value, new_value in fields:
         if old_value == new_value:
             continue
-        warning_message = (
-            _version_warning(old_value, new_value)
-            if field_name in {"Bundle version", "Bundle build version"}
-            else None
-        )
+        if field_name in {"Bundle version", "Bundle build version"}:
+            warning_message = _version_warning(old_value, new_value)
+        elif field_name == "Minimum system version":
+            warning_message = _minimum_os_warning(old_value, new_value)
+        else:
+            warning_message = None
         differences.append(SemanticDifference(
             path,
             field_name,

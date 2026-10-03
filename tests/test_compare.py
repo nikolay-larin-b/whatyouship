@@ -212,7 +212,7 @@ class CompareTests(unittest.TestCase):
         )
 
     def test_reports_macho_minimum_os_version_changes(self) -> None:
-        """Compare Mach-O deployment targets as ordinary metadata changes."""
+        """Warn when a Mach-O deployment target drops OS compatibility."""
         path = Path("Sample.app/Contents/MacOS/sample")
         old = ReleaseArtifact(Path("old"), [ArtifactFile(
             path,
@@ -241,8 +241,78 @@ class CompareTests(unittest.TestCase):
 
         self.assertEqual(
             differences,
-            [SemanticDifference(path, "Minimum OS version", "12.0", "13.0")],
+            [SemanticDifference(
+                path,
+                "Minimum OS version",
+                "12.0",
+                "13.0",
+                severity="warning",
+                warning_message="minimum OS version increased",
+            )],
         )
+
+    def test_uncertain_minimum_os_changes_do_not_warn(self) -> None:
+        """Avoid compatibility claims for lower, missing, or ambiguous versions."""
+        path = Path("application")
+        for old_version, new_version in (
+            ("13.0", "12.0"),
+            ("13-beta", "14.0"),
+            (None, "14.0"),
+            ("13.0", None),
+        ):
+            with self.subTest(old=old_version, new=new_version):
+                old = ReleaseArtifact(Path("old"), [ArtifactFile(
+                    path,
+                    1,
+                    "a",
+                    BinaryMetadata(
+                        "Mach-O",
+                        "arm64",
+                        "executable",
+                        minimum_os_version=old_version,
+                    ),
+                )])
+                new = ReleaseArtifact(Path("new"), [ArtifactFile(
+                    path,
+                    1,
+                    "b",
+                    BinaryMetadata(
+                        "Mach-O",
+                        "arm64",
+                        "executable",
+                        minimum_os_version=new_version,
+                    ),
+                )])
+
+                difference = compare_artifacts(old, new).semantic_differences[0]
+
+                self.assertIsNone(difference.severity)
+                self.assertIsNone(difference.warning_message)
+
+    def test_equivalent_minimum_os_versions_do_not_warn(self) -> None:
+        """Treat missing trailing components as zero for compatibility."""
+        path = Path("application")
+        old = ReleaseArtifact(Path("old"), [ArtifactFile(
+            path,
+            1,
+            "a",
+            BinaryMetadata(
+                "Mach-O", "arm64", "executable", minimum_os_version="13"
+            ),
+        )])
+        new = ReleaseArtifact(Path("new"), [ArtifactFile(
+            path,
+            1,
+            "b",
+            BinaryMetadata(
+                "Mach-O", "arm64", "executable", minimum_os_version="13.0"
+            ),
+        )])
+
+        difference = compare_artifacts(old, new).semantic_differences[0]
+
+        self.assertIsNone(difference.severity)
+        self.assertIsNone(difference.warning_message)
 
     def test_reports_macho_dependency_and_search_path_changes(self) -> None:
         """Compare imported libraries and runtime search paths."""
@@ -509,6 +579,10 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(
             differences[3].warning_message,
             "version metadata removed",
+        )
+        self.assertEqual(
+            differences[5].warning_message,
+            "minimum OS version increased",
         )
         self.assertTrue(all(
             difference.relative_path == path for difference in differences
