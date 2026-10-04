@@ -3,11 +3,15 @@
 
 """Cache normalized DMG images by their complete source digest."""
 
+import hashlib
 import json
 from pathlib import Path
 
 from whatyouship.inspectors.extraction_cache import ExtractionCache
-from whatyouship.inspectors.macos_disk_image import convert_disk_image
+from whatyouship.inspectors.macos_disk_image import (
+    convert_disk_image,
+    verify_disk_image,
+)
 from whatyouship.paths import cache_directory
 
 
@@ -37,9 +41,17 @@ class DmgConversionCache:
         """
         image_path = entry / "image.dmg"
         convert_disk_image(source_path, image_path)
+        verify_disk_image(image_path)
         size_bytes = image_path.stat().st_size
+        with image_path.open("rb") as stream:
+            image_digest = hashlib.file_digest(stream, "sha256").hexdigest()
         (entry / "manifest.json").write_text(
-            json.dumps({"version": 2, "size_bytes": size_bytes}), encoding="utf-8"
+            json.dumps({
+                "version": 3,
+                "size_bytes": size_bytes,
+                "sha256": image_digest,
+            }),
+            encoding="utf-8",
         )
 
     def _load(self, entry: Path) -> Path | None:
@@ -51,7 +63,8 @@ class DmgConversionCache:
         if entry.is_symlink() or not entry.is_dir():
             return None
         try:
-            if {path.name for path in entry.iterdir()} != {"image.dmg", "manifest.json"}:
+            expected_names = {"image.dmg", "manifest.json"}
+            if {path.name for path in entry.iterdir()} != expected_names:
                 return None
             image_path = entry / "image.dmg"
             manifest_path = entry / "manifest.json"
@@ -63,14 +76,29 @@ class DmgConversionCache:
             ):
                 return None
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if not isinstance(manifest, dict) or set(manifest) != {"version", "size_bytes"}:
+            if not isinstance(manifest, dict) or set(manifest) != {
+                "version", "size_bytes", "sha256"
+            }:
                 return None
             version = manifest.get("version")
             size_bytes = manifest.get("size_bytes")
-            if type(version) is not int or version != 2:
+            image_digest = manifest.get("sha256")
+            if type(version) is not int or version != 3:
                 return None
             if type(size_bytes) is not int or size_bytes < 0:
                 return None
-            return image_path if image_path.stat().st_size == size_bytes else None
+            if (
+                not isinstance(image_digest, str)
+                or len(image_digest) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in image_digest
+                )
+                or image_path.stat().st_size != size_bytes
+            ):
+                return None
+            with image_path.open("rb") as stream:
+                actual_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            return image_path if actual_digest == image_digest else None
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return None

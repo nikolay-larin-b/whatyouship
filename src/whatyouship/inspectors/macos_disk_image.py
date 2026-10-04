@@ -189,6 +189,45 @@ def convert_disk_image(source_path: Path, destination_path: Path) -> None:
             pass
 
 
+def verify_disk_image(source_path: Path) -> None:
+    """Verify a disk image against its internal checksums.
+
+    :param source_path: Disk image to verify.
+    :raises FileNotFoundError: If the image or ``hdiutil`` does not exist.
+    :raises IsADirectoryError: If the image path is not a regular file.
+    :raises ValueError: If verification is unavailable or fails.
+    """
+    if sys.platform != "darwin":
+        raise ValueError("Disk image verification requires macOS")
+    if not source_path.exists():
+        raise FileNotFoundError(f"Disk image does not exist: {source_path}")
+    if not source_path.is_file():
+        raise IsADirectoryError(f"Disk image is not a file: {source_path}")
+    try:
+        result = subprocess.run(
+            [
+                _HDIUTIL,
+                "verify",
+                "-nocache",
+                "-stdinpass",
+                str(source_path.resolve(strict=True)),
+            ],
+            input=b"\0",
+            capture_output=True,
+            check=False,
+        )
+    except OSError as error:
+        raise FileNotFoundError(
+            f"Unable to run macOS disk image utility '{_HDIUTIL}': {error}"
+        ) from error
+    if result.returncode != 0:
+        detail = _failure_detail(result)
+        suffix = f": {detail}" if detail else ""
+        raise ValueError(
+            f"hdiutil verify failed with exit code {result.returncode}{suffix}"
+        )
+
+
 def _remove_empty_mount_directories(mount_point: Path, temporary_root: Path) -> None:
     """Remove empty private mount directories without traversing their contents.
 

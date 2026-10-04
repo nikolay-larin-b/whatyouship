@@ -138,7 +138,9 @@ between commands. WhatYouShip keeps persistent user data below
 ``~/.whatyouship/``; ``cache/`` contains extracted artifact caches and
 normalized DMG images, including separate
 ``dmg/v1`` and ``dmg-7zip/v2`` backend caches, while ``config/`` is reserved for
-user configuration.
+user configuration. A normalized native DMG is checked with ``hdiutil verify``
+before publication. Its size and SHA-256 are stored in the manifest so that a
+damaged or outdated cache entry can be rebuilt automatically.
 Use ``whatyouship cache info`` to display persistent cache entries, interrupted
 temporary entries, sizes, and layout versions. Use
 ``whatyouship cache clear --all`` to remove the complete cache or repeat

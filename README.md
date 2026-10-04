@@ -353,6 +353,9 @@ On macOS, DMGs without an embedded agreement are inspected directly from a
 temporary read-only mount. Images with an agreement are converted to a
 normalized image that preserves the contained filesystem for inspection. With
 `--cache`, that image is stored by the original image's SHA-256 under `dmg/v1`.
+Before publication, the normalized image is checked with `hdiutil verify`.
+Its size and SHA-256 are recorded in the cache manifest; a damaged or outdated
+entry is rebuilt automatically.
 On Linux and Windows, `--cache` stores the regular-file tree and symbolic-link
 metadata extracted by 7-Zip separately under `dmg-7zip/v2`.
 

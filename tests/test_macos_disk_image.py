@@ -15,6 +15,7 @@ from whatyouship.inspectors.macos_disk_image import (
     MacOSDiskImageMounter,
     convert_disk_image,
     inspect_disk_image_metadata,
+    verify_disk_image,
 )
 
 
@@ -123,6 +124,59 @@ class MacOSDiskImageMounterTests(unittest.TestCase):
         self.assertEqual(compressed[compressed.index("-format") + 1], "UDZO")
         self.assertEqual(compressed[compressed.index("-o") + 1], str(destination))
         self.assertFalse(raw_path.exists())
+
+    def test_verifies_disk_image_checksums_noninteractively(self) -> None:
+        """Validate a normalized image before publishing it to the cache."""
+        result = subprocess.CompletedProcess(
+            ["hdiutil", "verify"],
+            0,
+            b"verified",
+            b"",
+        )
+
+        with patch(
+            "whatyouship.inspectors.macos_disk_image.sys.platform",
+            "darwin",
+        ), patch(
+            "whatyouship.inspectors.macos_disk_image.subprocess.run",
+            return_value=result,
+        ) as run:
+            verify_disk_image(self.source)
+
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                "/usr/bin/hdiutil",
+                "verify",
+                "-nocache",
+                "-stdinpass",
+                str(self.source.resolve()),
+            ],
+        )
+        self.assertEqual(run.call_args.kwargs["input"], b"\0")
+        self.assertTrue(run.call_args.kwargs["capture_output"])
+        self.assertFalse(run.call_args.kwargs["check"])
+
+    def test_failed_disk_image_verification_reports_diagnostics(self) -> None:
+        """Reject an image whose internal checksums do not verify."""
+        result = subprocess.CompletedProcess(
+            ["hdiutil", "verify"],
+            1,
+            b"",
+            b"hdiutil: verify failed - image checksum mismatch\n",
+        )
+
+        with patch(
+            "whatyouship.inspectors.macos_disk_image.sys.platform",
+            "darwin",
+        ), patch(
+            "whatyouship.inspectors.macos_disk_image.subprocess.run",
+            return_value=result,
+        ), self.assertRaisesRegex(
+            ValueError,
+            "hdiutil verify failed with exit code 1: .*checksum mismatch",
+        ):
+            verify_disk_image(self.source)
 
     def test_mount_uses_noninteractive_read_only_attachment_and_detaches(self) -> None:
         """Yield the private volume and detach it normally after use."""
