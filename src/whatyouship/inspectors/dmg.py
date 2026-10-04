@@ -65,7 +65,10 @@ class DmgInspector:
                 digest, source_path
             )
         with MacOSDiskImageMounter().mount(inspection_source) as mounted:
-            artifact = DirectoryInspector().inspect(mounted)
+            artifact = DirectoryInspector().inspect(
+                mounted,
+                validate_executable_permissions=True,
+            )
         return replace(
             artifact,
             source_path=source_path,

@@ -87,7 +87,8 @@ single-volume image read-only at a private mount point, analyzes its regular
 files and symbolic links with the same inspection, lint, and comparison logic
 as directories, and detaches it afterwards. It also reports whether the
 original image embeds a software license agreement; ``lint`` treats its absence
-as an error by default.
+as an error by default. Application bundle validation uses the mounted
+filesystem's native mode bits and reports a main executable with no execute bit.
 Images with an agreement are converted to a normalized DMG without accepting
 the agreement on the user's behalf. With ``--cache``, the normalized image is
 cached by the original image's SHA-256 under

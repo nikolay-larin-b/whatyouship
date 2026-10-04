@@ -195,7 +195,8 @@ On macOS, DMG releases use the system `hdiutil` command. WhatYouShip mounts a
 single-volume image read-only at a private mount point, analyzes its regular
 files and symbolic links, and detaches it after inspection. It also reports
 whether the original image embeds a software license agreement; its absence is
-an error by default.
+an error by default. Application bundle validation uses the mounted filesystem's
+native mode bits and reports a main executable with no execute bit.
 An image with an agreement is converted to a normalized DMG without accepting
 the agreement on the user's behalf, then mounted read-only. The normalized
 image is temporary by default and is stored persistently only with `--cache`.

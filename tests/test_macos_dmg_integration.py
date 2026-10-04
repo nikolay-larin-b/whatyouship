@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from whatyouship.inspectors.dmg import DmgInspector
 from whatyouship.inspectors.dmg_cache import DmgConversionCache
 from whatyouship.inspectors.macos_disk_image import (
     MacOSDiskImageMounter,
@@ -135,6 +136,26 @@ class MacOSDmgIntegrationTests(unittest.TestCase):
             "native DMG integration payload\n",
             encoding="utf-8",
         )
+        contents = self.payload / "Sample.app" / "Contents"
+        executable = contents / "MacOS" / "sample"
+        executable.parent.mkdir(parents=True)
+        (contents / "Info.plist").write_bytes(plistlib.dumps({
+            "CFBundleIdentifier": "com.example.sample",
+            "CFBundleExecutable": "sample",
+            "CFBundlePackageType": "APPL",
+        }))
+        executable.write_bytes(struct.pack(
+            "<IIIIIIII",
+            0xFEEDFACF,
+            0x0100000C,
+            0,
+            0x2,
+            0,
+            0,
+            0,
+            0,
+        ))
+        executable.chmod(0o644)
         self.source = self.root / "release.dmg"
         _run_hdiutil([
             "create",
@@ -218,6 +239,16 @@ class MacOSDmgIntegrationTests(unittest.TestCase):
                 (mounted / "payload.txt").read_text(encoding="utf-8"),
                 "native DMG integration payload\n",
             )
+
+    def test_reports_non_executable_application_main_file(self) -> None:
+        """Validate executable mode bits from the mounted DMG filesystem."""
+        artifact = DmgInspector().inspect(self.source)
+
+        self.assertEqual(len(artifact.bundles), 1)
+        self.assertIn(
+            "non-executable-main-file",
+            {issue.identity for issue in artifact.bundles[0].issues},
+        )
 
 
 if __name__ == "__main__":

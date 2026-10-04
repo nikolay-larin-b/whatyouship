@@ -3,6 +3,7 @@
 
 """Tests for platform-independent macOS application bundle inspection."""
 
+import os
 import plistlib
 import struct
 import tempfile
@@ -249,6 +250,57 @@ class AppBundleInspectorTests(unittest.TestCase):
         self.assertEqual(
             issues[Path("TargetMismatch.app")],
             {"minimum-system-version-mismatch"},
+        )
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX file modes")
+    def test_reports_main_executable_without_execute_permission(self) -> None:
+        """Reject a main executable with no execute bit when modes are native."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            bundle = root / "Sample.app"
+            _write_bundle(
+                bundle,
+                {
+                    "CFBundleIdentifier": "com.example.sample",
+                    "CFBundleExecutable": "sample",
+                    "CFBundlePackageType": "APPL",
+                },
+                executable_payload=_macho_executable(),
+            )
+            executable = bundle / "Contents" / "MacOS" / "sample"
+            executable.chmod(0o644)
+
+            unchecked = DirectoryInspector().inspect(root)
+            checked = DirectoryInspector().inspect(
+                root,
+                validate_executable_permissions=True,
+            )
+            executable.chmod(0o755)
+            executable_checked = DirectoryInspector().inspect(
+                root,
+                validate_executable_permissions=True,
+            )
+
+        self.assertNotIn(
+            "non-executable-main-file",
+            {issue.identity for issue in unchecked.bundles[0].issues},
+        )
+        self.assertIn(
+            "non-executable-main-file",
+            {issue.identity for issue in checked.bundles[0].issues},
+        )
+        findings = InvalidAppBundleRule().check(checked)
+        self.assertEqual(
+            [
+                (finding.relative_path, finding.identity)
+                for finding in findings
+                if finding.identity == "non-executable-main-file"
+            ],
+            [(Path("Sample.app"), "non-executable-main-file")],
+        )
+        self.assertNotIn(
+            "non-executable-main-file",
+            {issue.identity for issue in executable_checked.bundles[0].issues},
         )
 
     def test_lint_rule_reports_every_bundle_issue(self) -> None:

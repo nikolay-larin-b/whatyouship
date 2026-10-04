@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from whatyouship.cli import main
 from whatyouship.inspectors import inspect_artifact
+from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.dmg import DmgInspector
 from whatyouship.inspectors.dmg_7zip_cache import DmgExtractedVolume
 from whatyouship.inspectors.macos_disk_image import DiskImageMetadata
@@ -60,10 +61,17 @@ class DmgInspectorTests(unittest.TestCase):
         with patch(
             "whatyouship.inspectors.dmg.MacOSDiskImageMounter.mount",
             return_value=_mounted_at(self.volume),
-        ) as mount:
+        ) as mount, patch(
+            "whatyouship.inspectors.dmg.DirectoryInspector.inspect",
+            wraps=DirectoryInspector().inspect,
+        ) as inspect_directory:
             artifact = DmgInspector().inspect(self.source)
 
         mount.assert_called_once_with(self.source)
+        inspect_directory.assert_called_once_with(
+            self.volume,
+            validate_executable_permissions=True,
+        )
         self.assertEqual(artifact.source_path, self.source)
         self.assertEqual(
             [file.relative_path for file in artifact.files],

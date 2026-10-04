@@ -6,6 +6,7 @@
 import plistlib
 import posixpath
 import re
+import stat
 from pathlib import Path
 
 from whatyouship.inspectors.app_signature import AppSignatureInspector
@@ -318,12 +319,18 @@ class AppBundleInspector:
     """Find and inspect ``.app`` bundles in an artifact directory tree."""
 
     def inspect(
-        self, directory: Path, files: list[ArtifactFile]
+        self,
+        directory: Path,
+        files: list[ArtifactFile],
+        *,
+        validate_executable_permissions: bool = False,
     ) -> list[AppBundleMetadata]:
         """Read application bundle metadata and validate the main executable.
 
         :param directory: Artifact tree root.
         :param files: Files already analyzed relative to ``directory``.
+        :param validate_executable_permissions: Whether filesystem mode bits are
+            authoritative and should be validated.
         :returns: Application bundles ordered by relative path.
         """
         files_by_path = {file.relative_path: file for file in files}
@@ -335,7 +342,12 @@ class AppBundleInspector:
             and path.suffix.lower() == ".app"
         ]
         return [
-            self._inspect_bundle(directory, bundle, files_by_path)
+            self._inspect_bundle(
+                directory,
+                bundle,
+                files_by_path,
+                validate_executable_permissions,
+            )
             for bundle in sorted(candidates)
         ]
 
@@ -344,12 +356,15 @@ class AppBundleInspector:
         directory: Path,
         bundle: Path,
         files_by_path: dict[Path, ArtifactFile],
+        validate_executable_permissions: bool,
     ) -> AppBundleMetadata:
         """Inspect one application bundle.
 
         :param directory: Artifact tree root.
         :param bundle: Application bundle directory.
         :param files_by_path: Analyzed files keyed by artifact-relative path.
+        :param validate_executable_permissions: Whether to validate filesystem
+            execute bits.
         :returns: Parsed metadata and structural issues.
         """
         relative_path = bundle.relative_to(directory)
@@ -428,6 +443,16 @@ class AppBundleInspector:
                 issues.append(BundleIssue(
                     "missing-executable",
                     f"Main executable is missing: {executable_path.as_posix()}.",
+                ))
+            elif (
+                validate_executable_permissions
+                and (directory / executable_path).stat().st_mode
+                & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) == 0
+            ):
+                issues.append(BundleIssue(
+                    "non-executable-main-file",
+                    f"Main executable has no execute bit: "
+                    f"{executable_path.as_posix()}.",
                 ))
             elif (
                 executable_file.binary is None

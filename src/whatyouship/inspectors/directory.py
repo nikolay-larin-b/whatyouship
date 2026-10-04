@@ -26,11 +26,15 @@ class DirectoryInspector:
         self,
         directory: Path,
         symbolic_links: Iterable[ArtifactSymbolicLink] = (),
+        *,
+        validate_executable_permissions: bool = False,
     ) -> ReleaseArtifact:
         """Inspect all ordinary files below a directory.
 
         :param directory: Root directory of the release artifact.
         :param symbolic_links: Links supplied by an extraction backend.
+        :param validate_executable_permissions: Whether filesystem mode bits are
+            authoritative for application bundle validation.
         :returns: An artifact with files ordered by relative path.
         :raises FileNotFoundError: If the directory does not exist.
         :raises NotADirectoryError: If the path is not a directory.
@@ -70,7 +74,11 @@ class DirectoryInspector:
                 )
             )
 
-        bundles = AppBundleInspector().inspect(directory, files)
+        bundles = AppBundleInspector().inspect(
+            directory,
+            files,
+            validate_executable_permissions=validate_executable_permissions,
+        )
         return ReleaseArtifact(
             source_path=directory,
             files=files,
