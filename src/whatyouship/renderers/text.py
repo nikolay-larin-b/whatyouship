@@ -116,6 +116,16 @@ def _render_inspect(report: InspectReport) -> str:
                 for label, value in fields
                 if value is not None
             )
+            lines.append(f"    Signature status: {bundle.signature.status}")
+            if bundle.signature.signer is not None:
+                lines.append(f"    Signature signer: {bundle.signature.signer}")
+            if bundle.signature.timestamp is not None:
+                lines.append(
+                    "    Signature timestamp: "
+                    f"{bundle.signature.timestamp.isoformat()}"
+                )
+            if bundle.signature.team_id is not None:
+                lines.append(f"    Signature Team ID: {bundle.signature.team_id}")
             lines.extend(f"    Issue: {issue.message}" for issue in bundle.issues)
     if artifact.symbolic_links:
         lines.extend(["", "Symbolic links:"])

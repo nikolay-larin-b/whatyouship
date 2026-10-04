@@ -1,13 +1,14 @@
 # Copyright (c) 2026 Nikolay Larin
 # SPDX-License-Identifier: MIT
 
-"""Inspect macOS application bundle metadata without platform APIs."""
+"""Inspect macOS application bundle metadata, structure, and signatures."""
 
 import plistlib
 import posixpath
 import re
 from pathlib import Path
 
+from whatyouship.inspectors.app_signature import AppSignatureInspector
 from whatyouship.model import AppBundleMetadata, ArtifactFile, BundleIssue
 
 
@@ -256,6 +257,41 @@ def _dynamic_dependency_issues(
     return issues
 
 
+def _team_id_issues(
+    bundle: Path,
+    files_by_path: dict[Path, ArtifactFile],
+    team_id: str | None,
+) -> list[BundleIssue]:
+    """Find nested Mach-O code signed by a different development team.
+
+    :param bundle: Artifact-relative application bundle path.
+    :param files_by_path: Analyzed files keyed by artifact-relative path.
+    :param team_id: Team ID of the application bundle signature.
+    :returns: Stable issues for mismatched nested signing identities.
+    """
+    if team_id is None:
+        return []
+    issues = []
+    for path, artifact_file in sorted(files_by_path.items()):
+        binary = artifact_file.binary
+        signature = binary.signature if binary is not None else None
+        if (
+            not _owned_by_bundle(path, bundle)
+            or binary is None
+            or binary.format != "Mach-O"
+            or signature is None
+            or signature.team_id is None
+            or signature.team_id == team_id
+        ):
+            continue
+        issues.append(BundleIssue(
+            f"nested-code-team-mismatch:{path.as_posix()}",
+            f"Nested Mach-O file '{path.as_posix()}' is signed by Team ID "
+            f"'{signature.team_id}', but the application is signed by '{team_id}'.",
+        ))
+    return issues
+
+
 def _string_value(
     values: dict[str, object], key: str, issues: list[BundleIssue]
 ) -> str | None:
@@ -320,13 +356,18 @@ class AppBundleInspector:
         if relative_path.parts == ():
             relative_path = Path(".")
         issues: list[BundleIssue] = []
+        signature = AppSignatureInspector().inspect(bundle)
         info_path = bundle / "Contents" / "Info.plist"
         if not info_path.is_file() or info_path.is_symlink():
             issues.append(BundleIssue(
                 "missing-info-plist",
                 "Application bundle has no regular Contents/Info.plist file.",
             ))
-            return AppBundleMetadata(relative_path, issues=tuple(issues))
+            return AppBundleMetadata(
+                relative_path,
+                issues=tuple(issues),
+                signature=signature,
+            )
 
         try:
             values = plistlib.loads(info_path.read_bytes())
@@ -335,13 +376,21 @@ class AppBundleInspector:
                 "invalid-info-plist",
                 f"Unable to parse Contents/Info.plist: {error}",
             ))
-            return AppBundleMetadata(relative_path, issues=tuple(issues))
+            return AppBundleMetadata(
+                relative_path,
+                issues=tuple(issues),
+                signature=signature,
+            )
         if not isinstance(values, dict):
             issues.append(BundleIssue(
                 "invalid-info-plist-root",
                 "Contents/Info.plist must contain a dictionary.",
             ))
-            return AppBundleMetadata(relative_path, issues=tuple(issues))
+            return AppBundleMetadata(
+                relative_path,
+                issues=tuple(issues),
+                signature=signature,
+            )
 
         strings = {
             key: _string_value(values, key, issues) for key in _STRING_KEYS
@@ -423,6 +472,12 @@ class AppBundleInspector:
                 "unexpected-package-type",
                 f"CFBundlePackageType is '{package_type}', expected 'APPL'.",
             ))
+        if signature.status in {"valid", "untrusted"}:
+            issues.extend(_team_id_issues(
+                relative_path,
+                files_by_path,
+                signature.team_id,
+            ))
 
         return AppBundleMetadata(
             relative_path=relative_path,
@@ -435,4 +490,5 @@ class AppBundleInspector:
             minimum_system_version=strings["LSMinimumSystemVersion"],
             package_type=package_type,
             issues=tuple(issues),
+            signature=signature,
         )

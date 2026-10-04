@@ -8,12 +8,19 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from whatyouship.config import LintConfiguration
 from whatyouship.inspectors.app_bundle import AppBundleInspector
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.lint import LintEngine
-from whatyouship.model import ArtifactFile, BinaryDependency, BinaryMetadata
+from whatyouship.model import (
+    ArtifactFile,
+    ArtifactSignature,
+    BinaryDependency,
+    BinaryMetadata,
+    SignatureMetadata,
+)
 from whatyouship.rules.invalid_app_bundle import InvalidAppBundleRule
 
 
@@ -79,6 +86,15 @@ def _write_bundle(
 
 class AppBundleInspectorTests(unittest.TestCase):
     """Verify bundle metadata extraction and validation."""
+
+    def setUp(self) -> None:
+        """Keep structural tests independent of the host ``codesign`` tool."""
+        patcher = patch(
+            "whatyouship.inspectors.app_bundle.AppSignatureInspector.inspect",
+            return_value=ArtifactSignature(status="unsupported"),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_reads_xml_and_binary_information_property_lists(self) -> None:
         """Read common bundle metadata from both plist encodings."""
@@ -356,6 +372,73 @@ class AppBundleInspectorTests(unittest.TestCase):
                 "libPresent.dylib:@loader_path/libAdjacent.dylib",
                 "missing-dynamic-dependency:Sample.app/Contents/MacOS/"
                 "sample:@rpath/libMissing.dylib",
+            ],
+        )
+
+    def test_reports_nested_code_signed_by_a_different_team(self) -> None:
+        """Compare directly owned Mach-O Team IDs with the bundle identity."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            _write_bundle(
+                root / "Sample.app",
+                {
+                    "CFBundleIdentifier": "com.example.sample",
+                    "CFBundleExecutable": "sample",
+                    "CFBundlePackageType": "APPL",
+                },
+                executable_payload=_macho_executable(),
+            )
+            files = [
+                ArtifactFile(
+                    Path("Sample.app/Contents/MacOS/sample"),
+                    32,
+                    "a",
+                    BinaryMetadata(
+                        "Mach-O",
+                        "arm64",
+                        "executable",
+                        signature=SignatureMetadata(
+                            True,
+                            valid=True,
+                            team_id="TEAM123456",
+                        ),
+                    ),
+                ),
+                ArtifactFile(
+                    Path("Sample.app/Contents/Frameworks/libOther.dylib"),
+                    32,
+                    "b",
+                    BinaryMetadata(
+                        "Mach-O",
+                        "arm64",
+                        "library",
+                        signature=SignatureMetadata(
+                            True,
+                            valid=True,
+                            team_id="OTHER98765",
+                        ),
+                    ),
+                ),
+            ]
+
+            with patch(
+                "whatyouship.inspectors.app_bundle.AppSignatureInspector.inspect",
+                return_value=ArtifactSignature(
+                    status="valid",
+                    team_id="TEAM123456",
+                ),
+            ):
+                bundles = AppBundleInspector().inspect(root, files)
+
+        self.assertEqual(
+            [
+                issue.identity
+                for issue in bundles[0].issues
+                if issue.identity.startswith("nested-code-team-mismatch:")
+            ],
+            [
+                "nested-code-team-mismatch:Sample.app/Contents/Frameworks/"
+                "libOther.dylib"
             ],
         )
 

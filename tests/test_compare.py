@@ -588,6 +588,36 @@ class CompareTests(unittest.TestCase):
             difference.relative_path == path for difference in differences
         ))
 
+    def test_reports_application_bundle_signature_regression(self) -> None:
+        """Treat loss of a valid bundle signature as potentially dangerous."""
+        path = Path("Sample.app")
+        old = ReleaseArtifact(Path("old.dmg"), bundles=[AppBundleMetadata(
+            path,
+            signature=ArtifactSignature(
+                "valid",
+                "Developer ID Application: Old (OLDTEAM123)",
+                team_id="OLDTEAM123",
+            ),
+        )])
+        new = ReleaseArtifact(Path("new.dmg"), bundles=[AppBundleMetadata(
+            path,
+            signature=ArtifactSignature(
+                "invalid",
+                "Developer ID Application: New (NEWTEAM456)",
+                team_id="NEWTEAM456",
+            ),
+        )])
+
+        differences = compare_artifacts(old, new).semantic_differences
+
+        self.assertEqual(
+            [difference.field for difference in differences],
+            ["Bundle signature", "Bundle signer", "Bundle Team ID"],
+        )
+        self.assertTrue(differences[0].potentially_dangerous)
+        self.assertFalse(differences[1].potentially_dangerous)
+        self.assertFalse(differences[2].potentially_dangerous)
+
     def test_reports_symbolic_link_additions_removals_and_target_changes(
         self,
     ) -> None:

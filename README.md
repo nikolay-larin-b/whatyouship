@@ -69,6 +69,8 @@ Current checks and comparisons include:
 * DMG releases without an embedded software license agreement;
 * unsigned, untrusted, or invalid DMG container signatures;
 * malformed macOS application bundles;
+* unsigned, untrusted, or invalid macOS application bundle signatures;
+* invalid application resource seals and nested code signed by another team;
 * missing required Mach-O libraries expected inside an application bundle;
 * release Mach-O binaries with debugger attachment enabled;
 * added, removed, and changed files between releases;
@@ -98,6 +100,12 @@ metadata, the main executable, and consistency between
 reports bundle and binary metadata changes. Bundle validation resolves
 `@executable_path`, `@loader_path`, and `@rpath` references and reports required
 libraries that should be present inside the application bundle but are missing.
+On macOS, WhatYouShip also uses `codesign` to verify the complete bundle,
+including its sealed resources and nested code, and checks the signing identity
+against Apple's trust requirement. It reports the bundle signer, timestamp, and
+Team ID; `lint` distinguishes unsigned, untrusted, and invalid bundles and
+reports nested Mach-O code signed by a different team. Bundle signature
+verification is reported as unsupported on other operating systems.
 
 ## Commands
 

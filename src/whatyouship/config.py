@@ -14,12 +14,15 @@ from whatyouship.rules.build_artifacts import DEFAULT_EXTENSIONS, BuildArtifactR
 from whatyouship.rules.debug_entitlement import DebugEntitlementRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_app_bundle import InvalidAppBundleRule
+from whatyouship.rules.invalid_app_bundle_signature import InvalidAppBundleSignatureRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
 from whatyouship.rules.invalid_binary_signature import InvalidBinarySignatureRule
 from whatyouship.rules.missing_license_agreement import MissingLicenseAgreementRule
 from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
+from whatyouship.rules.untrusted_app_bundle_signature import UntrustedAppBundleSignatureRule
 from whatyouship.rules.untrusted_binary_signature import UntrustedBinarySignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
+from whatyouship.rules.unsigned_app_bundle import UnsignedAppBundleRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
 
@@ -75,7 +78,7 @@ class DebugEntitlementSettings:
 
 @dataclass(frozen=True)
 class ArtifactSignatureRuleSettings:
-    """Configure a release artifact signature rule.
+    """Configure an artifact or application signature rule.
 
     :param enabled: Whether to run the rule.
     :param severity: Severity assigned to its findings.
@@ -115,6 +118,9 @@ class LintConfiguration:
 
     :param build_artifacts: Build artifact extension rule settings.
     :param app_bundle: Invalid application bundle rule settings.
+    :param unsigned_app_bundle: Unsigned application bundle settings.
+    :param untrusted_app_bundle_signature: Untrusted bundle signature settings.
+    :param invalid_app_bundle_signature: Invalid bundle signature settings.
     :param debug_entitlement: Debug entitlement rule settings.
     :param unsigned_binary: Unsigned binary rule settings.
     :param untrusted_binary_signature: Untrusted binary signature settings.
@@ -128,6 +134,15 @@ class LintConfiguration:
 
     build_artifacts: BuildArtifactSettings = field(default_factory=BuildArtifactSettings)
     app_bundle: AppBundleSettings = field(default_factory=AppBundleSettings)
+    unsigned_app_bundle: ArtifactSignatureRuleSettings = field(
+        default_factory=ArtifactSignatureRuleSettings
+    )
+    untrusted_app_bundle_signature: ArtifactSignatureRuleSettings = field(
+        default_factory=ArtifactSignatureRuleSettings
+    )
+    invalid_app_bundle_signature: ArtifactSignatureRuleSettings = field(
+        default_factory=lambda: ArtifactSignatureRuleSettings(severity="error")
+    )
     debug_entitlement: DebugEntitlementSettings = field(
         default_factory=DebugEntitlementSettings
     )
@@ -171,6 +186,18 @@ class LintConfiguration:
             rules.append(
                 InvalidAppBundleRule(severity=self.app_bundle.severity)
             )
+        if self.unsigned_app_bundle.enabled:
+            rules.append(UnsignedAppBundleRule(
+                severity=self.unsigned_app_bundle.severity
+            ))
+        if self.untrusted_app_bundle_signature.enabled:
+            rules.append(UntrustedAppBundleSignatureRule(
+                severity=self.untrusted_app_bundle_signature.severity
+            ))
+        if self.invalid_app_bundle_signature.enabled:
+            rules.append(InvalidAppBundleSignatureRule(
+                severity=self.invalid_app_bundle_signature.severity
+            ))
         if self.debug_entitlement.enabled:
             rules.append(DebugEntitlementRule(
                 severity=self.debug_entitlement.severity
@@ -298,6 +325,8 @@ def load_config(path: Path) -> LintConfiguration:
         "untrusted-artifact-signature", "invalid-artifact-signature",
         "inconsistent-installation-scope", "missing-license-agreement",
         "invalid-app-bundle",
+        "unsigned-app-bundle", "untrusted-app-bundle-signature",
+        "invalid-app-bundle-signature",
         "debug-entitlement",
     }
     if unknown_rules:
@@ -311,6 +340,22 @@ def load_config(path: Path) -> LintConfiguration:
     bundle_enabled, bundle_severity, _ = _rule_settings(
         "invalid-app-bundle",
         rules.get("invalid-app-bundle", {}),
+        {"enabled", "severity"},
+        "error",
+    )
+    unsigned_bundle_enabled, unsigned_bundle_severity, _ = _rule_settings(
+        "unsigned-app-bundle",
+        rules.get("unsigned-app-bundle", {}),
+        {"enabled", "severity"},
+    )
+    untrusted_bundle_enabled, untrusted_bundle_severity, _ = _rule_settings(
+        "untrusted-app-bundle-signature",
+        rules.get("untrusted-app-bundle-signature", {}),
+        {"enabled", "severity"},
+    )
+    invalid_bundle_enabled, invalid_bundle_severity, _ = _rule_settings(
+        "invalid-app-bundle-signature",
+        rules.get("invalid-app-bundle-signature", {}),
         {"enabled", "severity"},
         "error",
     )
@@ -368,6 +413,15 @@ def load_config(path: Path) -> LintConfiguration:
     return LintConfiguration(
         build_artifacts=BuildArtifactSettings(build_enabled, build_severity, extensions),
         app_bundle=AppBundleSettings(bundle_enabled, bundle_severity),
+        unsigned_app_bundle=ArtifactSignatureRuleSettings(
+            unsigned_bundle_enabled, unsigned_bundle_severity
+        ),
+        untrusted_app_bundle_signature=ArtifactSignatureRuleSettings(
+            untrusted_bundle_enabled, untrusted_bundle_severity
+        ),
+        invalid_app_bundle_signature=ArtifactSignatureRuleSettings(
+            invalid_bundle_enabled, invalid_bundle_severity
+        ),
         debug_entitlement=DebugEntitlementSettings(
             debug_enabled, debug_severity
         ),

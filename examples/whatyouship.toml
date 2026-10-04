@@ -32,6 +32,18 @@ severity = "error" # Report cryptographically invalid binary signatures.
 enabled = true
 severity = "error" # Report malformed macOS application bundles.
 
+[rules.unsigned-app-bundle]
+enabled = true
+severity = "warning" # Report unsigned macOS application bundles.
+
+[rules.untrusted-app-bundle-signature]
+enabled = true
+severity = "warning" # Report application signatures without Apple trust.
+
+[rules.invalid-app-bundle-signature]
+enabled = true
+severity = "error" # Report invalid bundle signatures and resource seals.
+
 [rules.debug-entitlement]
 enabled = true
 severity = "error" # Report release binaries that allow debugger attachment.

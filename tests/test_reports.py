@@ -107,6 +107,12 @@ class ReportOutputTests(unittest.TestCase):
                 minimum_system_version="13.0",
                 package_type="APPL",
                 issues=(BundleIssue("sample-issue", "Sample bundle issue."),),
+                signature=ArtifactSignature(
+                    "valid",
+                    "Developer ID Application: Example (TEAM123456)",
+                    timestamp,
+                    team_id="TEAM123456",
+                ),
             )],
             symbolic_links=[
                 ArtifactSymbolicLink(Path("Current"), "Versions/A"),
@@ -145,6 +151,12 @@ class ReportOutputTests(unittest.TestCase):
             "executable_path": "Sample.app/Contents/MacOS/sample",
             "minimum_system_version": "13.0",
             "package_type": "APPL",
+            "signature": {
+                "status": "valid",
+                "signer": "Developer ID Application: Example (TEAM123456)",
+                "timestamp": timestamp.isoformat(),
+                "team_id": "TEAM123456",
+            },
             "issues": [{
                 "identity": "sample-issue",
                 "message": "Sample bundle issue.",
@@ -222,6 +234,12 @@ class ReportOutputTests(unittest.TestCase):
                 executable="sample",
                 executable_path=Path("Sample.app/Contents/MacOS/sample"),
                 issues=(BundleIssue("missing-value", "A required value is missing."),),
+                signature=ArtifactSignature(
+                    "valid",
+                    "Developer ID Application: Example (TEAM123456)",
+                    datetime(2026, 9, 22, 10, 30, tzinfo=timezone.utc),
+                    team_id="TEAM123456",
+                ),
             )],
             symbolic_links=[
                 ArtifactSymbolicLink(Path("Current"), "Versions/A"),
@@ -242,6 +260,13 @@ class ReportOutputTests(unittest.TestCase):
         self.assertIn("Version: 1.2.3", rendered)
         self.assertIn("Build version: 45", rendered)
         self.assertIn("Executable: sample", rendered)
+        self.assertIn("Signature status: valid", rendered)
+        self.assertIn(
+            "Signature signer: Developer ID Application: Example (TEAM123456)",
+            rendered,
+        )
+        self.assertIn("Signature timestamp: 2026-09-22T10:30:00+00:00", rendered)
+        self.assertIn("Signature Team ID: TEAM123456", rendered)
         self.assertIn("Issue: A required value is missing.", rendered)
         self.assertIn("Minimum OS version: 13.0", rendered)
         self.assertIn("Dependency: @rpath/libSample.dylib | required", rendered)

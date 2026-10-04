@@ -81,6 +81,15 @@ def _bundle_data(bundle: AppBundleMetadata) -> dict[str, Any]:
         ),
         "minimum_system_version": bundle.minimum_system_version,
         "package_type": bundle.package_type,
+        "signature": {
+            "status": bundle.signature.status,
+            "signer": bundle.signature.signer,
+            "timestamp": (
+                bundle.signature.timestamp.isoformat()
+                if bundle.signature.timestamp is not None else None
+            ),
+            "team_id": bundle.signature.team_id,
+        },
         "issues": [
             {"identity": issue.identity, "message": issue.message}
             for issue in bundle.issues

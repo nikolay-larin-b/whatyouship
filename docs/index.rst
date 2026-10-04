@@ -42,7 +42,13 @@ including cases where ``LSMinimumSystemVersion`` is lower than the main
 executable's deployment target. ``compare`` reports bundle and binary metadata
 changes. Bundle validation resolves ``@executable_path``, ``@loader_path``, and
 ``@rpath`` references and reports required libraries that should be present
-inside the application bundle but are missing.
+inside the application bundle but are missing. On macOS, WhatYouShip uses
+``codesign`` to verify each complete bundle, including its sealed resources and
+nested code, and evaluates the signing identity against Apple's trust
+requirement. ``inspect`` reports the bundle signer, timestamp, and Team ID;
+``lint`` distinguishes unsigned, untrusted, and invalid bundles and reports
+nested Mach-O code signed by a different team. Bundle signature verification is
+unsupported on other operating systems.
 
 For MSI artifacts on Windows, ``inspect`` separately reports the package's own
 signature status using system Authenticode verification. MSI signature checking

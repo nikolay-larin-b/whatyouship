@@ -291,6 +291,9 @@ def _bundle_differences(
             new.minimum_system_version,
         ),
         ("Bundle package type", old.package_type, new.package_type),
+        ("Bundle signature", old.signature.status, new.signature.status),
+        ("Bundle signer", old.signature.signer, new.signature.signer),
+        ("Bundle Team ID", old.signature.team_id, new.signature.team_id),
     )
     for field_name, old_value, new_value in fields:
         if old_value == new_value:
@@ -306,6 +309,11 @@ def _bundle_differences(
             field_name,
             old_value if old_value is not None else "unavailable",
             new_value if new_value is not None else "unavailable",
+            potentially_dangerous=(
+                field_name == "Bundle signature"
+                and old_value == "valid"
+                and new_value != "valid"
+            ),
             severity="warning" if warning_message is not None else None,
             warning_message=warning_message,
         ))

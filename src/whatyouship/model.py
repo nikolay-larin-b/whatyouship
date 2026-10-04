@@ -214,6 +214,7 @@ class AppBundleMetadata:
     :param minimum_system_version: ``LSMinimumSystemVersion`` value.
     :param package_type: ``CFBundlePackageType`` value.
     :param issues: Structural or metadata problems found in the bundle.
+    :param signature: Verification result for the complete application bundle.
     """
 
     relative_path: Path
@@ -226,6 +227,7 @@ class AppBundleMetadata:
     minimum_system_version: str | None = None
     package_type: str | None = None
     issues: tuple[BundleIssue, ...] = ()
+    signature: ArtifactSignature = field(default_factory=ArtifactSignature)
 
 
 @dataclass
