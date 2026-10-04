@@ -82,6 +82,8 @@ class SignatureMetadata:
     :param signature_type: Ad hoc, certificate, or mixed signature type.
     :param hardened_runtime: Whether every Mach-O slice enables Hardened Runtime.
     :param entitlements: Embedded code-signing entitlements.
+    :param trusted: Whether the signing identity is trusted, or ``None`` if unknown.
+    :param team_id: Apple code-signing Team ID, when available.
     """
 
     present: bool | None
@@ -91,6 +93,8 @@ class SignatureMetadata:
     signature_type: BinarySignatureType | None = None
     hardened_runtime: bool | None = None
     entitlements: tuple[BinaryEntitlement, ...] = ()
+    trusted: bool | None = None
+    team_id: str | None = None
 
 
 @dataclass(frozen=True)

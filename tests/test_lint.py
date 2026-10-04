@@ -23,8 +23,10 @@ from whatyouship.rules.build_artifacts import BuildArtifactRule
 from whatyouship.rules.debug_entitlement import DebugEntitlementRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
+from whatyouship.rules.invalid_binary_signature import InvalidBinarySignatureRule
 from whatyouship.rules.missing_license_agreement import MissingLicenseAgreementRule
 from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
+from whatyouship.rules.untrusted_binary_signature import UntrustedBinarySignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
@@ -297,6 +299,54 @@ class LintTests(unittest.TestCase):
         self.assertEqual(
             [finding.message for finding in findings],
             ["Unsigned executable.", "Unsigned library.", "Unsigned executable."],
+        )
+
+    def test_binary_signature_verification_rules_are_distinct(self) -> None:
+        """Distinguish invalid signatures from valid untrusted identities."""
+        files = [
+            ArtifactFile(
+                Path("invalid"),
+                1,
+                "0" * 64,
+                BinaryMetadata(
+                    "Mach-O",
+                    "arm64",
+                    "executable",
+                    signature=SignatureMetadata(True, False, trusted=None),
+                ),
+            ),
+            ArtifactFile(
+                Path("untrusted"),
+                1,
+                "0" * 64,
+                BinaryMetadata(
+                    "Mach-O",
+                    "arm64",
+                    "library",
+                    signature=SignatureMetadata(True, True, trusted=False),
+                ),
+            ),
+            ArtifactFile(
+                Path("trusted"),
+                1,
+                "0" * 64,
+                BinaryMetadata(
+                    "Mach-O",
+                    "arm64",
+                    "executable",
+                    signature=SignatureMetadata(True, True, trusted=True),
+                ),
+            ),
+        ]
+        artifact = ReleaseArtifact(Path("release.dmg"), files)
+
+        invalid = InvalidBinarySignatureRule().check(artifact)
+        untrusted = UntrustedBinarySignatureRule().check(artifact)
+
+        self.assertEqual([finding.relative_path for finding in invalid], [Path("invalid")])
+        self.assertEqual(
+            [finding.relative_path for finding in untrusted],
+            [Path("untrusted")],
         )
 
     def test_artifact_signature_rules_are_independent_of_binary_signatures(self) -> None:

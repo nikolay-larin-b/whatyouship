@@ -27,6 +27,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.app_bundle.severity, "error")
         self.assertEqual(config.debug_entitlement.severity, "error")
         self.assertEqual(config.unsigned_binary.severity, "warning")
+        self.assertEqual(config.untrusted_binary_signature.severity, "warning")
+        self.assertEqual(config.invalid_binary_signature.severity, "error")
         self.assertEqual(config.unsigned_artifact.severity, "warning")
         self.assertEqual(config.untrusted_artifact_signature.severity, "warning")
         self.assertEqual(config.invalid_artifact_signature.severity, "error")
@@ -59,7 +61,7 @@ class ConfigTests(unittest.TestCase):
             config = load_config(path)
 
         self.assertEqual(config.build_artifacts.extensions, frozenset({".obj", ".lib"}))
-        self.assertEqual(len(config.rules()), 8)
+        self.assertEqual(len(config.rules()), 10)
 
     def test_artifact_signature_rules_accept_common_settings(self) -> None:
         """Configure enabled state and severity for artifact signature rules."""
@@ -76,7 +78,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.unsigned_artifact.enabled)
         self.assertEqual(config.untrusted_artifact_signature.severity, "error")
         self.assertEqual(config.invalid_artifact_signature.severity, "warning")
-        self.assertEqual(len(config.rules()), 8)
+        self.assertEqual(len(config.rules()), 10)
 
     def test_installation_scope_rule_accepts_common_settings(self) -> None:
         """Configure the new scope rule through the existing TOML format."""
@@ -91,7 +93,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.installation_scope.enabled)
         self.assertEqual(config.installation_scope.severity, "error")
-        self.assertEqual(len(config.rules()), 8)
+        self.assertEqual(len(config.rules()), 10)
 
     def test_license_agreement_rule_accepts_common_settings(self) -> None:
         """Allow the missing agreement rule to be downgraded or disabled."""
@@ -106,7 +108,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.license_agreement.enabled)
         self.assertEqual(config.license_agreement.severity, "warning")
-        self.assertEqual(len(config.rules()), 8)
+        self.assertEqual(len(config.rules()), 10)
 
     def test_app_bundle_rule_accepts_common_settings(self) -> None:
         """Allow malformed application bundle findings to be configured."""
@@ -121,7 +123,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.app_bundle.enabled)
         self.assertEqual(config.app_bundle.severity, "warning")
-        self.assertEqual(len(config.rules()), 8)
+        self.assertEqual(len(config.rules()), 10)
 
     def test_debug_entitlement_rule_accepts_common_settings(self) -> None:
         """Allow debugger entitlement findings to be configured."""
@@ -136,7 +138,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.debug_entitlement.enabled)
         self.assertEqual(config.debug_entitlement.severity, "warning")
-        self.assertEqual(len(config.rules()), 8)
+        self.assertEqual(len(config.rules()), 10)
 
     def test_missing_file_has_readable_error(self) -> None:
         """Name the missing configuration file in the error."""

@@ -1,11 +1,17 @@
 # Copyright (c) 2026 Nikolay Larin
 # SPDX-License-Identifier: MIT
 
-"""Read basic Apple Mach-O metadata with LIEF."""
+"""Read and verify Apple Mach-O metadata with LIEF and native tooling."""
 
+import hashlib
 import json
+import os
 import plistlib
+import shutil
 import struct
+import subprocess
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -63,6 +69,17 @@ _CSSLOT_SIGNATURESLOT = 0x10000
 _CSMAGIC_EMBEDDED_ENTITLEMENTS = 0xFADE7171
 _CS_ADHOC = 0x00000002
 _CS_RUNTIME = 0x00010000
+_CS_SUPPORTS_SCATTER = 0x20100
+_CS_SUPPORTS_TEAM_ID = 0x20200
+_CS_SUPPORTS_CODE_LIMIT_64 = 0x20300
+_CSSLOT_ALTERNATE_CODEDIRECTORIES = 0x1000
+_CSSLOT_ALTERNATE_CODEDIRECTORY_LIMIT = 0x1005
+_DIGESTS = {
+    1: ("sha1", 20),
+    2: ("sha256", 32),
+    3: ("sha256", 20),
+    4: ("sha384", 48),
+}
 
 _DEPENDENCY_COMMANDS = {
     lief.MachO.LoadCommand.TYPE.LAZY_LOAD_DYLIB,
@@ -71,6 +88,34 @@ _DEPENDENCY_COMMANDS = {
     lief.MachO.LoadCommand.TYPE.LOAD_WEAK_DYLIB,
     lief.MachO.LoadCommand.TYPE.REEXPORT_DYLIB,
 }
+
+
+@dataclass(frozen=True)
+class _StaticSignature:
+    """Hold the result of validating one Mach-O architecture slice."""
+
+    valid: bool | None
+    team_id: str | None
+
+
+@dataclass(frozen=True)
+class _NativeSignature:
+    """Hold native verification and display metadata for a Mach-O file."""
+
+    trusted: bool | None
+    signer: str | None
+    timestamp: bool | None
+    team_id: str | None
+
+
+@dataclass(frozen=True)
+class _CmsSignature:
+    """Hold CMS integrity and signer metadata for one architecture slice."""
+
+    valid: bool | None
+    trusted: bool | None
+    signer: str | None
+    timestamp: bool | None
 
 
 def _kind(file_type: lief.MachO.Header.FILE_TYPE) -> str:
@@ -145,6 +190,230 @@ def _superblob_entries(content: bytes) -> tuple[tuple[int, int, int, int], ...] 
             return None
         entries.append((slot, offset, blob[0], blob[1]))
     return tuple(entries)
+
+
+def _null_terminated_text(content: bytes, offset: int) -> str | None:
+    """Read a bounded UTF-8 string from a code-signing blob.
+
+    :param content: Complete bounded blob.
+    :param offset: String offset within the blob.
+    :returns: Decoded text, or ``None`` when the string is invalid.
+    """
+    if offset <= 0 or offset >= len(content):
+        return None
+    end = content.find(b"\x00", offset)
+    if end < 0:
+        return None
+    try:
+        return content[offset:end].decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def _source_range(
+    source: Path | bytes | memoryview,
+    offset: int,
+    length: int,
+) -> bytes | None:
+    """Read an exact byte range from a path or in-memory Mach-O file.
+
+    :param source: Complete Mach-O source.
+    :param offset: Absolute range offset.
+    :param length: Number of bytes to read.
+    :returns: Requested bytes, or ``None`` when the range is unavailable.
+    """
+    if offset < 0 or length < 0:
+        return None
+    if isinstance(source, Path):
+        try:
+            with source.open("rb") as stream:
+                stream.seek(offset)
+                data = stream.read(length)
+        except OSError:
+            return None
+    else:
+        data = bytes(source[offset:offset + length])
+    return data if len(data) == length else None
+
+
+def _code_directories(
+    content: bytes,
+) -> tuple[tuple[bytes, tuple[tuple[int, int, int, int], ...]], ...] | None:
+    """Extract primary and alternate CodeDirectories from a signature.
+
+    :param content: Raw bytes referenced by ``LC_CODE_SIGNATURE``.
+    :returns: CodeDirectories with their superblob entries, or ``None`` if malformed.
+    """
+    header = _blob_header(content, 0)
+    if header is None:
+        return None
+    if header[0] == _CSMAGIC_CODEDIRECTORY:
+        return ((content[:header[1]], ()),)
+    entries = _superblob_entries(content)
+    if entries is None:
+        return None
+    directories = []
+    directory_slots = []
+    for slot, offset, magic, length in entries:
+        if (
+            magic == _CSMAGIC_CODEDIRECTORY
+            and (
+                slot == _CSSLOT_CODEDIRECTORY
+                or _CSSLOT_ALTERNATE_CODEDIRECTORIES
+                <= slot
+                < _CSSLOT_ALTERNATE_CODEDIRECTORY_LIMIT
+            )
+        ):
+            directories.append((content[offset:offset + length], entries))
+            directory_slots.append(slot)
+    if (
+        directory_slots.count(_CSSLOT_CODEDIRECTORY) != 1
+        or len(directory_slots) != len(set(directory_slots))
+    ):
+        return None
+    return tuple(directories)
+
+
+def _validate_code_directory(
+    source: Path | bytes | memoryview,
+    binary: lief.MachO.Binary,
+    code_directory: bytes,
+    entries: tuple[tuple[int, int, int, int], ...],
+    signature_content: bytes,
+) -> _StaticSignature:
+    """Validate one CodeDirectory and all locally available signed slots.
+
+    :param source: Complete thin or universal Mach-O source.
+    :param binary: Architecture slice described by the CodeDirectory.
+    :param code_directory: Bounded CodeDirectory blob.
+    :param entries: Signature superblob entries.
+    :param signature_content: Complete signature superblob.
+    :returns: Static verification result and embedded Team ID.
+    """
+    if len(code_directory) < 44:
+        return _StaticSignature(False, None)
+    (
+        magic,
+        length,
+        version,
+        _flags,
+        hash_offset,
+        _identifier_offset,
+        special_count,
+        code_count,
+        code_limit,
+        hash_size,
+        hash_type,
+        _platform,
+        page_size_power,
+        _spare,
+    ) = struct.unpack_from(">9I4BI", code_directory, 0)
+    digest = _DIGESTS.get(hash_type)
+    if (
+        magic != _CSMAGIC_CODEDIRECTORY
+        or length != len(code_directory)
+        or digest is None
+        or hash_size != digest[1]
+    ):
+        return _StaticSignature(False, None)
+
+    if version >= _CS_SUPPORTS_SCATTER:
+        if len(code_directory) < 48:
+            return _StaticSignature(False, None)
+        if struct.unpack_from(">I", code_directory, 44)[0] != 0:
+            return _StaticSignature(None, None)
+
+    team_id = None
+    if version >= _CS_SUPPORTS_TEAM_ID:
+        if len(code_directory) < 52:
+            return _StaticSignature(False, None)
+        team_offset = struct.unpack_from(">I", code_directory, 48)[0]
+        if team_offset:
+            team_id = _null_terminated_text(code_directory, team_offset)
+            if team_id is None:
+                return _StaticSignature(False, None)
+
+    if version >= _CS_SUPPORTS_CODE_LIMIT_64:
+        if len(code_directory) < 64:
+            return _StaticSignature(False, team_id)
+        code_limit_64 = struct.unpack_from(">Q", code_directory, 56)[0]
+        if code_limit == 0:
+            code_limit = code_limit_64
+
+    if page_size_power > 30:
+        return _StaticSignature(False, team_id)
+    page_size = code_limit or 1 if page_size_power == 0 else 1 << page_size_power
+    expected_count = (code_limit + page_size - 1) // page_size
+    digest_start = hash_offset - special_count * hash_size
+    digest_end = hash_offset + code_count * hash_size
+    if (
+        code_count != expected_count
+        or digest_start < 0
+        or hash_offset > length
+        or digest_end > length
+    ):
+        return _StaticSignature(False, team_id)
+
+    code_signature = getattr(binary, "code_signature", None)
+    data_offset = getattr(code_signature, "data_offset", None)
+    slice_offset = getattr(binary, "fat_offset", None)
+    if not isinstance(data_offset, int) or not isinstance(slice_offset, int):
+        return _StaticSignature(None, team_id)
+    if code_limit != data_offset:
+        return _StaticSignature(False, team_id)
+
+    for index in range(code_count):
+        chunk_offset = index * page_size
+        chunk_length = min(page_size, code_limit - chunk_offset)
+        chunk = _source_range(source, slice_offset + chunk_offset, chunk_length)
+        if chunk is None:
+            return _StaticSignature(None, team_id)
+        actual = hashlib.new(digest[0], chunk).digest()[:hash_size]
+        expected = code_directory[
+            hash_offset + index * hash_size:hash_offset + (index + 1) * hash_size
+        ]
+        if actual != expected:
+            return _StaticSignature(False, team_id)
+
+    for slot, offset, _blob_magic, blob_length in entries:
+        if not 0 < slot <= special_count:
+            continue
+        actual = hashlib.new(
+            digest[0], signature_content[offset:offset + blob_length]
+        ).digest()[:hash_size]
+        expected_offset = hash_offset - slot * hash_size
+        expected = code_directory[expected_offset:expected_offset + hash_size]
+        if actual != expected:
+            return _StaticSignature(False, team_id)
+    return _StaticSignature(True, team_id)
+
+
+def _static_signature(
+    source: Path | bytes | memoryview,
+    binary: lief.MachO.Binary,
+    content: bytes,
+) -> _StaticSignature:
+    """Validate every CodeDirectory belonging to one architecture slice.
+
+    :param source: Complete thin or universal Mach-O source.
+    :param binary: Parsed architecture slice.
+    :param content: Embedded code-signature payload.
+    :returns: Aggregate static result for the slice.
+    """
+    directories = _code_directories(content)
+    if directories is None:
+        return _StaticSignature(False, None)
+    results = [
+        _validate_code_directory(source, binary, directory, entries, content)
+        for directory, entries in directories
+    ]
+    valid = (
+        False if any(result.valid is False for result in results)
+        else True if all(result.valid is True for result in results)
+        else None
+    )
+    team_ids = {result.team_id for result in results if result.team_id is not None}
+    return _StaticSignature(valid, next(iter(team_ids)) if len(team_ids) == 1 else None)
 
 
 def _code_directory_flags(content: bytes) -> int | None:
@@ -239,9 +508,241 @@ def _signature_type(content: bytes) -> BinarySignatureType | Literal["unknown"]:
     return code_directory_type or "unknown"
 
 
-def _signature(slices: list[lief.MachO.Binary]) -> SignatureMetadata:
+def _cms_signature(content: bytes) -> _CmsSignature:
+    """Verify the detached CMS signature over the primary CodeDirectory.
+
+    OpenSSL performs the cryptographic CMS check without making a trust
+    decision. Trust is evaluated separately by the native code-signing service.
+
+    :param content: Raw bytes referenced by ``LC_CODE_SIGNATURE``.
+    :returns: CMS integrity, leaf certificate subject, and timestamp presence.
+    """
+    executable = shutil.which("openssl")
+    directories = _code_directories(content)
+    entries = _superblob_entries(content)
+    if executable is None or directories is None or entries is None:
+        return _CmsSignature(None, None, None, None)
+    primary = next((
+        content[offset:offset + length]
+        for slot, offset, magic, length in entries
+        if slot == _CSSLOT_CODEDIRECTORY and magic == _CSMAGIC_CODEDIRECTORY
+    ), None)
+    wrapper = next((
+        content[offset + 8:offset + length]
+        for slot, offset, magic, length in entries
+        if slot == _CSSLOT_SIGNATURESLOT
+        and magic == _CSMAGIC_BLOBWRAPPER
+        and length > 8
+    ), None)
+    if primary is None or wrapper is None:
+        return _CmsSignature(False, None, None, None)
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="whatyouship-cms-") as temporary:
+            root = Path(temporary)
+            code_directory_path = root / "CodeDirectory"
+            cms_path = root / "signature.cms"
+            signer_path = root / "signer.pem"
+            code_directory_path.write_bytes(primary)
+            cms_path.write_bytes(wrapper)
+            verification = subprocess.run(
+                [
+                    executable,
+                    "cms",
+                    "-verify",
+                    "-binary",
+                    "-inform",
+                    "DER",
+                    "-content",
+                    str(code_directory_path),
+                    "-in",
+                    str(cms_path),
+                    "-noverify",
+                    "-out",
+                    os.devnull,
+                    "-signer",
+                    str(signer_path),
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if verification.returncode != 0:
+                return _CmsSignature(False, None, None, None)
+            subject = subprocess.run(
+                [
+                    executable,
+                    "x509",
+                    "-in",
+                    str(signer_path),
+                    "-noout",
+                    "-subject",
+                    "-nameopt",
+                    "RFC2253",
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            cms_dump = subprocess.run(
+                [
+                    executable,
+                    "cms",
+                    "-cmsout",
+                    "-print",
+                    "-inform",
+                    "DER",
+                    "-in",
+                    str(cms_path),
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            trusted = None
+            security = shutil.which("security")
+            root_keychain = Path(
+                "/System/Library/Keychains/SystemRootCertificates.keychain"
+            )
+            if security is not None and root_keychain.is_file():
+                roots = subprocess.run(
+                    [
+                        security,
+                        "find-certificate",
+                        "-a",
+                        "-p",
+                        str(root_keychain),
+                    ],
+                    capture_output=True,
+                    check=False,
+                )
+                if roots.returncode == 0 and b"BEGIN CERTIFICATE" in roots.stdout:
+                    roots_path = root / "system-roots.pem"
+                    roots_path.write_bytes(roots.stdout)
+                    trust = subprocess.run(
+                        [
+                            executable,
+                            "cms",
+                            "-verify",
+                            "-binary",
+                            "-inform",
+                            "DER",
+                            "-content",
+                            str(code_directory_path),
+                            "-in",
+                            str(cms_path),
+                            "-CAfile",
+                            str(roots_path),
+                            "-out",
+                            os.devnull,
+                        ],
+                        capture_output=True,
+                        check=False,
+                    )
+                    trusted = trust.returncode == 0
+    except OSError:
+        return _CmsSignature(None, None, None, None)
+    signer = None
+    if subject.returncode == 0:
+        signer_text = subject.stdout.strip()
+        signer = signer_text.split("=", 1)[1].strip() if "=" in signer_text else None
+    timestamp = (
+        "id-smime-aa-timestamptoken" in cms_dump.stdout.lower()
+        or "1.2.840.113549.1.9.16.2.14" in cms_dump.stdout
+    ) if cms_dump.returncode == 0 else None
+    return _CmsSignature(True, trusted, signer, timestamp)
+
+
+def _native_signature(source: Path) -> _NativeSignature | None:
+    """Verify a Mach-O file with the native macOS code-signing service.
+
+    :param source: Mach-O file to verify.
+    :returns: Native verification metadata, or ``None`` off macOS or on tool failure.
+    """
+    executable = shutil.which("codesign")
+    if executable is None:
+        return None
+    try:
+        verification = subprocess.run(
+            [
+                executable,
+                "--verify",
+                "--all-architectures",
+                "--strict=all",
+                "--verbose=4",
+                str(source.resolve()),
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        display = subprocess.run(
+            [
+                executable,
+                "--display",
+                "--all-architectures",
+                "--verbose=4",
+                str(source.resolve()),
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError:
+        return None
+    verification_output = verification.stdout + "\n" + verification.stderr
+    display_output = display.stdout + "\n" + display.stderr
+    trust_errors = (
+        "cssmerr_tp_not_trusted",
+        "cssmerr_tp_cert_expired",
+        "cssmerr_tp_cert_revoked",
+        "certificate is not trusted",
+        "unable to build chain",
+    )
+    untrusted = any(error in verification_output.lower() for error in trust_errors)
+    authorities = []
+    team_ids = set()
+    timestamp: bool | None = None
+    for line in display_output.splitlines():
+        if line.startswith("Authority="):
+            authority = line.split("=", 1)[1]
+            if authority and authority != "(unavailable)":
+                authorities.append(authority)
+        elif line.startswith("TeamIdentifier="):
+            team_id = line.split("=", 1)[1]
+            if team_id and team_id != "not set":
+                team_ids.add(team_id)
+        elif line.startswith("Timestamp="):
+            timestamp = line.split("=", 1)[1].lower() not in {"", "none"}
+    return _NativeSignature(
+        trusted=(
+            True if verification.returncode == 0
+            else False if untrusted
+            else None
+        ),
+        signer=authorities[0] if authorities else None,
+        timestamp=timestamp,
+        team_id=next(iter(team_ids)) if len(team_ids) == 1 else None,
+    )
+
+
+def _signature(
+    source: Path | bytes | memoryview,
+    slices: list[lief.MachO.Binary],
+) -> SignatureMetadata:
     """Combine signature presence and type across all architecture slices.
 
+    :param source: Complete thin or universal Mach-O source.
     :param slices: Parsed slices from one thin or universal Mach-O file.
     :returns: Aggregate signature metadata for the complete file.
     """
@@ -251,6 +752,8 @@ def _signature(slices: list[lief.MachO.Binary]) -> SignatureMetadata:
     hardened_states: list[bool] = []
     hardened_unknown = False
     entitlements: set[BinaryEntitlement] = set()
+    static_results: list[_StaticSignature] = []
+    cms_results: list[_CmsSignature] = []
     for binary in slices:
         code_signature = binary.code_signature
         if code_signature is None:
@@ -258,11 +761,14 @@ def _signature(slices: list[lief.MachO.Binary]) -> SignatureMetadata:
             hardened_unknown = True
             continue
         content = bytes(code_signature.content)
+        static_results.append(_static_signature(source, binary, content))
         signature_type = _signature_type(content)
         if signature_type == "unknown":
             unknown = True
         else:
             types.add(signature_type)
+            if signature_type == "certificate":
+                cms_results.append(_cms_signature(content))
         flags = _code_directory_flags(content)
         if flags is None:
             hardened_unknown = True
@@ -290,10 +796,43 @@ def _signature(slices: list[lief.MachO.Binary]) -> SignatureMetadata:
         entitlements,
         key=lambda item: (item.key, item.value),
     ))
+    static_valid = (
+        False if any(result.valid is False for result in static_results)
+        else True if static_results and all(
+            result.valid is True for result in static_results
+        )
+        else None
+    )
+    static_team_ids = {
+        result.team_id for result in static_results if result.team_id is not None
+    }
+    team_id = next(iter(static_team_ids)) if len(static_team_ids) == 1 else None
+    cms_valid = (
+        False if any(result.valid is False for result in cms_results)
+        else True if cms_results and all(result.valid is True for result in cms_results)
+        else None
+    )
+    cms_signers = {result.signer for result in cms_results if result.signer is not None}
+    cms_signer = next(iter(cms_signers)) if len(cms_signers) == 1 else None
+    cms_trusted = (
+        False if any(result.trusted is False for result in cms_results)
+        else True if cms_results and all(
+            result.trusted is True for result in cms_results
+        )
+        else None
+    )
+    cms_timestamp = (
+        False if any(result.timestamp is False for result in cms_results)
+        else True if cms_results and all(
+            result.timestamp is True for result in cms_results
+        )
+        else None
+    )
 
     if missing:
         return SignatureMetadata(
             present=False,
+            valid=False if static_valid is False else None,
             signature_type=aggregate_type,
             hardened_runtime=hardened_runtime,
             entitlements=signature_entitlements,
@@ -301,12 +840,61 @@ def _signature(slices: list[lief.MachO.Binary]) -> SignatureMetadata:
     if unknown:
         return SignatureMetadata(
             present=None,
+            valid=False if static_valid is False else None,
+            team_id=team_id,
             signature_type=aggregate_type,
             hardened_runtime=hardened_runtime,
             entitlements=signature_entitlements,
         )
+    native = _native_signature(source) if isinstance(source, Path) else None
+    if static_valid is False or cms_valid is False:
+        valid = False
+        trusted = None
+    elif aggregate_type == "ad-hoc":
+        valid = static_valid
+        trusted = False if static_valid is True else None
+    else:
+        valid = (
+            True if static_valid is True and (
+                cms_valid is True
+                or native is not None and native.trusted is True
+            )
+            else None
+        )
+        trusted = (
+            True
+            if valid is True and (
+                cms_trusted is True
+                or native is not None and native.trusted is True
+            )
+            else False
+            if valid is True and cms_trusted is False
+            else native.trusted
+            if valid is True and native is not None
+            else None
+        )
+    if "ad-hoc" in types and valid is True:
+        trusted = False
     return SignatureMetadata(
         present=True,
+        valid=valid,
+        trusted=trusted,
+        signer=(
+            cms_signer
+            if cms_signer is not None
+            else native.signer if native is not None else None
+        ),
+        timestamp=(
+            False if aggregate_type == "ad-hoc"
+            else cms_timestamp
+            if cms_timestamp is not None
+            else native.timestamp if native is not None else None
+        ),
+        team_id=(
+            native.team_id
+            if native is not None and native.team_id is not None
+            else team_id
+        ),
         signature_type=aggregate_type,
         hardened_runtime=hardened_runtime,
         entitlements=signature_entitlements,
@@ -433,7 +1021,7 @@ class MachOInspector:
             }
             kinds = {_kind(binary.header.file_type) for binary in slices}
             try:
-                signature = _signature(slices)
+                signature = _signature(source, slices)
             except Exception:
                 signature = SignatureMetadata(present=None)
             try:

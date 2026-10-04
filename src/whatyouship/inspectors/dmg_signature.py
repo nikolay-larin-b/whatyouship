@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Nikolay Larin
 # SPDX-License-Identifier: MIT
 
-"""Verify DMG container signatures with static checks and ``rcodesign``."""
+"""Verify DMG signatures with static, native, and cross-platform checks."""
 
 import hashlib
 import os
@@ -9,10 +9,10 @@ import shutil
 import struct
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
-from whatyouship.model import ArtifactSignature
+from whatyouship.model import ArtifactSignature, ArtifactSignatureStatus
 
 
 _KOLY_SIZE = 512
@@ -59,6 +59,16 @@ class _RcodesignMetadata:
     trusted: bool
     timestamp: datetime | None
     timestamp_valid: bool
+
+
+@dataclass(frozen=True)
+class _CodesignMetadata:
+    """Hold native macOS verification metadata for a signed DMG."""
+
+    status: ArtifactSignatureStatus
+    signer: str | None
+    timestamp: datetime | None
+    team_id: str | None
 
 
 def _blob_header(content: bytes, offset: int) -> tuple[int, int] | None:
@@ -268,6 +278,116 @@ def _read_signature(source_path: Path) -> _DmgCodeSignature | None:
     )
 
 
+def _parse_codesign_time(value: str) -> datetime | None:
+    """Parse the stable C-locale timestamp emitted by ``codesign``.
+
+    ``codesign`` displays signing times in UTC but omits the zone suffix.
+
+    :param value: Timestamp text from verbose signature output.
+    :returns: UTC timestamp, or ``None`` when the value is unrecognized.
+    """
+    months = {
+        "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+        "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+    }
+    parts = value.split()
+    if len(parts) != 5 or parts[3] != "at" or parts[1] not in months:
+        return None
+    try:
+        hour, minute, second = (int(component) for component in parts[4].split(":"))
+        return datetime(
+            int(parts[2]),
+            months[parts[1]],
+            int(parts[0]),
+            hour,
+            minute,
+            second,
+            tzinfo=timezone.utc,
+        )
+    except (ValueError, TypeError):
+        return None
+
+
+def _codesign(source_path: Path) -> _CodesignMetadata | None:
+    """Verify a DMG with the native macOS code-signing service.
+
+    Integrity and Apple trust are checked separately. This distinguishes a
+    structurally valid signature made by an untrusted identity from damaged
+    signed content.
+
+    :param source_path: Signed DMG artifact.
+    :returns: Native verification metadata, or ``None`` when unavailable.
+    """
+    executable = shutil.which("codesign")
+    if executable is None:
+        return None
+    common = [
+        executable,
+        "--verify",
+        "--strict=all",
+        "--verbose=4",
+    ]
+    path = str(source_path.resolve())
+    environment = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+    try:
+        integrity = subprocess.run(
+            [*common, path],
+            capture_output=True,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+        )
+        trust = subprocess.run(
+            [*common, "--test-requirement", "=anchor apple generic", path],
+            capture_output=True,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+        )
+        display = subprocess.run(
+            [executable, "--display", "--verbose=4", path],
+            capture_output=True,
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+        )
+    except OSError:
+        return None
+
+    status: ArtifactSignatureStatus
+    if integrity.returncode != 0:
+        status = "invalid"
+    elif trust.returncode == 0:
+        status = "valid"
+    else:
+        status = "untrusted"
+
+    signer = None
+    team_id = None
+    timestamp = None
+    output = display.stdout + "\n" + display.stderr
+    for line in output.splitlines():
+        if line.startswith("Authority=") and signer is None:
+            value = line.split("=", 1)[1]
+            if value and value != "(unavailable)":
+                signer = value
+        elif line.startswith("TeamIdentifier="):
+            value = line.split("=", 1)[1]
+            if value and value != "not set":
+                team_id = value
+        elif line.startswith("Timestamp="):
+            value = line.split("=", 1)[1]
+            if value.lower() != "none":
+                timestamp = _parse_codesign_time(value)
+    return _CodesignMetadata(status, signer, timestamp, team_id)
+
+
 def _yaml_value(line: str) -> str:
     """Decode the simple scalar forms emitted by ``rcodesign``.
 
@@ -400,13 +520,14 @@ def _rcodesign(source_path: Path) -> _RcodesignMetadata | None:
 
 
 class DmgSignatureInspector:
-    """Verify a DMG container signature without using macOS APIs."""
+    """Verify a DMG container signature with the best available backend."""
 
     def inspect(self, source_path: Path) -> ArtifactSignature:
         """Inspect the embedded DMG signature and notarization ticket.
 
-        Static CodeDirectory digests are always checked. CMS verification and
-        certificate metadata are available when ``rcodesign`` is in ``PATH``.
+        Static CodeDirectory digests are always checked. On macOS, ``codesign``
+        verifies CMS integrity and Apple trust. Elsewhere, ``rcodesign`` can
+        provide equivalent cross-platform metadata when available.
 
         :param source_path: DMG artifact to verify.
         :returns: Container signature metadata.
@@ -423,6 +544,24 @@ class DmgSignatureInspector:
             return ArtifactSignature(
                 status="invalid",
                 team_id=signature.team_id,
+                notarization_ticket=signature.ticket_present,
+            )
+        native = _codesign(source_path)
+        if native is not None:
+            status = native.status
+            if status == "valid" and not signature.cms_present:
+                status = "untrusted"
+            if (
+                native.team_id is not None
+                and signature.team_id is not None
+                and native.team_id != signature.team_id
+            ):
+                status = "invalid"
+            return ArtifactSignature(
+                status=status,
+                signer=native.signer,
+                timestamp=native.timestamp,
+                team_id=signature.team_id or native.team_id,
                 notarization_ticket=signature.ticket_present,
             )
         metadata = _rcodesign(source_path)

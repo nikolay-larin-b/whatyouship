@@ -5,6 +5,7 @@
 
 import struct
 import plistlib
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -147,11 +148,21 @@ def _make_embedded_signature(
     if hardened_runtime:
         flags |= 0x10000
     code_directory = struct.pack(
-        ">IIII",
+        ">9I4BI",
         0xFADE0C02,
-        16,
-        0x20400,
+        44,
+        0x20001,
         flags,
+        44,
+        0,
+        0,
+        0,
+        0,
+        32,
+        2,
+        0,
+        0,
+        0,
     )
     entries = [(0, code_directory)]
     if entitlements is not None:
@@ -181,6 +192,9 @@ def _mock_slice(
         tuple[str, lief.MachO.LoadCommand.TYPE], ...
     ] = (),
     runtime_search_paths: tuple[str, ...] = (),
+    *,
+    data_offset: int | None = None,
+    fat_offset: int | None = None,
 ) -> SimpleNamespace:
     """Build the Mach-O slice interface used by the inspector.
 
@@ -189,19 +203,76 @@ def _mock_slice(
     :param signature: Embedded signature payload, or ``None``.
     :param dependencies: Library names and load-command types.
     :param runtime_search_paths: Runtime search paths.
+    :param data_offset: Optional slice-relative signature offset.
+    :param fat_offset: Optional slice offset in a universal file.
     :returns: Minimal parsed-slice replacement.
     """
-    code_signature = (
-        None if signature is None else SimpleNamespace(content=signature)
+    code_signature = None if signature is None else SimpleNamespace(
+        content=signature,
+        data_offset=data_offset,
     )
     return SimpleNamespace(
         header=SimpleNamespace(cpu_type=cpu_type, file_type=file_type),
         code_signature=code_signature,
+        fat_offset=fat_offset,
         libraries=[
             SimpleNamespace(name=name, command=command)
             for name, command in dependencies
         ],
         rpaths=[SimpleNamespace(path=path) for path in runtime_search_paths],
+    )
+
+
+def _make_verifiable_signature(
+    signed_content: bytes,
+    signature_type: str,
+    team_id: str = "TEAM123456",
+) -> bytes:
+    """Create a signature with a valid SHA-256 code-slot digest.
+
+    :param signed_content: Slice bytes covered by the CodeDirectory.
+    :param signature_type: ``ad-hoc`` or ``certificate``.
+    :param team_id: Team identifier embedded in the CodeDirectory.
+    :returns: Serialized embedded signature payload.
+    """
+    identifier = b"com.example.sample\x00"
+    team = team_id.encode("utf-8") + b"\x00"
+    hash_offset = 52 + len(identifier) + len(team)
+    flags = 0x2 if signature_type == "ad-hoc" else 0
+    code_directory = struct.pack(
+        ">9I4BIII",
+        0xFADE0C02,
+        hash_offset + 32,
+        0x20200,
+        flags,
+        hash_offset,
+        52,
+        0,
+        1,
+        len(signed_content),
+        32,
+        2,
+        0,
+        12,
+        0,
+        0,
+        52 + len(identifier),
+    )
+    code_directory += identifier + team + hashlib.sha256(signed_content).digest()
+    entries = [(0, code_directory)]
+    if signature_type == "certificate":
+        entries.append((0x10000, struct.pack(">II", 0xFADE0B01, 9) + b"\x30"))
+    offset = 12 + 8 * len(entries)
+    indexes = []
+    blobs = []
+    for slot, blob in entries:
+        indexes.append(struct.pack(">II", slot, offset))
+        blobs.append(blob)
+        offset += len(blob)
+    return (
+        struct.pack(">III", 0xFADE0CC0, offset, len(entries))
+        + b"".join(indexes)
+        + b"".join(blobs)
     )
 
 
@@ -354,15 +425,27 @@ class MachOInspectorTests(unittest.TestCase):
     def test_classifies_ad_hoc_and_certificate_signatures(self) -> None:
         """Distinguish ad hoc CodeDirectory flags from CMS signatures."""
         for signature_type in ("ad-hoc", "certificate"):
-            with self.subTest(signature_type=signature_type), patch(
-                "whatyouship.binary.macho.lief.MachO.parse",
-                return_value=[
-                    _mock_slice(
-                        lief.MachO.Header.CPU_TYPE.ARM64,
-                        lief.MachO.Header.FILE_TYPE.EXECUTE,
-                        _make_embedded_signature(signature_type),
-                    )
-                ],
+            with (
+                self.subTest(signature_type=signature_type),
+                patch(
+                    "whatyouship.binary.macho.lief.MachO.parse",
+                    return_value=[
+                        _mock_slice(
+                            lief.MachO.Header.CPU_TYPE.ARM64,
+                            lief.MachO.Header.FILE_TYPE.EXECUTE,
+                            _make_embedded_signature(signature_type),
+                        )
+                    ],
+                ),
+                patch(
+                    "whatyouship.binary.macho._cms_signature",
+                    return_value=SimpleNamespace(
+                        valid=None,
+                        trusted=None,
+                        signer=None,
+                        timestamp=None,
+                    ),
+                ),
             ):
                 metadata = MachOInspector().inspect(
                     _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
@@ -372,6 +455,83 @@ class MachOInspectorTests(unittest.TestCase):
             self.assertTrue(metadata.signature.present)
             self.assertEqual(metadata.signature.signature_type, signature_type)
             self.assertIsNone(metadata.signature.valid)
+
+    def test_validates_ad_hoc_code_directory_page_hashes(self) -> None:
+        """Validate signed ranges without relying on native macOS services."""
+        payload = _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+        signature = _make_verifiable_signature(payload, "ad-hoc")
+        binary = _mock_slice(
+            lief.MachO.Header.CPU_TYPE.ARM64,
+            lief.MachO.Header.FILE_TYPE.EXECUTE,
+            signature,
+            data_offset=len(payload),
+            fat_offset=0,
+        )
+        with patch(
+            "whatyouship.binary.macho.lief.MachO.parse",
+            return_value=[binary],
+        ):
+            valid = MachOInspector().inspect(payload)
+            invalid = MachOInspector().inspect(payload[:-1] + b"\x01")
+
+        self.assertIsNotNone(valid)
+        self.assertTrue(valid.signature.valid)
+        self.assertFalse(valid.signature.trusted)
+        self.assertEqual(valid.signature.team_id, "TEAM123456")
+        self.assertIsNotNone(invalid)
+        self.assertFalse(invalid.signature.valid)
+
+    def test_reads_native_certificate_verification_metadata(self) -> None:
+        """Combine static hashes with native CMS and trust verification."""
+        payload = _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+        signature = _make_verifiable_signature(payload, "certificate")
+        binary = _mock_slice(
+            lief.MachO.Header.CPU_TYPE.ARM64,
+            lief.MachO.Header.FILE_TYPE.EXECUTE,
+            signature,
+            data_offset=len(payload),
+            fat_offset=0,
+        )
+        native = SimpleNamespace(
+            valid=True,
+            trusted=True,
+            signer="Developer ID Application: Example",
+            timestamp=True,
+            team_id="TEAM123456",
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "application"
+            path.write_bytes(payload)
+            with (
+                patch(
+                    "whatyouship.binary.macho.lief.MachO.parse",
+                    return_value=[binary],
+                ),
+                patch(
+                    "whatyouship.binary.macho._native_signature",
+                    return_value=native,
+                ),
+                patch(
+                    "whatyouship.binary.macho._cms_signature",
+                    return_value=SimpleNamespace(
+                        valid=True,
+                        trusted=True,
+                        signer="Developer ID Application: Example",
+                        timestamp=True,
+                    ),
+                ),
+            ):
+                metadata = MachOInspector().inspect(path)
+
+        self.assertIsNotNone(metadata)
+        self.assertTrue(metadata.signature.valid)
+        self.assertTrue(metadata.signature.trusted)
+        self.assertEqual(
+            metadata.signature.signer,
+            "Developer ID Application: Example",
+        )
+        self.assertTrue(metadata.signature.timestamp)
+        self.assertEqual(metadata.signature.team_id, "TEAM123456")
 
     def test_reads_hardened_runtime_and_embedded_entitlements(self) -> None:
         """Extract release-signing metadata without invoking macOS tools."""

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from whatyouship.inspectors.dmg_signature import DmgSignatureInspector
@@ -175,7 +176,7 @@ class DmgSignatureInspectorTests(unittest.TestCase):
         self.source.write_bytes(payload)
         with patch(
             "whatyouship.inspectors.dmg_signature.shutil.which",
-            side_effect=["rcodesign", None],
+            side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
         ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run"
         ) as run:
@@ -223,6 +224,77 @@ class DmgSignatureInspectorTests(unittest.TestCase):
         self.assertEqual(signature.team_id, "TEAM123456")
         self.assertTrue(signature.notarization_ticket)
 
+    def test_uses_native_codesign_before_cross_platform_fallback(self) -> None:
+        """Prefer native integrity and Apple-anchor checks on macOS."""
+        payload, _ = _signed_dmg()
+        self.source.write_bytes(payload)
+        display = """Authority=Developer ID Application: Example (TEAM123456)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+Timestamp=29 Sep 2026 at 01:50:28
+TeamIdentifier=TEAM123456
+"""
+        results = [
+            SimpleNamespace(returncode=0, stdout="", stderr="valid on disk"),
+            SimpleNamespace(returncode=0, stdout="", stderr="requirement satisfied"),
+            SimpleNamespace(returncode=0, stdout="", stderr=display),
+        ]
+        with patch(
+            "whatyouship.inspectors.dmg_signature.shutil.which",
+            side_effect=lambda name: "codesign" if name == "codesign" else None,
+        ), patch(
+            "whatyouship.inspectors.dmg_signature.subprocess.run",
+            side_effect=results,
+        ) as run:
+            signature = DmgSignatureInspector().inspect(self.source)
+
+        self.assertEqual(signature.status, "valid")
+        self.assertEqual(
+            signature.signer,
+            "Developer ID Application: Example (TEAM123456)",
+        )
+        self.assertEqual(signature.team_id, "TEAM123456")
+        self.assertEqual(
+            signature.timestamp,
+            datetime(2026, 9, 29, 1, 50, 28, tzinfo=timezone.utc),
+        )
+        self.assertTrue(signature.notarization_ticket)
+        self.assertEqual(run.call_count, 3)
+        self.assertIn("--verify", run.call_args_list[0].args[0])
+        self.assertIn("=anchor apple generic", run.call_args_list[1].args[0])
+        self.assertIn("--display", run.call_args_list[2].args[0])
+
+    def test_native_codesign_distinguishes_untrusted_and_invalid(self) -> None:
+        """Separate Apple-anchor failure from damaged signed content."""
+        payload, _ = _signed_dmg()
+        self.source.write_bytes(payload)
+        for integrity_code, trust_code, expected in (
+            (0, 1, "untrusted"),
+            (1, 1, "invalid"),
+        ):
+            with self.subTest(expected=expected), patch(
+                "whatyouship.inspectors.dmg_signature.shutil.which",
+                side_effect=lambda name: "codesign" if name == "codesign" else None,
+            ), patch(
+                "whatyouship.inspectors.dmg_signature.subprocess.run",
+                side_effect=[
+                    SimpleNamespace(
+                        returncode=integrity_code,
+                        stdout="",
+                        stderr="",
+                    ),
+                    SimpleNamespace(
+                        returncode=trust_code,
+                        stdout="",
+                        stderr="",
+                    ),
+                    SimpleNamespace(returncode=0, stdout="", stderr=""),
+                ],
+            ):
+                signature = DmgSignatureInspector().inspect(self.source)
+
+            self.assertEqual(signature.status, expected)
+
     def test_rejects_modified_signed_content_before_cms_verification(self) -> None:
         """Report a CodeDirectory content digest mismatch as invalid."""
         payload, _ = _signed_dmg()
@@ -241,7 +313,7 @@ class DmgSignatureInspectorTests(unittest.TestCase):
         self.source.write_bytes(payload)
         with patch(
             "whatyouship.inspectors.dmg_signature.shutil.which",
-            return_value="rcodesign",
+            side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
         ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run"
         ) as run:
@@ -258,7 +330,7 @@ class DmgSignatureInspectorTests(unittest.TestCase):
         self.source.write_bytes(payload)
         with patch(
             "whatyouship.inspectors.dmg_signature.shutil.which",
-            return_value="rcodesign",
+            side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
         ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run"
         ) as run:

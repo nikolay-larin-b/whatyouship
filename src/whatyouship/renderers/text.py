@@ -172,10 +172,16 @@ def _render_inspect(report: InspectReport) -> str:
                         details.append(f"Type: {signature.signature_type}")
                     if signature.signer is not None:
                         details.append(f"Signer: {signature.signer}")
+                    if signature.trusted is not None:
+                        details.append(
+                            f"Trust: {'trusted' if signature.trusted else 'untrusted'}"
+                        )
                     if signature.timestamp is not None:
                         details.append(
                             f"Timestamp: {'present' if signature.timestamp else 'absent'}"
                         )
+                    if signature.team_id is not None:
+                        details.append(f"Team ID: {signature.team_id}")
                     lines.append("  Signature: " + " | ".join(details))
                 if signature.hardened_runtime is not None:
                     state = "enabled" if signature.hardened_runtime else "disabled"

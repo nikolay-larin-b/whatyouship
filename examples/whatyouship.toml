@@ -20,6 +20,14 @@ extensions = [
 enabled = true
 severity = "warning" # Report unsigned executables and libraries as warnings.
 
+[rules.untrusted-binary-signature]
+enabled = true
+severity = "warning" # Report binary signatures whose signer is not trusted.
+
+[rules.invalid-binary-signature]
+enabled = true
+severity = "error" # Report cryptographically invalid binary signatures.
+
 [rules.invalid-app-bundle]
 enabled = true
 severity = "error" # Report malformed macOS application bundles.

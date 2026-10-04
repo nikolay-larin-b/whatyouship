@@ -63,6 +63,7 @@ Current checks and comparisons include:
 
 * suspicious build artifacts accidentally included in a release;
 * unsigned executables and libraries;
+* untrusted and cryptographically invalid binary signatures;
 * untrusted signers and invalid artifact signatures where platform verification is available;
 * inconsistent MSI installation scope;
 * DMG releases without an embedded software license agreement;
@@ -84,7 +85,9 @@ the macOS deployment target, dynamic library dependencies, and runtime search
 paths from Mach-O load commands. Embedded signatures also expose the Hardened
 Runtime flag and XML entitlements. `lint` treats an enabled
 `com.apple.security.get-task-allow` entitlement as an error. Cryptographic
-validity of Mach-O signatures is not currently checked.
+verification checks the signed ranges and embedded special slots in every
+architecture slice, then verifies certificate-backed CMS signatures. On macOS,
+the signing identity is also evaluated against the system trust roots.
 
 For macOS application bundles in directories, ZIP archives, and DMG images,
 WhatYouShip reads XML and binary `Contents/Info.plist` files without using
@@ -201,11 +204,12 @@ Extended attributes, alternate streams, and resource forks are not represented.
 DMG container signatures are inspected independently from their files on every
 platform. WhatYouShip always detects unsigned images, verifies CodeDirectory
 content and trailer digests, and reports the Team ID and presence of a stapled
-notarization ticket. If `rcodesign` is available in `PATH`, it also verifies the
-CMS signature and reports the signer and timestamp. A signature with valid
-digests and CMS cryptography that does not chain to an Apple root is reported as
-untrusted. Current Gatekeeper policy and online notarization status are not
-evaluated.
+notarization ticket. On macOS, the system `codesign` command verifies CMS
+integrity and Apple trust and reports the signer and timestamp. On other
+platforms, `rcodesign` provides the same metadata when available in `PATH`.
+A signature with valid digests and CMS cryptography that does not chain to an
+Apple root is reported as untrusted. Current Gatekeeper policy and online
+notarization status are not evaluated.
 
 NSIS installers require `7z` or `7zz` from 7-Zip to be available in `PATH`.
 WhatYouShip inspects the extracted payload; extracted paths are not an exact

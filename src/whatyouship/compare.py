@@ -64,6 +64,8 @@ def _signature_state(binary: BinaryMetadata) -> str:
         return "unknown"
     if not signature.present:
         return "unsigned"
+    if signature.valid is True and signature.trusted is False:
+        return "signed (valid, untrusted)"
     if signature.valid is True:
         return "signed (valid)"
     if signature.valid is False:
@@ -221,6 +223,11 @@ def _binary_differences(
             "Signer",
             old.signature.signer if old.signature is not None else None,
             new.signature.signer if new.signature is not None else None,
+        ),
+        (
+            "Team ID",
+            old.signature.team_id if old.signature is not None else None,
+            new.signature.team_id if new.signature is not None else None,
         ),
     )
     if old.kind != new.kind and {old.kind, new.kind} == {"executable", "library"}:

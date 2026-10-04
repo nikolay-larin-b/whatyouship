@@ -39,8 +39,10 @@ def _file_data(file: ArtifactFile) -> dict[str, Any]:
             "signature": None if signature is None else {
                 "present": signature.present,
                 "valid": signature.valid,
+                "trusted": signature.trusted,
                 "signer": signature.signer,
                 "timestamp": signature.timestamp,
+                "team_id": signature.team_id,
                 "type": signature.signature_type,
                 "hardened_runtime": signature.hardened_runtime,
                 "entitlements": [

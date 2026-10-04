@@ -16,7 +16,8 @@ INSPECT_COLUMNS = (
     "relative_path", "size_bytes", "sha256", "binary_format",
     "architecture", "binary_kind", "file_version", "product_version",
     "minimum_os_version", "dependencies", "runtime_search_paths",
-    "signature_present", "signature_valid", "signature_signer", "signature_timestamp",
+    "signature_present", "signature_valid", "signature_trusted", "signature_signer",
+    "signature_timestamp", "signature_team_id",
     "signature_type", "hardened_runtime", "entitlements",
 )
 LINT_COLUMNS = ("category", "rule_id", "severity", "relative_path", "message")
@@ -76,8 +77,10 @@ def render_csv(report: Report) -> str:
                 if binary is not None else "",
                 _boolean(signature.present) if signature is not None else "",
                 _boolean(signature.valid) if signature is not None else "",
+                _boolean(signature.trusted) if signature is not None else "",
                 signature.signer if signature is not None else "",
                 _boolean(signature.timestamp) if signature is not None else "",
+                signature.team_id if signature is not None else "",
                 signature.signature_type if signature is not None else "",
                 _boolean(signature.hardened_runtime)
                 if signature is not None else "",

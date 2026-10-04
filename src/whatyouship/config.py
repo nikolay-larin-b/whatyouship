@@ -15,8 +15,10 @@ from whatyouship.rules.debug_entitlement import DebugEntitlementRule
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_app_bundle import InvalidAppBundleRule
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
+from whatyouship.rules.invalid_binary_signature import InvalidBinarySignatureRule
 from whatyouship.rules.missing_license_agreement import MissingLicenseAgreementRule
 from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
+from whatyouship.rules.untrusted_binary_signature import UntrustedBinarySignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
 
@@ -115,6 +117,8 @@ class LintConfiguration:
     :param app_bundle: Invalid application bundle rule settings.
     :param debug_entitlement: Debug entitlement rule settings.
     :param unsigned_binary: Unsigned binary rule settings.
+    :param untrusted_binary_signature: Untrusted binary signature settings.
+    :param invalid_binary_signature: Invalid binary signature rule settings.
     :param unsigned_artifact: Unsigned release artifact rule settings.
     :param untrusted_artifact_signature: Untrusted artifact signature settings.
     :param invalid_artifact_signature: Invalid artifact signature rule settings.
@@ -128,6 +132,12 @@ class LintConfiguration:
         default_factory=DebugEntitlementSettings
     )
     unsigned_binary: UnsignedBinarySettings = field(default_factory=UnsignedBinarySettings)
+    untrusted_binary_signature: ArtifactSignatureRuleSettings = field(
+        default_factory=ArtifactSignatureRuleSettings
+    )
+    invalid_binary_signature: ArtifactSignatureRuleSettings = field(
+        default_factory=lambda: ArtifactSignatureRuleSettings(severity="error")
+    )
     unsigned_artifact: ArtifactSignatureRuleSettings = field(
         default_factory=ArtifactSignatureRuleSettings
     )
@@ -167,6 +177,14 @@ class LintConfiguration:
             ))
         if self.unsigned_binary.enabled:
             rules.append(UnsignedBinaryRule(severity=self.unsigned_binary.severity))
+        if self.untrusted_binary_signature.enabled:
+            rules.append(UntrustedBinarySignatureRule(
+                severity=self.untrusted_binary_signature.severity
+            ))
+        if self.invalid_binary_signature.enabled:
+            rules.append(InvalidBinarySignatureRule(
+                severity=self.invalid_binary_signature.severity
+            ))
         if self.unsigned_artifact.enabled:
             rules.append(UnsignedArtifactRule(severity=self.unsigned_artifact.severity))
         if self.untrusted_artifact_signature.enabled:
@@ -276,6 +294,7 @@ def load_config(path: Path) -> LintConfiguration:
         raise ValueError("Configuration 'rules' must be a TOML table")
     unknown_rules = set(rules) - {
         "build-artifact-extension", "unsigned-binary", "unsigned-artifact",
+        "untrusted-binary-signature", "invalid-binary-signature",
         "untrusted-artifact-signature", "invalid-artifact-signature",
         "inconsistent-installation-scope", "missing-license-agreement",
         "invalid-app-bundle",
@@ -305,6 +324,17 @@ def load_config(path: Path) -> LintConfiguration:
         "unsigned-binary",
         rules.get("unsigned-binary", {}),
         {"enabled", "severity"},
+    )
+    untrusted_binary_enabled, untrusted_binary_severity, _ = _rule_settings(
+        "untrusted-binary-signature",
+        rules.get("untrusted-binary-signature", {}),
+        {"enabled", "severity"},
+    )
+    invalid_binary_enabled, invalid_binary_severity, _ = _rule_settings(
+        "invalid-binary-signature",
+        rules.get("invalid-binary-signature", {}),
+        {"enabled", "severity"},
+        "error",
     )
     artifact_enabled, artifact_severity, _ = _rule_settings(
         "unsigned-artifact", rules.get("unsigned-artifact", {}),
@@ -342,6 +372,12 @@ def load_config(path: Path) -> LintConfiguration:
             debug_enabled, debug_severity
         ),
         unsigned_binary=UnsignedBinarySettings(unsigned_enabled, unsigned_severity),
+        untrusted_binary_signature=ArtifactSignatureRuleSettings(
+            untrusted_binary_enabled, untrusted_binary_severity
+        ),
+        invalid_binary_signature=ArtifactSignatureRuleSettings(
+            invalid_binary_enabled, invalid_binary_severity
+        ),
         unsigned_artifact=ArtifactSignatureRuleSettings(
             artifact_enabled, artifact_severity
         ),

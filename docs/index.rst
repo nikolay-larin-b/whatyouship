@@ -29,7 +29,10 @@ and runtime search paths. Embedded signatures also expose the Hardened Runtime
 flag and XML entitlements. ``lint`` reports an executable or library when any
 slice is unsigned and treats an enabled
 ``com.apple.security.get-task-allow`` entitlement as an error. Cryptographic
-validity of Mach-O signatures is not currently checked.
+verification checks the signed ranges and embedded special slots in every
+architecture slice, then verifies certificate-backed CMS signatures. On macOS,
+the signing identity is also evaluated against the system trust roots. Invalid
+binary signatures are errors by default, while untrusted signatures are warnings.
 
 For macOS application bundles in directories, ZIP archives, and DMG images,
 WhatYouShip reads XML and binary ``Contents/Info.plist`` files without using
@@ -99,10 +102,12 @@ Extended attributes, alternate streams, and resource forks are not represented.
 DMG container signatures are inspected independently from their files on every
 platform. WhatYouShip detects unsigned images, verifies CodeDirectory content
 and trailer digests, and reports the Team ID and presence of a stapled
-notarization ticket. If ``rcodesign`` is available in ``PATH``, it also verifies
-the CMS signature and reports the signer and timestamp. A cryptographically
-valid signature that does not chain to an Apple root is reported as untrusted.
-Current Gatekeeper policy and online notarization status are not evaluated.
+notarization ticket. On macOS, the system ``codesign`` command verifies CMS
+integrity and Apple trust and reports the signer and timestamp. On other
+platforms, ``rcodesign`` provides the same metadata when available in ``PATH``.
+A cryptographically valid signature that does not chain to an Apple root is
+reported as untrusted. Current Gatekeeper policy and online notarization status
+are not evaluated.
 
 NSIS installer ``.exe`` files are detected before extraction and require
 ``7z`` or ``7zz`` from 7-Zip in ``PATH``. With ``--cache``, their payloads are

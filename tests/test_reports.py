@@ -80,6 +80,8 @@ class ReportOutputTests(unittest.TestCase):
                         "CN=Publisher",
                         True,
                         "certificate",
+                        trusted=True,
+                        team_id="TEAM123456",
                     ),
                 ),
             )],
@@ -170,7 +172,9 @@ class ReportOutputTests(unittest.TestCase):
                 "runtime_search_paths": [],
                 "signature": {
                     "present": True, "valid": True,
+                    "trusted": True,
                     "signer": "CN=Publisher", "timestamp": True,
+                    "team_id": "TEAM123456",
                     "type": "certificate",
                     "hardened_runtime": None,
                     "entitlements": [],
