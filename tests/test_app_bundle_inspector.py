@@ -18,6 +18,7 @@ from whatyouship.lint import LintEngine
 from whatyouship.model import (
     ArtifactFile,
     ArtifactSignature,
+    ArtifactSymbolicLink,
     BinaryDependency,
     BinaryMetadata,
     SignatureMetadata,
@@ -375,6 +376,7 @@ class AppBundleInspectorTests(unittest.TestCase):
                         "executable",
                         dependencies=(
                             BinaryDependency("@rpath/libPresent.dylib"),
+                            BinaryDependency("@rpath/libVersioned.1.dylib"),
                             BinaryDependency("@rpath/libMissing.dylib"),
                             BinaryDependency(
                                 "@rpath/libOptional.dylib",
@@ -403,6 +405,12 @@ class AppBundleInspectorTests(unittest.TestCase):
                     ),
                 ),
                 ArtifactFile(
+                    framework_root / "libVersioned.2023.09.1.dylib",
+                    32,
+                    "d",
+                    BinaryMetadata("Mach-O", "arm64", "library"),
+                ),
+                ArtifactFile(
                     framework_binary,
                     32,
                     "c",
@@ -410,7 +418,16 @@ class AppBundleInspectorTests(unittest.TestCase):
                 ),
             ]
 
-            bundles = AppBundleInspector().inspect(root, files)
+            bundles = AppBundleInspector().inspect(
+                root,
+                files,
+                [
+                    ArtifactSymbolicLink(
+                        framework_root / "libVersioned.1.dylib",
+                        "libVersioned.2023.09.1.dylib",
+                    ),
+                ],
+            )
 
         dependency_issues = [
             issue

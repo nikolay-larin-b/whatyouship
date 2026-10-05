@@ -7,10 +7,16 @@ import plistlib
 import posixpath
 import re
 import stat
+from collections.abc import Iterable
 from pathlib import Path
 
 from whatyouship.inspectors.app_signature import AppSignatureInspector
-from whatyouship.model import AppBundleMetadata, ArtifactFile, BundleIssue
+from whatyouship.model import (
+    AppBundleMetadata,
+    ArtifactFile,
+    ArtifactSymbolicLink,
+    BundleIssue,
+)
 
 
 _STRING_KEYS = (
@@ -124,16 +130,55 @@ def _owned_by_bundle(path: Path, bundle: Path) -> bool:
     return not any(part.lower().endswith(".app") for part in relative.parts[:-1])
 
 
-def _dependency_exists(candidate: Path, files: set[Path]) -> bool:
+def _resolve_artifact_links(
+    path: Path, links: dict[Path, ArtifactSymbolicLink]
+) -> Path | None:
+    """Resolve symbolic links represented only as artifact metadata.
+
+    :param path: Artifact-relative path that may contain symbolic links.
+    :param links: Symbolic links keyed by artifact-relative path.
+    :returns: Resolved artifact-relative path, or ``None`` for an unsafe or
+        cyclic link chain.
+    """
+    current = path
+    visited: set[Path] = set()
+    while current not in visited:
+        visited.add(current)
+        for index in range(len(current.parts)):
+            link_path = Path(*current.parts[:index + 1])
+            link = links.get(link_path)
+            if link is None:
+                continue
+            if link.external or link.target.startswith("/"):
+                return None
+            target = _joined_artifact_path(link_path.parent, link.target)
+            if target is None:
+                return None
+            current = target.joinpath(*current.parts[index + 1:])
+            break
+        else:
+            return current
+    return None
+
+
+def _dependency_exists(
+    candidate: Path,
+    files: set[Path],
+    links: dict[Path, ArtifactSymbolicLink],
+) -> bool:
     """Check a dependency path, including omitted framework symlinks.
 
     :param candidate: Resolved artifact-relative dependency path.
     :param files: Regular files represented by the artifact backend.
+    :param links: Symbolic links represented by the artifact backend.
     :returns: Whether the dependency target is represented by a regular file.
     """
-    if candidate in files:
+    resolved = _resolve_artifact_links(candidate, links)
+    if resolved is None:
+        return False
+    if resolved in files:
         return True
-    parts = candidate.parts
+    parts = resolved.parts
     for index, part in enumerate(parts):
         if not part.lower().endswith(".framework"):
             continue
@@ -189,18 +234,21 @@ def _dynamic_dependency_issues(
     bundle: Path,
     executable_path: Path,
     files_by_path: dict[Path, ArtifactFile],
+    symbolic_links: Iterable[ArtifactSymbolicLink],
 ) -> list[BundleIssue]:
     """Find required bundle-relative Mach-O dependencies that are absent.
 
     :param bundle: Artifact-relative application bundle path.
     :param executable_path: Artifact path of the app's main executable.
     :param files_by_path: Analyzed files keyed by artifact-relative path.
+    :param symbolic_links: Symbolic links represented by the artifact backend.
     :returns: Missing dependency issues in stable path and name order.
     """
     executable_file = files_by_path[executable_path]
     if executable_file.binary is None:
         return []
     represented_files = set(files_by_path)
+    links_by_path = {link.relative_path: link for link in symbolic_links}
     runtime_search_directories = []
     for owner_path, artifact_file in sorted(files_by_path.items()):
         binary = artifact_file.binary
@@ -245,7 +293,7 @@ def _dynamic_dependency_issues(
                 if _inside_bundle(candidate, bundle)
             )
             if not candidates or any(
-                _dependency_exists(candidate, represented_files)
+                _dependency_exists(candidate, represented_files, links_by_path)
                 for candidate in candidates
             ):
                 continue
@@ -322,6 +370,7 @@ class AppBundleInspector:
         self,
         directory: Path,
         files: list[ArtifactFile],
+        symbolic_links: Iterable[ArtifactSymbolicLink] = (),
         *,
         validate_executable_permissions: bool = False,
     ) -> list[AppBundleMetadata]:
@@ -329,10 +378,12 @@ class AppBundleInspector:
 
         :param directory: Artifact tree root.
         :param files: Files already analyzed relative to ``directory``.
+        :param symbolic_links: Links already analyzed relative to ``directory``.
         :param validate_executable_permissions: Whether filesystem mode bits are
             authoritative and should be validated.
         :returns: Application bundles ordered by relative path.
         """
+        symbolic_links = tuple(symbolic_links)
         files_by_path = {file.relative_path: file for file in files}
         candidates = [
             path
@@ -346,6 +397,7 @@ class AppBundleInspector:
                 directory,
                 bundle,
                 files_by_path,
+                symbolic_links,
                 validate_executable_permissions,
             )
             for bundle in sorted(candidates)
@@ -356,6 +408,7 @@ class AppBundleInspector:
         directory: Path,
         bundle: Path,
         files_by_path: dict[Path, ArtifactFile],
+        symbolic_links: tuple[ArtifactSymbolicLink, ...],
         validate_executable_permissions: bool,
     ) -> AppBundleMetadata:
         """Inspect one application bundle.
@@ -363,6 +416,7 @@ class AppBundleInspector:
         :param directory: Artifact tree root.
         :param bundle: Application bundle directory.
         :param files_by_path: Analyzed files keyed by artifact-relative path.
+        :param symbolic_links: Links already analyzed relative to ``directory``.
         :param validate_executable_permissions: Whether to validate filesystem
             execute bits.
         :returns: Parsed metadata and structural issues.
@@ -489,6 +543,7 @@ class AppBundleInspector:
                 relative_path,
                 executable_path,
                 files_by_path,
+                symbolic_links,
             ))
 
         package_type = strings["CFBundlePackageType"]

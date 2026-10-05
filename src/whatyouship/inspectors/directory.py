@@ -77,6 +77,7 @@ class DirectoryInspector:
         bundles = AppBundleInspector().inspect(
             directory,
             files,
+            links_by_path.values(),
             validate_executable_permissions=validate_executable_permissions,
         )
         return ReleaseArtifact(
