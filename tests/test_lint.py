@@ -25,6 +25,10 @@ from whatyouship.rules.inconsistent_installation_scope import InconsistentInstal
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
 from whatyouship.rules.invalid_binary_signature import InvalidBinarySignatureRule
 from whatyouship.rules.missing_license_agreement import MissingLicenseAgreementRule
+from whatyouship.rules.runtime_search_paths import (
+    AbsoluteRuntimeSearchPathRule,
+    DeveloperRuntimeSearchPathRule,
+)
 from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
 from whatyouship.rules.untrusted_binary_signature import UntrustedBinarySignatureRule
 from whatyouship.rules.unsigned_artifact import UnsignedArtifactRule
@@ -273,6 +277,67 @@ class LintTests(unittest.TestCase):
             findings[0].identity,
             "entitlement:com.apple.security.get-task-allow",
         )
+
+    def test_runtime_search_path_rules_separate_developer_and_absolute_paths(
+        self,
+    ) -> None:
+        """Report high-confidence developer paths without duplicate warnings."""
+        binary = BinaryMetadata(
+            "Mach-O",
+            "arm64",
+            "library",
+            runtime_search_paths=(
+                "/Users/yibiaoli/working/jason_libs/rdkit",
+                "/private/var/folders/ab/build",
+                "/Library/Frameworks",
+                "@loader_path/../Frameworks",
+            ),
+        )
+        artifact = ReleaseArtifact(
+            Path("release.dmg"),
+            [ArtifactFile(Path("Sample.app/Contents/MacOS/sample"), 1, "0", binary)],
+        )
+
+        developer = DeveloperRuntimeSearchPathRule().check(artifact)
+        absolute = AbsoluteRuntimeSearchPathRule().check(artifact)
+
+        self.assertEqual(
+            [(finding.severity, finding.identity) for finding in developer],
+            [
+                (
+                    "error",
+                    "runtime-search-path:/Users/yibiaoli/working/jason_libs/rdkit",
+                ),
+                (
+                    "error",
+                    "runtime-search-path:/private/var/folders/ab/build",
+                ),
+            ],
+        )
+        self.assertEqual(
+            [(finding.severity, finding.identity) for finding in absolute],
+            [("warning", "runtime-search-path:/Library/Frameworks")],
+        )
+
+    def test_runtime_search_path_rules_ignore_non_absolute_paths(self) -> None:
+        """Accept relocatable loader-relative runtime search paths."""
+        binary = BinaryMetadata(
+            "Mach-O",
+            "arm64",
+            "executable",
+            runtime_search_paths=(
+                "@executable_path/../Frameworks",
+                "@loader_path",
+                "relative/lib",
+            ),
+        )
+        artifact = ReleaseArtifact(
+            Path("release.dmg"),
+            [ArtifactFile(Path("application"), 1, "0", binary)],
+        )
+
+        self.assertEqual(DeveloperRuntimeSearchPathRule().check(artifact), [])
+        self.assertEqual(AbsoluteRuntimeSearchPathRule().check(artifact), [])
 
     def test_unsigned_binary_rule_uses_binary_type(self) -> None:
         """Flag unsigned executables and libraries regardless of filename."""

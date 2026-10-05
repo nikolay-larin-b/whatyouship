@@ -18,6 +18,10 @@ from whatyouship.rules.invalid_app_bundle_signature import InvalidAppBundleSigna
 from whatyouship.rules.invalid_artifact_signature import InvalidArtifactSignatureRule
 from whatyouship.rules.invalid_binary_signature import InvalidBinarySignatureRule
 from whatyouship.rules.missing_license_agreement import MissingLicenseAgreementRule
+from whatyouship.rules.runtime_search_paths import (
+    AbsoluteRuntimeSearchPathRule,
+    DeveloperRuntimeSearchPathRule,
+)
 from whatyouship.rules.untrusted_artifact_signature import UntrustedArtifactSignatureRule
 from whatyouship.rules.untrusted_app_bundle_signature import UntrustedAppBundleSignatureRule
 from whatyouship.rules.untrusted_binary_signature import UntrustedBinarySignatureRule
@@ -77,6 +81,18 @@ class DebugEntitlementSettings:
 
 
 @dataclass(frozen=True)
+class RuntimeSearchPathSettings:
+    """Configure a runtime search path rule.
+
+    :param enabled: Whether to run the rule.
+    :param severity: Severity assigned to its findings.
+    """
+
+    enabled: bool = True
+    severity: Severity = "warning"
+
+
+@dataclass(frozen=True)
 class ArtifactSignatureRuleSettings:
     """Configure an artifact or application signature rule.
 
@@ -122,6 +138,8 @@ class LintConfiguration:
     :param untrusted_app_bundle_signature: Untrusted bundle signature settings.
     :param invalid_app_bundle_signature: Invalid bundle signature settings.
     :param debug_entitlement: Debug entitlement rule settings.
+    :param developer_runtime_search_path: Developer search path rule settings.
+    :param absolute_runtime_search_path: Absolute search path rule settings.
     :param unsigned_binary: Unsigned binary rule settings.
     :param untrusted_binary_signature: Untrusted binary signature settings.
     :param invalid_binary_signature: Invalid binary signature rule settings.
@@ -145,6 +163,12 @@ class LintConfiguration:
     )
     debug_entitlement: DebugEntitlementSettings = field(
         default_factory=DebugEntitlementSettings
+    )
+    developer_runtime_search_path: RuntimeSearchPathSettings = field(
+        default_factory=lambda: RuntimeSearchPathSettings(severity="error")
+    )
+    absolute_runtime_search_path: RuntimeSearchPathSettings = field(
+        default_factory=RuntimeSearchPathSettings
     )
     unsigned_binary: UnsignedBinarySettings = field(default_factory=UnsignedBinarySettings)
     untrusted_binary_signature: ArtifactSignatureRuleSettings = field(
@@ -201,6 +225,14 @@ class LintConfiguration:
         if self.debug_entitlement.enabled:
             rules.append(DebugEntitlementRule(
                 severity=self.debug_entitlement.severity
+            ))
+        if self.developer_runtime_search_path.enabled:
+            rules.append(DeveloperRuntimeSearchPathRule(
+                severity=self.developer_runtime_search_path.severity
+            ))
+        if self.absolute_runtime_search_path.enabled:
+            rules.append(AbsoluteRuntimeSearchPathRule(
+                severity=self.absolute_runtime_search_path.severity
             ))
         if self.unsigned_binary.enabled:
             rules.append(UnsignedBinaryRule(severity=self.unsigned_binary.severity))
@@ -328,6 +360,7 @@ def load_config(path: Path) -> LintConfiguration:
         "unsigned-app-bundle", "untrusted-app-bundle-signature",
         "invalid-app-bundle-signature",
         "debug-entitlement",
+        "developer-runtime-search-path", "absolute-runtime-search-path",
     }
     if unknown_rules:
         raise ValueError(f"Unknown rule ID: {', '.join(sorted(unknown_rules))}")
@@ -364,6 +397,17 @@ def load_config(path: Path) -> LintConfiguration:
         rules.get("debug-entitlement", {}),
         {"enabled", "severity"},
         "error",
+    )
+    developer_path_enabled, developer_path_severity, _ = _rule_settings(
+        "developer-runtime-search-path",
+        rules.get("developer-runtime-search-path", {}),
+        {"enabled", "severity"},
+        "error",
+    )
+    absolute_path_enabled, absolute_path_severity, _ = _rule_settings(
+        "absolute-runtime-search-path",
+        rules.get("absolute-runtime-search-path", {}),
+        {"enabled", "severity"},
     )
     unsigned_enabled, unsigned_severity, _ = _rule_settings(
         "unsigned-binary",
@@ -424,6 +468,12 @@ def load_config(path: Path) -> LintConfiguration:
         ),
         debug_entitlement=DebugEntitlementSettings(
             debug_enabled, debug_severity
+        ),
+        developer_runtime_search_path=RuntimeSearchPathSettings(
+            developer_path_enabled, developer_path_severity
+        ),
+        absolute_runtime_search_path=RuntimeSearchPathSettings(
+            absolute_path_enabled, absolute_path_severity
         ),
         unsigned_binary=UnsignedBinarySettings(unsigned_enabled, unsigned_severity),
         untrusted_binary_signature=ArtifactSignatureRuleSettings(

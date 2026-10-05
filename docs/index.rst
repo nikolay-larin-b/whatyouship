@@ -28,7 +28,9 @@ modern and legacy Mach-O load commands, along with dynamic library dependencies
 and runtime search paths. Embedded signatures also expose the Hardened Runtime
 flag and XML entitlements. ``lint`` reports an executable or library when any
 slice is unsigned and treats an enabled
-``com.apple.security.get-task-allow`` entitlement as an error. Cryptographic
+``com.apple.security.get-task-allow`` entitlement as an error. Runtime search
+paths below developer home or temporary directories are errors by default;
+other absolute runtime search paths are warnings. Cryptographic
 verification checks the signed ranges and embedded special slots in every
 architecture slice, then verifies certificate-backed CMS signatures. On macOS,
 the signing identity is also evaluated against the system trust roots. Invalid

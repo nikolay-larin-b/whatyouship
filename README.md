@@ -72,6 +72,7 @@ Current checks and comparisons include:
 * unsigned, untrusted, or invalid macOS application bundle signatures;
 * invalid application resource seals and nested code signed by another team;
 * missing required Mach-O libraries expected inside an application bundle;
+* runtime search paths tied to developer machines or absolute filesystem locations;
 * release Mach-O binaries with debugger attachment enabled;
 * added, removed, and changed files between releases;
 * binary architecture changes;
@@ -86,7 +87,9 @@ every architecture slice has an ad hoc or certificate signature. It also reads
 the macOS deployment target, dynamic library dependencies, and runtime search
 paths from Mach-O load commands. Embedded signatures also expose the Hardened
 Runtime flag and XML entitlements. `lint` treats an enabled
-`com.apple.security.get-task-allow` entitlement as an error. Cryptographic
+`com.apple.security.get-task-allow` entitlement as an error. Runtime search
+paths below developer home or temporary directories are errors by default;
+other absolute runtime search paths are warnings. Cryptographic
 verification checks the signed ranges and embedded special slots in every
 architecture slice, then verifies certificate-backed CMS signatures. On macOS,
 the signing identity is also evaluated against the system trust roots.

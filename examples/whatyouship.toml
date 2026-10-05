@@ -48,6 +48,14 @@ severity = "error" # Report invalid bundle signatures and resource seals.
 enabled = true
 severity = "error" # Report release binaries that allow debugger attachment.
 
+[rules.developer-runtime-search-path]
+enabled = true
+severity = "error" # Report search paths tied to developer or temporary directories.
+
+[rules.absolute-runtime-search-path]
+enabled = true
+severity = "warning" # Report other absolute runtime search paths.
+
 [rules.unsigned-artifact]
 enabled = true
 severity = "warning" # Report missing release artifact signatures.
