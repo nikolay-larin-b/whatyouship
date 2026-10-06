@@ -363,8 +363,8 @@ class ReportOutputTests(unittest.TestCase):
         self.assertIn('"name,""quoted"".txt"', raw)
         self.assertNotIn(str(artifact.source_path), raw)
 
-    def test_inspect_csv_includes_macho_minimum_os_version(self) -> None:
-        """Serialize the Mach-O deployment target in file-oriented CSV output."""
+    def test_inspect_csv_includes_macho_metadata(self) -> None:
+        """Serialize Mach-O versions and loader metadata in CSV output."""
         artifact = ReleaseArtifact(Path("release.dmg"), [ArtifactFile(
             Path("Sample.app/Contents/MacOS/sample"),
             32,
@@ -372,7 +372,8 @@ class ReportOutputTests(unittest.TestCase):
             BinaryMetadata(
                 "Mach-O",
                 "arm64",
-                "executable",
+                "library",
+                file_version="6.8.4",
                 signature=SignatureMetadata(
                     True,
                     hardened_runtime=True,
@@ -391,6 +392,7 @@ class ReportOutputTests(unittest.TestCase):
             render_csv(InspectReport(artifact))
         )))
 
+        self.assertEqual(rows[0]["file_version"], "6.8.4")
         self.assertEqual(rows[0]["minimum_os_version"], "13.0")
         self.assertEqual(
             json.loads(rows[0]["dependencies"]),

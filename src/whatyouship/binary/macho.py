@@ -951,6 +951,34 @@ def _minimum_os_version(slices: list[lief.MachO.Binary]) -> str | None:
     return _format_version(max(version for version in versions if version is not None))
 
 
+def _current_library_version(slices: list[lief.MachO.Binary]) -> str | None:
+    """Read one consistent ``LC_ID_DYLIB`` current version.
+
+    Every architecture slice must identify itself as a dynamic library and
+    carry the same version. Reporting no version is safer than selecting one
+    value from an internally inconsistent universal binary.
+
+    :param slices: Parsed slices from one thin or universal Mach-O file.
+    :returns: Dotted current-library version, or ``None`` when unavailable or
+        inconsistent.
+    """
+    versions: list[tuple[int, ...]] = []
+    for binary in slices:
+        identifiers = [
+            library
+            for library in binary.libraries
+            if library.command == lief.MachO.LoadCommand.TYPE.ID_DYLIB
+        ]
+        if len(identifiers) != 1:
+            return None
+        versions.append(
+            tuple(int(component) for component in identifiers[0].current_version)
+        )
+    if not versions or any(version != versions[0] for version in versions[1:]):
+        return None
+    return ".".join(str(component) for component in versions[0])
+
+
 def _dependencies(slices: list[lief.MachO.Binary]) -> tuple[BinaryDependency, ...]:
     """Combine imported dynamic libraries across architecture slices.
 
@@ -1029,6 +1057,10 @@ class MachOInspector:
             except Exception:
                 minimum_os_version = None
             try:
+                file_version = _current_library_version(slices)
+            except Exception:
+                file_version = None
+            try:
                 dependencies = _dependencies(slices)
                 runtime_search_paths = _runtime_search_paths(slices)
             except Exception:
@@ -1038,6 +1070,7 @@ class MachOInspector:
                 format="Mach-O",
                 architecture="+".join(sorted(architectures)),
                 kind=kinds.pop() if len(kinds) == 1 else "other",
+                file_version=file_version,
                 signature=signature,
                 minimum_os_version=minimum_os_version,
                 dependencies=dependencies,

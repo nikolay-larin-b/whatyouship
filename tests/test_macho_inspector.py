@@ -43,6 +43,7 @@ def _make_thin_macho(
     minimum_os_version: tuple[int, int, int] | None = None,
     *,
     legacy_version_command: bool = False,
+    current_version: tuple[int, int, int] | None = None,
 ) -> bytes:
     """Create a minimal 64-bit little-endian Mach-O payload.
 
@@ -50,22 +51,23 @@ def _make_thin_macho(
     :param file_type: Mach-O file type value.
     :param minimum_os_version: Optional macOS deployment target.
     :param legacy_version_command: Whether to use ``LC_VERSION_MIN_MACOSX``.
+    :param current_version: Optional ``LC_ID_DYLIB`` current version.
     :returns: Serialized Mach-O header.
     """
     cpu_subtype = 3 if cpu_type == _CPU_X86_64 else 0
-    command = b""
+    commands = []
     if minimum_os_version is not None:
         encoded_version = _packed_version(minimum_os_version)
         if legacy_version_command:
-            command = struct.pack(
+            commands.append(struct.pack(
                 "<IIII",
                 0x24,
                 16,
                 encoded_version,
                 _packed_version((14, 4, 0)),
-            )
+            ))
         else:
-            command = struct.pack(
+            commands.append(struct.pack(
                 "<IIIIII",
                 0x32,
                 24,
@@ -73,19 +75,36 @@ def _make_thin_macho(
                 encoded_version,
                 _packed_version((14, 4, 0)),
                 0,
+            ))
+    if current_version is not None:
+        install_name = b"@rpath/Sample.framework/Versions/A/Sample\x00"
+        command_size = (24 + len(install_name) + 7) & ~7
+        commands.append(
+            struct.pack(
+                "<IIIIII",
+                0xD,
+                command_size,
+                24,
+                0,
+                _packed_version(current_version),
+                _packed_version((6, 0, 0)),
             )
+            + install_name
+            + bytes(command_size - 24 - len(install_name))
+        )
+    load_commands = b"".join(commands)
     header = struct.pack(
         "<IIIIIIII",
         0xFEEDFACF,
         cpu_type,
         cpu_subtype,
         file_type,
-        1 if command else 0,
-        len(command),
+        len(commands),
+        len(load_commands),
         0,
         0,
     )
-    return header + command
+    return header + load_commands
 
 
 def _make_universal_macho(
@@ -125,6 +144,43 @@ def _make_universal_macho(
             ),
         )
     )
+    payload = header + architectures
+    payload += bytes(x86_64_offset - len(payload)) + x86_64
+    payload += bytes(arm64_offset - len(payload)) + arm64
+    return payload
+
+
+def _make_universal_dylib(
+    x86_64_version: tuple[int, int, int],
+    arm64_version: tuple[int, int, int],
+) -> bytes:
+    """Create a minimal universal dynamic library with per-slice versions.
+
+    :param x86_64_version: x86-64 current-library version.
+    :param arm64_version: arm64 current-library version.
+    :returns: Serialized fat Mach-O payload.
+    """
+    x86_64 = _make_thin_macho(
+        _CPU_X86_64,
+        _FILE_DYLIB,
+        current_version=x86_64_version,
+    )
+    arm64 = _make_thin_macho(
+        _CPU_ARM64,
+        _FILE_DYLIB,
+        current_version=arm64_version,
+    )
+    x86_64_offset = 0x100
+    arm64_offset = 0x200
+    header = struct.pack(">II", 0xCAFEBABE, 2)
+    architectures = b"".join((
+        struct.pack(
+            ">IIIII", _CPU_X86_64, 3, x86_64_offset, len(x86_64), 8
+        ),
+        struct.pack(
+            ">IIIII", _CPU_ARM64, 0, arm64_offset, len(arm64), 8
+        ),
+    ))
     payload = header + architectures
     payload += bytes(x86_64_offset - len(payload)) + x86_64
     payload += bytes(arm64_offset - len(payload)) + arm64
@@ -321,6 +377,32 @@ class MachOInspectorTests(unittest.TestCase):
         self.assertIsNotNone(other)
         self.assertEqual(library.kind, "library")
         self.assertEqual(other.kind, "other")
+
+    def test_reads_dynamic_library_current_version(self) -> None:
+        """Expose the exact version encoded in ``LC_ID_DYLIB``."""
+        metadata = MachOInspector().inspect(_make_thin_macho(
+            _CPU_ARM64,
+            _FILE_DYLIB,
+            current_version=(6, 8, 4),
+        ))
+
+        self.assertIsNotNone(metadata)
+        self.assertEqual(metadata.file_version, "6.8.4")
+        self.assertIsNone(metadata.product_version)
+
+    def test_requires_matching_versions_in_every_universal_slice(self) -> None:
+        """Avoid selecting one version from inconsistent universal code."""
+        consistent = MachOInspector().inspect(
+            _make_universal_dylib((6, 8, 4), (6, 8, 4))
+        )
+        inconsistent = MachOInspector().inspect(
+            _make_universal_dylib((6, 8, 4), (6, 8, 5))
+        )
+
+        self.assertIsNotNone(consistent)
+        self.assertIsNotNone(inconsistent)
+        self.assertEqual(consistent.file_version, "6.8.4")
+        self.assertIsNone(inconsistent.file_version)
 
     def test_reads_modern_and_legacy_macos_deployment_targets(self) -> None:
         """Read both deployment-target load commands without macOS tools."""

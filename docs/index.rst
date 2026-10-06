@@ -25,7 +25,9 @@ signature information. Thin and universal Mach-O inspection reports all target
 architectures, the binary kind, and whether every architecture slice has an ad
 hoc or certificate signature. It also reads the macOS deployment target from
 modern and legacy Mach-O load commands, along with dynamic library dependencies
-and runtime search paths. Embedded signatures also expose the Hardened Runtime
+and runtime search paths. Dynamic libraries and framework executables also
+expose their ``LC_ID_DYLIB`` current version as the file version when every
+architecture slice agrees. Embedded signatures expose the Hardened Runtime
 flag and XML entitlements. ``lint`` reports an executable or library when any
 slice is unsigned and treats an enabled
 ``com.apple.security.get-task-allow`` entitlement as an error. Runtime search

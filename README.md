@@ -85,8 +85,10 @@ version metadata, and signature information. For thin and universal Mach-O
 binaries, it reports all target architectures, the binary kind, and whether
 every architecture slice has an ad hoc or certificate signature. It also reads
 the macOS deployment target, dynamic library dependencies, and runtime search
-paths from Mach-O load commands. Embedded signatures also expose the Hardened
-Runtime flag and XML entitlements. `lint` treats an enabled
+paths from Mach-O load commands. Dynamic libraries and framework executables
+also expose their `LC_ID_DYLIB` current version as the file version when every
+architecture slice agrees. Embedded signatures expose the Hardened Runtime
+flag and XML entitlements. `lint` treats an enabled
 `com.apple.security.get-task-allow` entitlement as an error. Runtime search
 paths below developer home or temporary directories are errors by default;
 other absolute runtime search paths are warnings. Cryptographic
