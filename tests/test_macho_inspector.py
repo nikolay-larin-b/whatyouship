@@ -478,10 +478,10 @@ class MachOInspectorTests(unittest.TestCase):
 
         self.assertIsNotNone(metadata)
         self.assertEqual(metadata.dependencies, (
-            BinaryDependency("@rpath/libArm.dylib"),
+            BinaryDependency("@rpath/libArm.dylib", architectures=("arm64",)),
             BinaryDependency("@rpath/libOptional.dylib", required=False),
-            BinaryDependency("@rpath/libShared.dylib"),
-            BinaryDependency("@rpath/libX86.dylib"),
+            BinaryDependency("@rpath/libShared.dylib", architectures=("arm64",)),
+            BinaryDependency("@rpath/libX86.dylib", architectures=("x86_64",)),
         ))
         self.assertEqual(
             metadata.runtime_search_paths,

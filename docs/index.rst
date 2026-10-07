@@ -46,7 +46,10 @@ including cases where ``LSMinimumSystemVersion`` is lower than the main
 executable's deployment target. ``compare`` reports bundle and binary metadata
 changes. Bundle validation resolves ``@executable_path``, ``@loader_path``, and
 ``@rpath`` references and reports required libraries that should be present
-inside the application bundle but are missing. On macOS, WhatYouShip uses
+inside the application bundle but are missing. It also reports a bundled
+library when it lacks an architecture required by the Mach-O file that imports
+it. Architecture incompatibilities are errors by default. On macOS,
+WhatYouShip uses
 ``codesign`` to verify each complete bundle, including its sealed resources and
 nested code, and evaluates the signing identity against Apple's trust
 requirement. ``inspect`` reports the bundle signer, timestamp, and Team ID;

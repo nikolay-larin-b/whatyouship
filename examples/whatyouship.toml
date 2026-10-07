@@ -44,6 +44,10 @@ severity = "warning" # Report application signatures without Apple trust.
 enabled = true
 severity = "error" # Report invalid bundle signatures and resource seals.
 
+[rules.incompatible-binary-architecture]
+enabled = true
+severity = "error" # Report bundled libraries missing a required architecture.
+
 [rules.debug-entitlement]
 enabled = true
 severity = "error" # Report release binaries that allow debugger attachment.

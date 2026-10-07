@@ -103,10 +103,14 @@ class BinaryDependency:
 
     :param path: Loader path or absolute library install name.
     :param required: Whether the loader requires the library to be present.
+    :param architectures: Binary architectures whose slices require the
+        dependency. An empty tuple means that slice-specific information is
+        unavailable.
     """
 
     path: str
     required: bool = True
+    architectures: tuple[str, ...] = ()
 
 
 @dataclass
@@ -194,10 +198,12 @@ class BundleIssue:
 
     :param identity: Stable rule-facing identity.
     :param message: Human-readable explanation of the problem.
+    :param rule_id: Lint rule responsible for reporting the issue.
     """
 
     identity: str
     message: str
+    rule_id: str = "invalid-app-bundle"
 
 
 @dataclass

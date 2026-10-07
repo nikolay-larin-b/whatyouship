@@ -31,6 +31,7 @@ class ConfigTests(unittest.TestCase):
             "warning",
         )
         self.assertEqual(config.invalid_app_bundle_signature.severity, "error")
+        self.assertEqual(config.incompatible_binary_architecture.severity, "error")
         self.assertEqual(config.debug_entitlement.severity, "error")
         self.assertEqual(config.developer_runtime_search_path.severity, "error")
         self.assertEqual(config.absolute_runtime_search_path.severity, "warning")
@@ -69,7 +70,7 @@ class ConfigTests(unittest.TestCase):
             config = load_config(path)
 
         self.assertEqual(config.build_artifacts.extensions, frozenset({".obj", ".lib"}))
-        self.assertEqual(len(config.rules()), 15)
+        self.assertEqual(len(config.rules()), 16)
 
     def test_artifact_signature_rules_accept_common_settings(self) -> None:
         """Configure enabled state and severity for artifact signature rules."""
@@ -86,7 +87,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.unsigned_artifact.enabled)
         self.assertEqual(config.untrusted_artifact_signature.severity, "error")
         self.assertEqual(config.invalid_artifact_signature.severity, "warning")
-        self.assertEqual(len(config.rules()), 15)
+        self.assertEqual(len(config.rules()), 16)
 
     def test_installation_scope_rule_accepts_common_settings(self) -> None:
         """Configure the new scope rule through the existing TOML format."""
@@ -101,7 +102,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.installation_scope.enabled)
         self.assertEqual(config.installation_scope.severity, "error")
-        self.assertEqual(len(config.rules()), 15)
+        self.assertEqual(len(config.rules()), 16)
 
     def test_license_agreement_rule_accepts_common_settings(self) -> None:
         """Allow the missing agreement rule to be downgraded or disabled."""
@@ -116,7 +117,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.license_agreement.enabled)
         self.assertEqual(config.license_agreement.severity, "warning")
-        self.assertEqual(len(config.rules()), 15)
+        self.assertEqual(len(config.rules()), 16)
 
     def test_app_bundle_signature_rules_accept_common_settings(self) -> None:
         """Configure all application bundle signature findings."""
@@ -133,7 +134,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.unsigned_app_bundle.enabled)
         self.assertEqual(config.untrusted_app_bundle_signature.severity, "error")
         self.assertEqual(config.invalid_app_bundle_signature.severity, "warning")
-        self.assertEqual(len(config.rules()), 15)
+        self.assertEqual(len(config.rules()), 16)
 
     def test_app_bundle_rule_accepts_common_settings(self) -> None:
         """Allow malformed application bundle findings to be configured."""
@@ -148,7 +149,22 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.app_bundle.enabled)
         self.assertEqual(config.app_bundle.severity, "warning")
-        self.assertEqual(len(config.rules()), 15)
+        self.assertEqual(len(config.rules()), 16)
+
+    def test_binary_architecture_rule_accepts_common_settings(self) -> None:
+        """Allow dependency architecture findings to be configured."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.toml"
+            path.write_text(
+                "[rules.incompatible-binary-architecture]\n"
+                "enabled = false\nseverity = 'warning'\n"
+            )
+
+            config = load_config(path)
+
+        self.assertFalse(config.incompatible_binary_architecture.enabled)
+        self.assertEqual(config.incompatible_binary_architecture.severity, "warning")
+        self.assertEqual(len(config.rules()), 16)
 
     def test_debug_entitlement_rule_accepts_common_settings(self) -> None:
         """Allow debugger entitlement findings to be configured."""
@@ -163,7 +179,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.debug_entitlement.enabled)
         self.assertEqual(config.debug_entitlement.severity, "warning")
-        self.assertEqual(len(config.rules()), 15)
+        self.assertEqual(len(config.rules()), 16)
 
     def test_runtime_search_path_rules_accept_independent_settings(self) -> None:
         """Configure developer and other absolute search paths separately."""
@@ -181,7 +197,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.developer_runtime_search_path.severity, "warning")
         self.assertFalse(config.absolute_runtime_search_path.enabled)
         self.assertEqual(config.absolute_runtime_search_path.severity, "error")
-        self.assertEqual(len(config.rules()), 15)
+        self.assertEqual(len(config.rules()), 16)
 
     def test_missing_file_has_readable_error(self) -> None:
         """Name the missing configuration file in the error."""

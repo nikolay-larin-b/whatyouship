@@ -12,6 +12,9 @@ from whatyouship.lint import LintRule
 from whatyouship.model import Severity
 from whatyouship.rules.build_artifacts import DEFAULT_EXTENSIONS, BuildArtifactRule
 from whatyouship.rules.debug_entitlement import DebugEntitlementRule
+from whatyouship.rules.incompatible_binary_architecture import (
+    IncompatibleBinaryArchitectureRule,
+)
 from whatyouship.rules.inconsistent_installation_scope import InconsistentInstallationScopeRule
 from whatyouship.rules.invalid_app_bundle import InvalidAppBundleRule
 from whatyouship.rules.invalid_app_bundle_signature import InvalidAppBundleSignatureRule
@@ -137,6 +140,8 @@ class LintConfiguration:
     :param unsigned_app_bundle: Unsigned application bundle settings.
     :param untrusted_app_bundle_signature: Untrusted bundle signature settings.
     :param invalid_app_bundle_signature: Invalid bundle signature settings.
+    :param incompatible_binary_architecture: Incompatible dependency architecture
+        settings.
     :param debug_entitlement: Debug entitlement rule settings.
     :param developer_runtime_search_path: Developer search path rule settings.
     :param absolute_runtime_search_path: Absolute search path rule settings.
@@ -159,6 +164,9 @@ class LintConfiguration:
         default_factory=ArtifactSignatureRuleSettings
     )
     invalid_app_bundle_signature: ArtifactSignatureRuleSettings = field(
+        default_factory=lambda: ArtifactSignatureRuleSettings(severity="error")
+    )
+    incompatible_binary_architecture: ArtifactSignatureRuleSettings = field(
         default_factory=lambda: ArtifactSignatureRuleSettings(severity="error")
     )
     debug_entitlement: DebugEntitlementSettings = field(
@@ -221,6 +229,10 @@ class LintConfiguration:
         if self.invalid_app_bundle_signature.enabled:
             rules.append(InvalidAppBundleSignatureRule(
                 severity=self.invalid_app_bundle_signature.severity
+            ))
+        if self.incompatible_binary_architecture.enabled:
+            rules.append(IncompatibleBinaryArchitectureRule(
+                severity=self.incompatible_binary_architecture.severity
             ))
         if self.debug_entitlement.enabled:
             rules.append(DebugEntitlementRule(
@@ -359,6 +371,7 @@ def load_config(path: Path) -> LintConfiguration:
         "invalid-app-bundle",
         "unsigned-app-bundle", "untrusted-app-bundle-signature",
         "invalid-app-bundle-signature",
+        "incompatible-binary-architecture",
         "debug-entitlement",
         "developer-runtime-search-path", "absolute-runtime-search-path",
     }
@@ -395,6 +408,12 @@ def load_config(path: Path) -> LintConfiguration:
     debug_enabled, debug_severity, _ = _rule_settings(
         "debug-entitlement",
         rules.get("debug-entitlement", {}),
+        {"enabled", "severity"},
+        "error",
+    )
+    architecture_enabled, architecture_severity, _ = _rule_settings(
+        "incompatible-binary-architecture",
+        rules.get("incompatible-binary-architecture", {}),
         {"enabled", "severity"},
         "error",
     )
@@ -465,6 +484,9 @@ def load_config(path: Path) -> LintConfiguration:
         ),
         invalid_app_bundle_signature=ArtifactSignatureRuleSettings(
             invalid_bundle_enabled, invalid_bundle_severity
+        ),
+        incompatible_binary_architecture=ArtifactSignatureRuleSettings(
+            architecture_enabled, architecture_severity
         ),
         debug_entitlement=DebugEntitlementSettings(
             debug_enabled, debug_severity

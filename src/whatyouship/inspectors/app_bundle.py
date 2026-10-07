@@ -161,23 +161,23 @@ def _resolve_artifact_links(
     return None
 
 
-def _dependency_exists(
+def _resolved_dependency_path(
     candidate: Path,
     files: set[Path],
     links: dict[Path, ArtifactSymbolicLink],
-) -> bool:
-    """Check a dependency path, including omitted framework symlinks.
+) -> Path | None:
+    """Resolve a dependency path, including omitted framework symlinks.
 
     :param candidate: Resolved artifact-relative dependency path.
     :param files: Regular files represented by the artifact backend.
     :param links: Symbolic links represented by the artifact backend.
-    :returns: Whether the dependency target is represented by a regular file.
+    :returns: Represented regular file path, or ``None`` when absent.
     """
     resolved = _resolve_artifact_links(candidate, links)
     if resolved is None:
-        return False
+        return None
     if resolved in files:
-        return True
+        return resolved
     parts = resolved.parts
     for index, part in enumerate(parts):
         if not part.lower().endswith(".framework"):
@@ -185,16 +185,20 @@ def _dependency_exists(
         framework_name = part[:-len(".framework")]
         tail = parts[index + 1:]
         if tail not in {(framework_name,), ("Versions", "Current", framework_name)}:
-            return False
+            return None
         prefix = parts[:index + 1]
-        return any(
-            path.parts[:index + 1] == prefix
-            and len(path.parts) == index + 4
-            and path.parts[index + 1] == "Versions"
-            and path.parts[index + 3] == framework_name
-            for path in files
+        return next(
+            (
+                path
+                for path in sorted(files)
+                if path.parts[:index + 1] == prefix
+                and len(path.parts) == index + 4
+                and path.parts[index + 1] == "Versions"
+                and path.parts[index + 3] == framework_name
+            ),
+            None,
         )
-    return False
+    return None
 
 
 def _dependency_candidates(
@@ -236,17 +240,20 @@ def _dynamic_dependency_issues(
     files_by_path: dict[Path, ArtifactFile],
     symbolic_links: Iterable[ArtifactSymbolicLink],
 ) -> list[BundleIssue]:
-    """Find required bundle-relative Mach-O dependencies that are absent.
+    """Find absent or architecture-incompatible bundled Mach-O dependencies.
 
     :param bundle: Artifact-relative application bundle path.
     :param executable_path: Artifact path of the app's main executable.
     :param files_by_path: Analyzed files keyed by artifact-relative path.
     :param symbolic_links: Symbolic links represented by the artifact backend.
-    :returns: Missing dependency issues in stable path and name order.
+    :returns: Dependency issues in stable path and name order.
     """
     executable_file = files_by_path[executable_path]
     if executable_file.binary is None:
         return []
+    bundle_architectures = set(
+        executable_file.binary.architecture.split("+")
+    )
     represented_files = set(files_by_path)
     links_by_path = {link.relative_path: link for link in symbolic_links}
     runtime_search_directories = []
@@ -292,16 +299,56 @@ def _dynamic_dependency_issues(
                 )
                 if _inside_bundle(candidate, bundle)
             )
-            if not candidates or any(
-                _dependency_exists(candidate, represented_files, links_by_path)
+            if not candidates:
+                continue
+            resolved_paths = tuple(
+                resolved
                 for candidate in candidates
+                if (
+                    resolved := _resolved_dependency_path(
+                        candidate, represented_files, links_by_path
+                    )
+                ) is not None
+            )
+            if not resolved_paths:
+                issues.append(BundleIssue(
+                    f"missing-dynamic-dependency:{binary_path.as_posix()}:"
+                    f"{dependency.path}",
+                    f"Mach-O file '{binary_path.as_posix()}' requires missing "
+                    f"bundled library '{dependency.path}'.",
+                ))
+                continue
+            required_architectures = set(
+                dependency.architectures or binary.architecture.split("+")
+            ) & bundle_architectures
+            if not required_architectures:
+                continue
+            dependency_binaries = tuple(
+                (path, files_by_path[path].binary)
+                for path in resolved_paths
+                if files_by_path[path].binary is not None
+                and files_by_path[path].binary.format == "Mach-O"
+            )
+            if not dependency_binaries or any(
+                required_architectures.issubset(
+                    set(dependency_binary.architecture.split("+"))
+                )
+                for _, dependency_binary in dependency_binaries
             ):
                 continue
+            dependency_path, dependency_binary = dependency_binaries[0]
+            missing_architectures = sorted(
+                required_architectures
+                - set(dependency_binary.architecture.split("+"))
+            )
             issues.append(BundleIssue(
-                f"missing-dynamic-dependency:{binary_path.as_posix()}:"
+                f"incompatible-binary-architecture:{binary_path.as_posix()}:"
                 f"{dependency.path}",
-                f"Mach-O file '{binary_path.as_posix()}' requires missing "
-                f"bundled library '{dependency.path}'.",
+                f"Mach-O file '{binary_path.as_posix()}' requires "
+                f"'{dependency_path.as_posix()}', which is missing required "
+                f"architecture{'s' if len(missing_architectures) != 1 else ''}: "
+                f"{', '.join(missing_architectures)}.",
+                "incompatible-binary-architecture",
             ))
     return issues
 

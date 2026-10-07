@@ -24,6 +24,9 @@ from whatyouship.model import (
     SignatureMetadata,
 )
 from whatyouship.rules.invalid_app_bundle import InvalidAppBundleRule
+from whatyouship.rules.incompatible_binary_architecture import (
+    IncompatibleBinaryArchitectureRule,
+)
 
 
 def _macho_executable(
@@ -442,6 +445,145 @@ class AppBundleInspectorTests(unittest.TestCase):
                 "missing-dynamic-dependency:Sample.app/Contents/MacOS/"
                 "sample:@rpath/libMissing.dylib",
             ],
+        )
+
+    def test_reports_incompatible_required_dependency_architectures(self) -> None:
+        """Require bundled libraries to cover every importing architecture."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            _write_bundle(
+                root / "Sample.app",
+                {
+                    "CFBundleIdentifier": "com.example.dependencies",
+                    "CFBundleExecutable": "sample",
+                    "CFBundlePackageType": "APPL",
+                },
+                executable_payload=_macho_executable(),
+            )
+            main_path = Path("Sample.app/Contents/MacOS/sample")
+            framework_root = Path("Sample.app/Contents/Frameworks")
+            files = [
+                ArtifactFile(
+                    main_path,
+                    32,
+                    "a",
+                    BinaryMetadata(
+                        "Mach-O",
+                        "arm64+x86_64",
+                        "executable",
+                        dependencies=(
+                            BinaryDependency(
+                                "@rpath/libIntel.dylib",
+                                architectures=("arm64", "x86_64"),
+                            ),
+                            BinaryDependency(
+                                "@rpath/libIntelSliceOnly.dylib",
+                                architectures=("x86_64",),
+                            ),
+                            BinaryDependency("@rpath/libUniversal.dylib"),
+                        ),
+                        runtime_search_paths=(
+                            "@executable_path/../Frameworks",
+                        ),
+                    ),
+                ),
+                ArtifactFile(
+                    framework_root / "libIntel.dylib",
+                    32,
+                    "b",
+                    BinaryMetadata("Mach-O", "x86_64", "library"),
+                ),
+                ArtifactFile(
+                    framework_root / "libIntelSliceOnly.dylib",
+                    32,
+                    "c",
+                    BinaryMetadata("Mach-O", "x86_64", "library"),
+                ),
+                ArtifactFile(
+                    framework_root / "libUniversal.dylib",
+                    32,
+                    "d",
+                    BinaryMetadata("Mach-O", "arm64+x86_64", "library"),
+                ),
+            ]
+
+            artifact = DirectoryInspector().inspect(root)
+            artifact.files = files
+            artifact.bundles = AppBundleInspector().inspect(root, files)
+
+        architecture_findings = IncompatibleBinaryArchitectureRule(
+            severity="warning"
+        ).check(artifact)
+
+        self.assertEqual(len(architecture_findings), 1)
+        self.assertEqual(
+            architecture_findings[0].identity,
+            "incompatible-binary-architecture:Sample.app/Contents/MacOS/"
+            "sample:@rpath/libIntel.dylib",
+        )
+        self.assertEqual(architecture_findings[0].severity, "warning")
+        self.assertIn(
+            "missing required architecture: arm64",
+            architecture_findings[0].message,
+        )
+        self.assertEqual(InvalidAppBundleRule().check(artifact), [])
+
+    def test_ignores_dependency_slices_not_supported_by_the_app(self) -> None:
+        """Ignore extra plugin slices that the main executable cannot load."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            _write_bundle(
+                root / "Sample.app",
+                {
+                    "CFBundleIdentifier": "com.example.intel",
+                    "CFBundleExecutable": "sample",
+                    "CFBundlePackageType": "APPL",
+                },
+                executable_payload=_macho_executable(),
+            )
+            main_path = Path("Sample.app/Contents/MacOS/sample")
+            plugin_path = Path(
+                "Sample.app/Contents/PlugIns/sqldrivers/libPlugin.dylib"
+            )
+            dependency_path = Path(
+                "Sample.app/Contents/Frameworks/libIntel.dylib"
+            )
+            files = [
+                ArtifactFile(
+                    main_path,
+                    32,
+                    "a",
+                    BinaryMetadata("Mach-O", "x86_64", "executable"),
+                ),
+                ArtifactFile(
+                    plugin_path,
+                    32,
+                    "b",
+                    BinaryMetadata(
+                        "Mach-O",
+                        "arm64+x86_64",
+                        "library",
+                        dependencies=(BinaryDependency(
+                            "@loader_path/../../Frameworks/libIntel.dylib",
+                            architectures=("arm64", "x86_64"),
+                        ),),
+                    ),
+                ),
+                ArtifactFile(
+                    dependency_path,
+                    32,
+                    "c",
+                    BinaryMetadata("Mach-O", "x86_64", "library"),
+                ),
+            ]
+
+            artifact = DirectoryInspector().inspect(root)
+            artifact.files = files
+            artifact.bundles = AppBundleInspector().inspect(root, files)
+
+        self.assertEqual(
+            IncompatibleBinaryArchitectureRule().check(artifact),
+            [],
         )
 
     def test_reports_nested_code_signed_by_a_different_team(self) -> None:

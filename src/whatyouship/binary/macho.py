@@ -986,7 +986,12 @@ def _dependencies(slices: list[lief.MachO.Binary]) -> tuple[BinaryDependency, ..
     :returns: Unique dependencies sorted by install name.
     """
     required_by_path: dict[str, bool] = {}
+    required_architectures_by_path: dict[str, set[str]] = {}
     for binary in slices:
+        architecture = _ARCHITECTURES.get(
+            binary.header.cpu_type,
+            binary.header.cpu_type.name.lower(),
+        )
         for library in binary.libraries:
             if library.command not in _DEPENDENCY_COMMANDS or not library.name:
                 continue
@@ -997,8 +1002,16 @@ def _dependencies(slices: list[lief.MachO.Binary]) -> tuple[BinaryDependency, ..
             required_by_path[library.name] = (
                 required_by_path.get(library.name, False) or required
             )
+            if required:
+                required_architectures_by_path.setdefault(
+                    library.name, set()
+                ).add(architecture)
     return tuple(
-        BinaryDependency(path, required_by_path[path])
+        BinaryDependency(
+            path,
+            required_by_path[path],
+            tuple(sorted(required_architectures_by_path.get(path, ()))),
+        )
         for path in sorted(required_by_path)
     )
 

@@ -72,6 +72,7 @@ Current checks and comparisons include:
 * unsigned, untrusted, or invalid macOS application bundle signatures;
 * invalid application resource seals and nested code signed by another team;
 * missing required Mach-O libraries expected inside an application bundle;
+* bundled Mach-O libraries missing an architecture required by their importer;
 * runtime search paths tied to developer machines or absolute filesystem locations;
 * release Mach-O binaries with debugger attachment enabled;
 * added, removed, and changed files between releases;
@@ -105,6 +106,8 @@ metadata, the main executable, and consistency between
 reports bundle and binary metadata changes. Bundle validation resolves
 `@executable_path`, `@loader_path`, and `@rpath` references and reports required
 libraries that should be present inside the application bundle but are missing.
+It also reports a bundled library when it lacks an architecture required by
+the Mach-O file that imports it.
 On macOS, WhatYouShip also uses `codesign` to verify the complete bundle,
 including its sealed resources and nested code, and checks the signing identity
 against Apple's trust requirement. It reports the bundle signer, timestamp, and
