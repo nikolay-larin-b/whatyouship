@@ -177,7 +177,7 @@ class CliTests(unittest.TestCase):
             "\n"
             "Cache cleanup incomplete.\n"
             "Paths not removed: 1\n"
-            "- cache-root\\blocked: Access is denied\n",
+            f"- {root / 'blocked'}: Access is denied\n",
         )
 
     def test_version(self) -> None:
