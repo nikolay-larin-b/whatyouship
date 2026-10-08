@@ -274,7 +274,12 @@ Supported formats:
 
 Without `--output`, commands print text to stdout.
 
-JSON reports contain structured data and include `schema_version`, `tool_version`, and the report type.
+JSON reports contain the complete structured result and include `schema_version`,
+`tool_version`, and the report type. Inspect CSV reports are file tables with one
+row per contained file. They include file and binary metadata, but omit
+artifact-level metadata such as the source path, the artifact or container
+signature, installation scope, and license-agreement state. Use JSON when the
+complete inspect result is required.
 
 ## CI and exit codes
 

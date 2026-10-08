@@ -176,8 +176,12 @@ text to stdout. CSV is available for ``inspect`` and ``lint`` only.
    whatyouship lint release.zip --baseline previous.zip -o lint.csv
    whatyouship compare previous.zip release.zip -o compare.txt
 
-JSON reports include ``schema_version`` (currently ``1``), ``tool_version``,
-and the report type.
+JSON reports contain the complete structured result and include
+``schema_version`` (currently ``1``), ``tool_version``, and the report type.
+Inspect CSV reports are file tables with one row per contained file. They
+include file and binary metadata, but omit artifact-level metadata such as the
+source path, the artifact or container signature, installation scope, and
+license-agreement state. Use JSON when the complete inspect result is required.
 
 For CI, ``lint`` exits with ``0`` when the release passes, ``1`` when findings
 reach the selected threshold, and ``2`` for tool or input errors. The default
