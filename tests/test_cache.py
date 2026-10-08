@@ -3,9 +3,12 @@
 
 """Tests for persistent artifact cache inspection and removal."""
 
+import os
 import tempfile
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import patch
 
 from whatyouship.cache import clear_cache, inspect_cache
 
@@ -100,6 +103,71 @@ class CacheManagementTests(unittest.TestCase):
         self.assertFalse(self.root.exists())
         self.assertEqual(empty.entries, 0)
         self.assertEqual(empty.size_bytes, 0)
+
+    def test_clear_all_restores_access_to_unreadable_directories(self) -> None:
+        """Remove an interrupted extraction containing an unreadable directory."""
+        entry = self._write_entry(
+            "dmg-7zip", "v2", ".tmp-interrupted", b"partial"
+        )
+        private = entry / "files" / ".HFS+ Private Directory Data_"
+        private.mkdir(parents=True)
+        original_scandir = os.scandir
+        original_chmod = os.chmod
+        restored = False
+
+        def scandir(path: str | os.PathLike[str]) -> Iterator[os.DirEntry[str]]:
+            """Reject traversal until owner access is restored.
+
+            :param path: Directory to inspect.
+            :returns: Directory iterator for accessible paths.
+            :raises PermissionError: If the private directory is still inaccessible.
+            """
+            if Path(path) == private and not restored:
+                raise PermissionError(5, "Access is denied", str(path))
+            return original_scandir(path)
+
+        def chmod(path: str | os.PathLike[str], mode: int) -> None:
+            """Record restored access and apply the requested mode.
+
+            :param path: File or directory whose mode is changed.
+            :param mode: New permission mode.
+            """
+            nonlocal restored
+            if Path(path) == private:
+                restored = True
+            original_chmod(path, mode)
+
+        with patch("whatyouship.cache.os.scandir", side_effect=scandir), patch(
+            "whatyouship.cache.os.chmod", side_effect=chmod
+        ):
+            removed = clear_cache(root=self.root)
+
+        self.assertTrue(restored)
+        self.assertEqual(removed.temporary_entries, 1)
+        self.assertFalse(self.root.exists())
+
+    def test_clear_format_does_not_traverse_other_formats(self) -> None:
+        """Leave inaccessible data outside the selected format untouched."""
+        self._write_entry("dmg-7zip", "v2", "a" * 64, b"dmg")
+        other = self._write_entry("future", "v1", "b" * 64, b"future")
+        original_scandir = os.scandir
+
+        def scandir(path: str | os.PathLike[str]) -> Iterator[os.DirEntry[str]]:
+            """Reject traversal of the unselected cache namespace.
+
+            :param path: Directory to inspect.
+            :returns: Directory iterator for selected paths.
+            :raises PermissionError: If unselected data is inspected.
+            """
+            if Path(path) == self.root / "future":
+                raise PermissionError(5, "Access is denied", str(path))
+            return original_scandir(path)
+
+        with patch("whatyouship.cache.os.scandir", side_effect=scandir):
+            removed = clear_cache(("dmg",), self.root)
+
+        self.assertEqual(removed.entries, 1)
+        self.assertTrue(other.is_dir())
 
     def test_clear_rejects_unknown_format(self) -> None:
         """Reject unsupported selective removal without changing cache data."""

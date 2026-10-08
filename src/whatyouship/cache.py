@@ -5,8 +5,11 @@
 
 import os
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
+from types import TracebackType
+from typing import Callable
 
 from whatyouship.paths import cache_root_directory
 
@@ -112,6 +115,43 @@ def _namespace_info(
     return entries, temporary_entries, _path_size(namespace_root), tuple(layouts)
 
 
+def _format_info(
+    root: Path, format_name: str, namespaces: tuple[str, ...]
+) -> CacheFormatInfo | None:
+    """Summarize the cache namespaces belonging to one artifact format.
+
+    :param root: Persistent cache root.
+    :param format_name: User-facing artifact format name.
+    :param namespaces: Internal cache namespaces belonging to the format.
+    :returns: Format information, or ``None`` when no cache data is present.
+    :raises OSError: If cache data cannot be inspected.
+    """
+    entries = 0
+    temporary_entries = 0
+    size_bytes = 0
+    layouts: list[str] = []
+    for namespace in namespaces:
+        (
+            namespace_entries,
+            namespace_temporary,
+            namespace_size,
+            namespace_layouts,
+        ) = _namespace_info(root, namespace)
+        entries += namespace_entries
+        temporary_entries += namespace_temporary
+        size_bytes += namespace_size
+        layouts.extend(namespace_layouts)
+    if not (entries or temporary_entries or size_bytes or layouts):
+        return None
+    return CacheFormatInfo(
+        format_name,
+        entries,
+        temporary_entries,
+        size_bytes,
+        tuple(layouts),
+    )
+
+
 def inspect_cache(root: Path | None = None) -> CacheInfo:
     """Inspect the persistent artifact cache without modifying it.
 
@@ -143,31 +183,9 @@ def inspect_cache(root: Path | None = None) -> CacheInfo:
     formats: list[CacheFormatInfo] = []
     for format_name in sorted(format_names):
         namespaces = CACHE_FORMAT_NAMESPACES.get(format_name, (format_name,))
-        entries = 0
-        temporary_entries = 0
-        size_bytes = 0
-        layouts: list[str] = []
-        for namespace in namespaces:
-            (
-                namespace_entries,
-                namespace_temporary,
-                namespace_size,
-                namespace_layouts,
-            ) = _namespace_info(selected_root, namespace)
-            entries += namespace_entries
-            temporary_entries += namespace_temporary
-            size_bytes += namespace_size
-            layouts.extend(namespace_layouts)
-        if entries or temporary_entries or size_bytes or layouts:
-            formats.append(
-                CacheFormatInfo(
-                    format_name,
-                    entries,
-                    temporary_entries,
-                    size_bytes,
-                    tuple(layouts),
-                )
-            )
+        info = _format_info(selected_root, format_name, namespaces)
+        if info is not None:
+            formats.append(info)
 
     return CacheInfo(
         selected_root,
@@ -176,6 +194,54 @@ def inspect_cache(root: Path | None = None) -> CacheInfo:
         _path_size(selected_root),
         tuple(formats),
     )
+
+
+def _restore_tree_access(path: Path) -> None:
+    """Restore owner access where a cache directory cannot be traversed.
+
+    Symbolic links are never followed or modified.
+
+    :param path: Cache tree that is about to be removed.
+    :raises OSError: If access cannot be restored or the tree cannot be read.
+    """
+    if path.is_symlink() or not path.is_dir():
+        return
+
+    pending = [path]
+    while pending:
+        directory = pending.pop()
+        try:
+            with os.scandir(directory) as iterator:
+                children = list(iterator)
+        except PermissionError:
+            os.chmod(directory, stat.S_IRWXU)
+            with os.scandir(directory) as iterator:
+                children = list(iterator)
+        pending.extend(
+            Path(child.path)
+            for child in children
+            if child.is_dir(follow_symlinks=False) and not child.is_symlink()
+        )
+
+
+def _retry_remove_readonly(
+    function: Callable[[str], object],
+    path: str,
+    exception: tuple[type[BaseException], BaseException, TracebackType],
+) -> None:
+    """Retry removal after restoring owner permissions on one cache path.
+
+    :param function: Removal function that failed.
+    :param path: File or directory that could not be removed.
+    :param exception: Exception information supplied by :func:`shutil.rmtree`.
+    :raises BaseException: If the path is a symbolic link or retry fails.
+    """
+    target = Path(path)
+    if target.is_symlink():
+        raise exception[1]
+    mode = target.stat(follow_symlinks=False).st_mode
+    os.chmod(target, mode | stat.S_IRWXU)
+    function(path)
 
 
 def _remove_path(path: Path) -> None:
@@ -187,7 +253,7 @@ def _remove_path(path: Path) -> None:
     if path.is_symlink() or path.is_file():
         path.unlink()
     elif path.is_dir():
-        shutil.rmtree(path)
+        shutil.rmtree(path, onerror=_retry_remove_readonly)
 
 
 def clear_cache(
@@ -203,6 +269,7 @@ def clear_cache(
     """
     selected_root = cache_root_directory() if root is None else root
     if formats is None:
+        _restore_tree_access(selected_root)
         removed = inspect_cache(selected_root)
         _remove_path(selected_root)
         return removed
@@ -211,10 +278,21 @@ def clear_cache(
     if unsupported:
         raise ValueError(f"Unsupported cache format: {unsupported[0]}")
 
-    all_info = inspect_cache(selected_root)
     selected = set(formats)
+    for format_name in selected:
+        for namespace in CACHE_FORMAT_NAMESPACES[format_name]:
+            _restore_tree_access(selected_root / namespace)
     removed_formats = tuple(
-        item for item in all_info.formats if item.format_name in selected
+        info
+        for format_name in sorted(selected)
+        if (
+            info := _format_info(
+                selected_root,
+                format_name,
+                CACHE_FORMAT_NAMESPACES[format_name],
+            )
+        )
+        is not None
     )
     removed = CacheInfo(
         selected_root,
