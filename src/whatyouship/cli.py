@@ -10,6 +10,7 @@ from typing import Literal
 from whatyouship import __version__
 from whatyouship.cache import (
     CACHE_FORMAT_NAMESPACES,
+    CacheClearResult,
     CacheInfo,
     clear_cache,
     inspect_cache,
@@ -124,25 +125,43 @@ def _render_cache_info(info: CacheInfo) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render_cleared_cache(info: CacheInfo) -> str:
-    """Render a summary of persistent cache data removed by a command.
+def _render_cleared_cache(result: CacheClearResult) -> str:
+    """Render a summary of a best-effort cache cleanup.
 
-    :param info: Information captured before cache removal.
+    :param result: Cache selection and removal failures.
     :returns: Human-readable removal summary.
     """
-    return (
-        f"Persistent cache: {info.root}\n"
-        f"Entries removed: {info.entries}\n"
-        f"Temporary entries removed: {info.temporary_entries}\n"
-        f"Size removed: {info.size_bytes} bytes\n"
-    )
+    lines = [f"Persistent cache: {result.root}"]
+    info = result.selected
+    if info is None:
+        lines.append("Selected cache statistics: unavailable")
+    else:
+        status = "selected" if result.failures else "removed"
+        lines.extend(
+            (
+                f"Entries {status}: {info.entries}",
+                f"Temporary entries {status}: {info.temporary_entries}",
+                f"Size {status}: {info.size_bytes} bytes",
+            )
+        )
+    if result.failures:
+        lines.extend(
+            (
+                "",
+                "Cache cleanup incomplete.",
+                f"Paths not removed: {len(result.failures)}",
+                *(f"- {failure.path}: {failure.error}" for failure in result.failures),
+            )
+        )
+    return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the WhatYouShip command-line interface.
 
     :param argv: Arguments to parse, or ``None`` to use command-line arguments.
-    :returns: One when lint findings reach the threshold, otherwise zero.
+    :returns: One when lint findings reach the threshold or cache cleanup is
+        incomplete, otherwise zero.
     :raises SystemExit: When help or version is requested, or an error occurs.
     """
     parser = _WhatYouShipArgumentParser(
@@ -238,7 +257,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(_render_cache_info(inspect_cache()), end="")
             else:
                 formats = None if args.all else tuple(args.formats)
-                print(_render_cleared_cache(clear_cache(formats)), end="")
+                result = clear_cache(formats)
+                print(_render_cleared_cache(result), end="")
+                return 1 if result.failures else 0
             return 0
         with cache_scope(args.cache):
             output_format = _output_format(args.output, args.command)

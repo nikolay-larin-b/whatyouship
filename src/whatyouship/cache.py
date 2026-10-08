@@ -4,12 +4,9 @@
 """Inspect and clear the persistent artifact cache."""
 
 import os
-import shutil
 import stat
 from dataclasses import dataclass
 from pathlib import Path
-from types import TracebackType
-from typing import Callable
 
 from whatyouship.paths import cache_root_directory
 
@@ -57,6 +54,33 @@ class CacheInfo:
     temporary_entries: int
     size_bytes: int
     formats: tuple[CacheFormatInfo, ...]
+
+
+@dataclass(frozen=True)
+class CacheRemovalFailure:
+    """Describe one cache path that could not be removed.
+
+    :param path: Cache path left on disk.
+    :param error: Operating-system error reported for the path.
+    """
+
+    path: Path
+    error: str
+
+
+@dataclass(frozen=True)
+class CacheClearResult:
+    """Describe the result of a best-effort cache cleanup.
+
+    :param root: Persistent cache root.
+    :param selected: Data selected before removal, or ``None`` when it could
+        not be fully inspected.
+    :param failures: Paths that could not be removed.
+    """
+
+    root: Path
+    selected: CacheInfo | None
+    failures: tuple[CacheRemovalFailure, ...]
 
 
 def _path_size(path: Path) -> int:
@@ -224,88 +248,172 @@ def _restore_tree_access(path: Path) -> None:
         )
 
 
-def _retry_remove_readonly(
-    function: Callable[[str], object],
-    path: str,
-    exception: tuple[type[BaseException], BaseException, TracebackType],
-) -> None:
-    """Retry removal after restoring owner permissions on one cache path.
+def _restore_owner_permissions(path: Path) -> None:
+    """Add owner permissions without following a symbolic link.
 
-    :param function: Removal function that failed.
-    :param path: File or directory that could not be removed.
-    :param exception: Exception information supplied by :func:`shutil.rmtree`.
-    :raises BaseException: If the path is a symbolic link or retry fails.
+    :param path: File or directory whose access must be restored.
+    :raises OSError: If metadata cannot be read or permissions cannot be changed.
     """
-    target = Path(path)
-    if target.is_symlink():
-        raise exception[1]
-    mode = target.stat(follow_symlinks=False).st_mode
-    os.chmod(target, mode | stat.S_IRWXU)
-    function(path)
+    mode = path.stat(follow_symlinks=False).st_mode
+    os.chmod(path, mode | stat.S_IRWXU)
 
 
-def _remove_path(path: Path) -> None:
-    """Remove one cache path without following a symbolic link.
+def _record_removal_failure(
+    failures: list[CacheRemovalFailure], path: Path, error: OSError
+) -> None:
+    """Record one removal error for a cache path.
+
+    :param failures: Mutable failure collection.
+    :param path: Cache path left on disk.
+    :param error: Operating-system error reported for the path.
+    """
+    failures.append(CacheRemovalFailure(path, str(error)))
+
+
+def _remove_path_best_effort(
+    path: Path, failures: list[CacheRemovalFailure]
+) -> None:
+    """Remove a cache tree while continuing past independent failures.
+
+    Symbolic links are unlinked without being followed. Directories are removed
+    bottom-up so an inaccessible child does not prevent attempts on its siblings.
 
     :param path: Cache path to remove when present.
-    :raises OSError: If the path cannot be removed.
+    :param failures: Mutable collection for paths that remain on disk.
     """
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-    elif path.is_dir():
-        shutil.rmtree(path, onerror=_retry_remove_readonly)
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        _record_removal_failure(failures, path, error)
+        return
+
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        try:
+            path.unlink()
+        except PermissionError as error:
+            if stat.S_ISLNK(metadata.st_mode):
+                _record_removal_failure(failures, path, error)
+                return
+            try:
+                _restore_owner_permissions(path)
+                path.unlink()
+            except OSError as error:
+                _record_removal_failure(failures, path, error)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            _record_removal_failure(failures, path, error)
+        return
+
+    try:
+        with os.scandir(path) as iterator:
+            children = [Path(child.path) for child in iterator]
+    except PermissionError:
+        try:
+            _restore_owner_permissions(path)
+            with os.scandir(path) as iterator:
+                children = [Path(child.path) for child in iterator]
+        except OSError as error:
+            _record_removal_failure(failures, path, error)
+            return
+    except OSError as error:
+        _record_removal_failure(failures, path, error)
+        return
+
+    failures_before_children = len(failures)
+    for child in children:
+        _remove_path_best_effort(child, failures)
+    if len(failures) != failures_before_children:
+        return
+
+    try:
+        path.rmdir()
+    except PermissionError:
+        try:
+            _restore_owner_permissions(path)
+            path.rmdir()
+        except OSError as error:
+            _record_removal_failure(failures, path, error)
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        _record_removal_failure(failures, path, error)
+
+
+def _remove_path(path: Path) -> tuple[CacheRemovalFailure, ...]:
+    """Remove one cache path without following symbolic links.
+
+    :param path: Cache path to remove when present.
+    :returns: Paths that could not be removed.
+    """
+    failures: list[CacheRemovalFailure] = []
+    _remove_path_best_effort(path, failures)
+    return tuple(failures)
 
 
 def clear_cache(
     formats: tuple[str, ...] | None = None, root: Path | None = None
-) -> CacheInfo:
+) -> CacheClearResult:
     """Clear all persistent cache data or selected artifact formats.
 
     :param formats: Formats to clear, or ``None`` to clear the complete cache.
     :param root: Cache root override for tests, or ``None`` for the user cache.
-    :returns: Information about the data selected for removal.
+    :returns: Selection information and paths that could not be removed.
     :raises ValueError: If an unsupported format is requested.
-    :raises OSError: If cache data cannot be inspected or removed.
     """
     selected_root = cache_root_directory() if root is None else root
     if formats is None:
-        _restore_tree_access(selected_root)
-        removed = inspect_cache(selected_root)
-        _remove_path(selected_root)
-        return removed
+        try:
+            _restore_tree_access(selected_root)
+            selected_info = inspect_cache(selected_root)
+        except OSError:
+            selected_info = None
+        failures = _remove_path(selected_root)
+        return CacheClearResult(selected_root, selected_info, failures)
 
     unsupported = sorted(set(formats) - CACHE_FORMAT_NAMESPACES.keys())
     if unsupported:
         raise ValueError(f"Unsupported cache format: {unsupported[0]}")
 
     selected = set(formats)
-    for format_name in selected:
-        for namespace in CACHE_FORMAT_NAMESPACES[format_name]:
-            _restore_tree_access(selected_root / namespace)
-    removed_formats = tuple(
-        info
-        for format_name in sorted(selected)
-        if (
-            info := _format_info(
-                selected_root,
-                format_name,
-                CACHE_FORMAT_NAMESPACES[format_name],
+    try:
+        for format_name in sorted(selected):
+            for namespace in CACHE_FORMAT_NAMESPACES[format_name]:
+                _restore_tree_access(selected_root / namespace)
+        selected_formats = tuple(
+            info
+            for format_name in sorted(selected)
+            if (
+                info := _format_info(
+                    selected_root,
+                    format_name,
+                    CACHE_FORMAT_NAMESPACES[format_name],
+                )
             )
+            is not None
         )
-        is not None
-    )
-    removed = CacheInfo(
-        selected_root,
-        sum(item.entries for item in removed_formats),
-        sum(item.temporary_entries for item in removed_formats),
-        sum(item.size_bytes for item in removed_formats),
-        removed_formats,
-    )
-    for format_name in selected:
+        selected_info = CacheInfo(
+            selected_root,
+            sum(item.entries for item in selected_formats),
+            sum(item.temporary_entries for item in selected_formats),
+            sum(item.size_bytes for item in selected_formats),
+            selected_formats,
+        )
+    except OSError:
+        selected_info = None
+
+    failures: list[CacheRemovalFailure] = []
+    for format_name in sorted(selected):
         for namespace in CACHE_FORMAT_NAMESPACES[format_name]:
-            _remove_path(selected_root / namespace)
-    if not selected_root.is_symlink() and selected_root.is_dir() and not any(
-        selected_root.iterdir()
-    ):
-        selected_root.rmdir()
-    return removed
+            failures.extend(_remove_path(selected_root / namespace))
+    if not selected_root.is_symlink() and selected_root.is_dir():
+        try:
+            root_is_empty = not any(selected_root.iterdir())
+        except OSError as error:
+            _record_removal_failure(failures, selected_root, error)
+        else:
+            if root_is_empty:
+                failures.extend(_remove_path(selected_root))
+    return CacheClearResult(selected_root, selected_info, tuple(failures))

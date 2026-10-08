@@ -80,11 +80,15 @@ class CacheManagementTests(unittest.TestCase):
         self._write_entry("dmg-7zip", "v2", "c" * 64, b"current")
         zip_entry = self._write_entry("zip", "v1", "d" * 64, b"zip")
 
-        removed = clear_cache(("dmg",), self.root)
+        result = clear_cache(("dmg",), self.root)
 
-        self.assertEqual(removed.entries, 3)
+        self.assertEqual(result.failures, ())
+        self.assertIsNotNone(result.selected)
+        assert result.selected is not None
+        self.assertEqual(result.selected.entries, 3)
         self.assertEqual(
-            removed.size_bytes, len(b"image") + len(b"old") + len(b"current")
+            result.selected.size_bytes,
+            len(b"image") + len(b"old") + len(b"current"),
         )
         self.assertFalse((self.root / "dmg").exists())
         self.assertFalse((self.root / "dmg-7zip").exists())
@@ -95,14 +99,20 @@ class CacheManagementTests(unittest.TestCase):
         self._write_entry("zip", "v1", "a" * 64, b"zip")
         self._write_entry("future", "v2", "b" * 64, b"future")
 
-        removed = clear_cache(root=self.root)
-        empty = clear_cache(root=self.root)
+        result = clear_cache(root=self.root)
+        empty_result = clear_cache(root=self.root)
 
-        self.assertEqual(removed.entries, 2)
-        self.assertEqual(removed.size_bytes, len(b"zip") + len(b"future"))
+        self.assertEqual(result.failures, ())
+        self.assertIsNotNone(result.selected)
+        assert result.selected is not None
+        self.assertEqual(result.selected.entries, 2)
+        self.assertEqual(result.selected.size_bytes, len(b"zip") + len(b"future"))
         self.assertFalse(self.root.exists())
-        self.assertEqual(empty.entries, 0)
-        self.assertEqual(empty.size_bytes, 0)
+        self.assertEqual(empty_result.failures, ())
+        self.assertIsNotNone(empty_result.selected)
+        assert empty_result.selected is not None
+        self.assertEqual(empty_result.selected.entries, 0)
+        self.assertEqual(empty_result.selected.size_bytes, 0)
 
     def test_clear_all_restores_access_to_unreadable_directories(self) -> None:
         """Remove an interrupted extraction containing an unreadable directory."""
@@ -140,11 +150,58 @@ class CacheManagementTests(unittest.TestCase):
         with patch("whatyouship.cache.os.scandir", side_effect=scandir), patch(
             "whatyouship.cache.os.chmod", side_effect=chmod
         ):
-            removed = clear_cache(root=self.root)
+            result = clear_cache(root=self.root)
 
         self.assertTrue(restored)
-        self.assertEqual(removed.temporary_entries, 1)
+        self.assertEqual(result.failures, ())
+        self.assertIsNotNone(result.selected)
+        assert result.selected is not None
+        self.assertEqual(result.selected.temporary_entries, 1)
         self.assertFalse(self.root.exists())
+
+    def test_clear_all_continues_after_unrecoverable_directory(self) -> None:
+        """Remove sibling entries after one directory remains inaccessible."""
+        blocked = self._write_entry(
+            "dmg-7zip", "v2", ".tmp-blocked", b"blocked"
+        )
+        removable = self._write_entry(
+            "dmg-7zip", "v2", ".tmp-removable", b"removable"
+        )
+        original_scandir = os.scandir
+        original_chmod = os.chmod
+
+        def scandir(path: str | os.PathLike[str]) -> Iterator[os.DirEntry[str]]:
+            """Reject traversal of the blocked staging entry.
+
+            :param path: Directory to inspect.
+            :returns: Directory iterator for accessible paths.
+            :raises PermissionError: If the blocked entry is inspected.
+            """
+            if Path(path) == blocked:
+                raise PermissionError(5, "Access is denied", str(path))
+            return original_scandir(path)
+
+        def chmod(path: str | os.PathLike[str], mode: int) -> None:
+            """Reject permission repair for the blocked staging entry.
+
+            :param path: File or directory whose mode is changed.
+            :param mode: New permission mode.
+            :raises PermissionError: If the blocked entry is changed.
+            """
+            if Path(path) == blocked:
+                raise PermissionError(5, "Access is denied", str(path))
+            original_chmod(path, mode)
+
+        with patch("whatyouship.cache.os.scandir", side_effect=scandir), patch(
+            "whatyouship.cache.os.chmod", side_effect=chmod
+        ):
+            result = clear_cache(root=self.root)
+
+        self.assertIsNone(result.selected)
+        self.assertEqual(len(result.failures), 1)
+        self.assertEqual(result.failures[0].path, blocked)
+        self.assertTrue(blocked.is_dir())
+        self.assertFalse(removable.exists())
 
     def test_clear_format_does_not_traverse_other_formats(self) -> None:
         """Leave inaccessible data outside the selected format untouched."""
@@ -164,9 +221,12 @@ class CacheManagementTests(unittest.TestCase):
             return original_scandir(path)
 
         with patch("whatyouship.cache.os.scandir", side_effect=scandir):
-            removed = clear_cache(("dmg",), self.root)
+            result = clear_cache(("dmg",), self.root)
 
-        self.assertEqual(removed.entries, 1)
+        self.assertEqual(result.failures, ())
+        self.assertIsNotNone(result.selected)
+        assert result.selected is not None
+        self.assertEqual(result.selected.entries, 1)
         self.assertTrue(other.is_dir())
 
     def test_clear_rejects_unknown_format(self) -> None:

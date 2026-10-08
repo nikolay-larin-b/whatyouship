@@ -13,7 +13,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from whatyouship import __version__
-from whatyouship.cache import CacheFormatInfo, CacheInfo
+from whatyouship.cache import (
+    CacheClearResult,
+    CacheFormatInfo,
+    CacheInfo,
+    CacheRemovalFailure,
+)
 from whatyouship.cli import main
 from whatyouship.model import (
     ArtifactFile,
@@ -113,6 +118,7 @@ class CliTests(unittest.TestCase):
     def test_cache_clear_requires_and_forwards_an_explicit_target(self) -> None:
         """Clear all data or selected formats without an interactive prompt."""
         empty = CacheInfo(Path("cache-root"), 0, 0, 0, ())
+        cleared = CacheClearResult(empty.root, empty, ())
         error_output = io.StringIO()
         with (
             contextlib.redirect_stderr(error_output),
@@ -127,7 +133,7 @@ class CliTests(unittest.TestCase):
         )
 
         with (
-            patch("whatyouship.cli.clear_cache", return_value=empty) as clear,
+            patch("whatyouship.cli.clear_cache", return_value=cleared) as clear,
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(
@@ -144,6 +150,35 @@ class CliTests(unittest.TestCase):
                 0,
             )
         clear.assert_called_once_with(("zip", "dmg"))
+
+    def test_cache_clear_reports_partial_failure_and_returns_one(self) -> None:
+        """Report paths left by best-effort cleanup without hiding failure."""
+        root = Path("cache-root")
+        selected = CacheInfo(root, 2, 1, 12, ())
+        result = CacheClearResult(
+            root,
+            selected,
+            (CacheRemovalFailure(root / "blocked", "Access is denied"),),
+        )
+        output = io.StringIO()
+
+        with patch(
+            "whatyouship.cli.clear_cache", return_value=result
+        ), contextlib.redirect_stdout(output):
+            exit_code = main(["cache", "clear", "--all"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            output.getvalue(),
+            "Persistent cache: cache-root\n"
+            "Entries selected: 2\n"
+            "Temporary entries selected: 1\n"
+            "Size selected: 12 bytes\n"
+            "\n"
+            "Cache cleanup incomplete.\n"
+            "Paths not removed: 1\n"
+            "- cache-root\\blocked: Access is denied\n",
+        )
 
     def test_version(self) -> None:
         """Verify that ``--version`` prints the package version and exits."""
