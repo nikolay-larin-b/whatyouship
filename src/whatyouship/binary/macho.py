@@ -10,6 +10,7 @@ import plistlib
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import Literal
 
 import lief
 
+from whatyouship.macos_tools import CODESIGN, SECURITY
 from whatyouship.model import (
     BinaryDependency,
     BinaryEntitlement,
@@ -606,14 +608,13 @@ def _cms_signature(content: bytes) -> _CmsSignature:
                 errors="replace",
             )
             trusted = None
-            security = shutil.which("security")
             root_keychain = Path(
                 "/System/Library/Keychains/SystemRootCertificates.keychain"
             )
-            if security is not None and root_keychain.is_file():
+            if sys.platform == "darwin" and root_keychain.is_file():
                 roots = subprocess.run(
                     [
-                        security,
+                        SECURITY,
                         "find-certificate",
                         "-a",
                         "-p",
@@ -665,13 +666,12 @@ def _native_signature(source: Path) -> _NativeSignature | None:
     :param source: Mach-O file to verify.
     :returns: Native verification metadata, or ``None`` off macOS or on tool failure.
     """
-    executable = shutil.which("codesign")
-    if executable is None:
+    if sys.platform != "darwin":
         return None
     try:
         verification = subprocess.run(
             [
-                executable,
+                CODESIGN,
                 "--verify",
                 "--all-architectures",
                 "--strict=all",
@@ -686,7 +686,7 @@ def _native_signature(source: Path) -> _NativeSignature | None:
         )
         display = subprocess.run(
             [
-                executable,
+                CODESIGN,
                 "--display",
                 "--all-architectures",
                 "--verbose=4",

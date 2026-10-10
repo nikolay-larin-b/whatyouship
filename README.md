@@ -71,12 +71,12 @@ needs them but they are unavailable.
 | `codesign` | macOS | Native trust and signature verification for DMG, Mach-O, and application bundles | Optional verification backend | Included with macOS. Verification falls back or is reported as unsupported when it is unavailable, depending on the artifact. |
 | [`rcodesign`](https://github.com/indygreg/apple-platform-rs/releases) | Windows and Linux; fallback on macOS when `codesign` is unavailable | Cross-platform DMG CMS and trust verification | Optional verification backend | Install a pre-built platform binary, or run `cargo install apple-codesign`, and add `rcodesign` or `rcodesign.exe` to `PATH`. |
 
-All commands except `hdiutil` are discovered through `PATH`; `hdiutil` is used
-from its standard macOS system location. A valid persistent extraction cache
-can be reused without the corresponding required extractor; the tool is needed
-again on a cache miss. Missing optional verification tools do not stop artifact
-inspection. Missing or failed `rcodesign` leaves complete verification of a
-signed DMG unsupported.
+The macOS system tools `hdiutil`, `codesign`, and `security` are invoked from
+their standard system locations. Third-party tools are discovered through
+`PATH`. A valid persistent extraction cache can be reused without the
+corresponding required extractor; the tool is needed again on a cache miss.
+Missing optional verification tools do not stop artifact inspection. Missing or
+failed `rcodesign` leaves complete verification of a signed DMG unsupported.
 
 ## What it looks for
 

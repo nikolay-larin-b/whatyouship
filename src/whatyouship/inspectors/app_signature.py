@@ -4,12 +4,12 @@
 """Verify macOS application bundle signatures with ``codesign``."""
 
 import os
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from whatyouship.macos_tools import CODESIGN
 from whatyouship.model import ArtifactSignature, ArtifactSignatureStatus
 
 
@@ -66,12 +66,9 @@ class AppSignatureInspector:
         """
         if sys.platform != "darwin":
             return ArtifactSignature(status="unsupported")
-        executable = shutil.which("codesign")
-        if executable is None:
-            return ArtifactSignature(status="unsupported")
         path = str(bundle.resolve())
         common = [
-            executable,
+            CODESIGN,
             "--verify",
             "--deep",
             "--strict=all",
@@ -98,7 +95,7 @@ class AppSignatureInspector:
                 env=environment,
             )
             display = subprocess.run(
-                [executable, "--display", "--verbose=4", path],
+                [CODESIGN, "--display", "--verbose=4", path],
                 capture_output=True,
                 check=False,
                 text=True,

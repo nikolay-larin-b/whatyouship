@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import lief
 
-from whatyouship.binary.macho import MachOInspector
+from whatyouship.binary.macho import MachOInspector, _cms_signature, _native_signature
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.model import BinaryDependency, BinaryEntitlement
 from whatyouship.rules.unsigned_binary import UnsignedBinaryRule
@@ -334,6 +334,82 @@ def _make_verifiable_signature(
 
 class MachOInspectorTests(unittest.TestCase):
     """Verify thin and universal Mach-O metadata extraction."""
+
+    def test_cms_trust_uses_system_security_path(self) -> None:
+        """Read macOS trust roots without consulting ``PATH`` for ``security``."""
+        content = bytes(range(20))
+        entries = (
+            (0, 0, 0xFADE0C02, 4),
+            (0x10000, 4, 0xFADE0B01, 16),
+        )
+        results = [
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="subject=CN=Example", stderr=""),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(
+                returncode=0,
+                stdout=b"-----BEGIN CERTIFICATE-----\n",
+                stderr=b"",
+            ),
+            SimpleNamespace(returncode=0, stdout=b"", stderr=b""),
+        ]
+        with (
+            patch("whatyouship.binary.macho.shutil.which", return_value="openssl"),
+            patch("whatyouship.binary.macho._code_directories", return_value=()),
+            patch("whatyouship.binary.macho._superblob_entries", return_value=entries),
+            patch("whatyouship.binary.macho.sys.platform", "darwin"),
+            patch("whatyouship.binary.macho.Path.is_file", return_value=True),
+            patch(
+                "whatyouship.binary.macho.subprocess.run",
+                side_effect=results,
+            ) as run,
+        ):
+            signature = _cms_signature(content)
+
+        self.assertTrue(signature.valid)
+        self.assertTrue(signature.trusted)
+        self.assertEqual(run.call_args_list[3].args[0][0], "/usr/bin/security")
+
+    def test_native_verification_uses_system_codesign_path(self) -> None:
+        """Invoke the macOS system tool without consulting ``PATH``."""
+        results = [
+            SimpleNamespace(returncode=0, stdout="", stderr="valid on disk"),
+            SimpleNamespace(
+                returncode=0,
+                stdout="",
+                stderr=(
+                    "Authority=Developer ID Application: Example\n"
+                    "TeamIdentifier=TEAM123456\n"
+                    "Timestamp=29 Sep 2026 at 01:50:28\n"
+                ),
+            ),
+        ]
+        with patch(
+            "whatyouship.binary.macho.sys.platform",
+            "darwin",
+        ), patch(
+            "whatyouship.binary.macho.subprocess.run",
+            side_effect=results,
+        ) as run:
+            signature = _native_signature(Path("application"))
+
+        self.assertIsNotNone(signature)
+        self.assertEqual(signature.signer, "Developer ID Application: Example")
+        self.assertEqual(run.call_args_list[0].args[0][0], "/usr/bin/codesign")
+        self.assertEqual(run.call_args_list[1].args[0][0], "/usr/bin/codesign")
+
+    def test_native_verification_skips_codesign_outside_macos(self) -> None:
+        """Do not invoke a similarly named command on another platform."""
+        with patch(
+            "whatyouship.binary.macho.sys.platform",
+            "linux",
+        ), patch(
+            "whatyouship.binary.macho.subprocess.run",
+        ) as run:
+            signature = _native_signature(Path("application"))
+
+        self.assertIsNone(signature)
+        run.assert_not_called()
 
     def test_inspects_thin_executable_from_path_and_bytes(self) -> None:
         """Identify an arm64 executable from both supported input forms."""

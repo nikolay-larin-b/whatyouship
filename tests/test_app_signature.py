@@ -48,9 +48,6 @@ TeamIdentifier=TEAM123456
             "whatyouship.inspectors.app_signature.sys.platform",
             "darwin",
         ), patch(
-            "whatyouship.inspectors.app_signature.shutil.which",
-            return_value="codesign",
-        ), patch(
             "whatyouship.inspectors.app_signature.subprocess.run",
             side_effect=[_result(0), _result(0), _result(0, display)],
         ) as run:
@@ -70,6 +67,9 @@ TeamIdentifier=TEAM123456
         integrity_command = run.call_args_list[0].args[0]
         trust_command = run.call_args_list[1].args[0]
         display_command = run.call_args_list[2].args[0]
+        self.assertEqual(integrity_command[0], "/usr/bin/codesign")
+        self.assertEqual(trust_command[0], "/usr/bin/codesign")
+        self.assertEqual(display_command[0], "/usr/bin/codesign")
         self.assertIn("--deep", integrity_command)
         self.assertIn("--strict=all", integrity_command)
         self.assertIn("=anchor apple generic", trust_command)
@@ -89,9 +89,6 @@ TeamIdentifier=TEAM123456
                 "whatyouship.inspectors.app_signature.sys.platform",
                 "darwin",
             ), patch(
-                "whatyouship.inspectors.app_signature.shutil.which",
-                return_value="codesign",
-            ), patch(
                 "whatyouship.inspectors.app_signature.subprocess.run",
                 side_effect=[
                     _result(integrity, diagnostic),
@@ -109,15 +106,13 @@ TeamIdentifier=TEAM123456
             "whatyouship.inspectors.app_signature.sys.platform",
             "darwin",
         ), patch(
-            "whatyouship.inspectors.app_signature.shutil.which",
-            return_value=None,
-        ), patch(
             "whatyouship.inspectors.app_signature.subprocess.run",
+            side_effect=FileNotFoundError,
         ) as run:
             signature = AppSignatureInspector().inspect(Path("Sample.app"))
 
         self.assertEqual(signature.status, "unsupported")
-        run.assert_not_called()
+        run.assert_called_once()
 
     def test_reports_unsupported_on_other_operating_systems(self) -> None:
         """Do not invoke a similarly named non-Apple executable."""
@@ -125,12 +120,12 @@ TeamIdentifier=TEAM123456
             "whatyouship.inspectors.app_signature.sys.platform",
             "linux",
         ), patch(
-            "whatyouship.inspectors.app_signature.shutil.which",
-        ) as which:
+            "whatyouship.inspectors.app_signature.subprocess.run",
+        ) as run:
             signature = AppSignatureInspector().inspect(Path("Sample.app"))
 
         self.assertEqual(signature.status, "unsupported")
-        which.assert_not_called()
+        run.assert_not_called()
 
 
 class AppSignatureRuleTests(unittest.TestCase):

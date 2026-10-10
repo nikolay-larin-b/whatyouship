@@ -13,8 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-
-_HDIUTIL = "/usr/bin/hdiutil"
+from whatyouship.macos_tools import HDIUTIL
 
 
 @dataclass(frozen=True)
@@ -98,7 +97,7 @@ def inspect_disk_image_metadata(source_path: Path) -> DiskImageMetadata:
     try:
         result = subprocess.run(
             [
-                _HDIUTIL,
+                HDIUTIL,
                 "imageinfo",
                 "-plist",
                 "-stdinpass",
@@ -110,7 +109,7 @@ def inspect_disk_image_metadata(source_path: Path) -> DiskImageMetadata:
         )
     except OSError as error:
         raise FileNotFoundError(
-            f"Unable to run macOS disk image utility '{_HDIUTIL}': {error}"
+            f"Unable to run macOS disk image utility '{HDIUTIL}': {error}"
         ) from error
     if result.returncode != 0:
         detail = _failure_detail(result)
@@ -154,7 +153,7 @@ def convert_disk_image(source_path: Path, destination_path: Path) -> None:
             try:
                 result = subprocess.run(
                     [
-                        _HDIUTIL,
+                        HDIUTIL,
                         "convert",
                         str(input_path),
                         "-format",
@@ -169,7 +168,7 @@ def convert_disk_image(source_path: Path, destination_path: Path) -> None:
                 )
             except OSError as error:
                 raise FileNotFoundError(
-                    f"Unable to run macOS disk image utility '{_HDIUTIL}': {error}"
+                    f"Unable to run macOS disk image utility '{HDIUTIL}': {error}"
                 ) from error
             if result.returncode != 0:
                 detail = _failure_detail(result)
@@ -206,7 +205,7 @@ def verify_disk_image(source_path: Path) -> None:
     try:
         result = subprocess.run(
             [
-                _HDIUTIL,
+                HDIUTIL,
                 "verify",
                 "-nocache",
                 "-stdinpass",
@@ -218,7 +217,7 @@ def verify_disk_image(source_path: Path) -> None:
         )
     except OSError as error:
         raise FileNotFoundError(
-            f"Unable to run macOS disk image utility '{_HDIUTIL}': {error}"
+            f"Unable to run macOS disk image utility '{HDIUTIL}': {error}"
         ) from error
     if result.returncode != 0:
         detail = _failure_detail(result)
@@ -277,7 +276,7 @@ class MacOSDiskImageMounter:
             try:
                 result = subprocess.run(
                     [
-                        _HDIUTIL,
+                        HDIUTIL,
                         "attach",
                         "-readonly",
                         "-nobrowse",
@@ -294,7 +293,7 @@ class MacOSDiskImageMounter:
                 )
             except OSError as error:
                 raise FileNotFoundError(
-                    f"Unable to run macOS disk image utility '{_HDIUTIL}': {error}"
+                    f"Unable to run macOS disk image utility '{HDIUTIL}': {error}"
                 ) from error
 
             if result.returncode != 0:
@@ -360,7 +359,7 @@ class MacOSDiskImageMounter:
         :raises ValueError: If detaching the image fails.
         """
         result = subprocess.run(
-            [_HDIUTIL, "detach", str(mount_point)],
+            [HDIUTIL, "detach", str(mount_point)],
             capture_output=True,
             check=False,
         )

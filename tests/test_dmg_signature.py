@@ -179,6 +179,9 @@ class DmgSignatureInspectorTests(unittest.TestCase):
             "whatyouship.inspectors.dmg_signature.shutil.which",
             side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
         ), patch(
+            "whatyouship.inspectors.dmg_signature._codesign",
+            return_value=None,
+        ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run"
         ) as run:
             run.return_value.returncode = 0
@@ -239,6 +242,9 @@ class DmgSignatureInspectorTests(unittest.TestCase):
             "whatyouship.inspectors.dmg_signature.shutil.which",
             side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
         ), patch(
+            "whatyouship.inspectors.dmg_signature._codesign",
+            return_value=None,
+        ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run",
             side_effect=OSError("permission denied"),
         ):
@@ -257,6 +263,9 @@ class DmgSignatureInspectorTests(unittest.TestCase):
         with patch(
             "whatyouship.inspectors.dmg_signature.shutil.which",
             side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
+        ), patch(
+            "whatyouship.inspectors.dmg_signature._codesign",
+            return_value=None,
         ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run",
             return_value=failure,
@@ -277,6 +286,9 @@ class DmgSignatureInspectorTests(unittest.TestCase):
         with patch(
             "whatyouship.inspectors.dmg_signature.shutil.which",
             side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
+        ), patch(
+            "whatyouship.inspectors.dmg_signature._codesign",
+            return_value=None,
         ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run",
             return_value=result,
@@ -302,8 +314,8 @@ TeamIdentifier=TEAM123456
             SimpleNamespace(returncode=0, stdout="", stderr=display),
         ]
         with patch(
-            "whatyouship.inspectors.dmg_signature.shutil.which",
-            side_effect=lambda name: "codesign" if name == "codesign" else None,
+            "whatyouship.inspectors.dmg_signature.sys.platform",
+            "darwin",
         ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run",
             side_effect=results,
@@ -322,6 +334,9 @@ TeamIdentifier=TEAM123456
         )
         self.assertTrue(signature.notarization_ticket)
         self.assertEqual(run.call_count, 3)
+        self.assertEqual(run.call_args_list[0].args[0][0], "/usr/bin/codesign")
+        self.assertEqual(run.call_args_list[1].args[0][0], "/usr/bin/codesign")
+        self.assertEqual(run.call_args_list[2].args[0][0], "/usr/bin/codesign")
         self.assertIn("--verify", run.call_args_list[0].args[0])
         self.assertIn("=anchor apple generic", run.call_args_list[1].args[0])
         self.assertIn("--display", run.call_args_list[2].args[0])
@@ -335,8 +350,8 @@ TeamIdentifier=TEAM123456
             (1, 1, "invalid"),
         ):
             with self.subTest(expected=expected), patch(
-                "whatyouship.inspectors.dmg_signature.shutil.which",
-                side_effect=lambda name: "codesign" if name == "codesign" else None,
+                "whatyouship.inspectors.dmg_signature.sys.platform",
+                "darwin",
             ), patch(
                 "whatyouship.inspectors.dmg_signature.subprocess.run",
                 side_effect=[
@@ -377,6 +392,9 @@ TeamIdentifier=TEAM123456
             "whatyouship.inspectors.dmg_signature.shutil.which",
             side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
         ), patch(
+            "whatyouship.inspectors.dmg_signature._codesign",
+            return_value=None,
+        ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run"
         ) as run:
             run.return_value.returncode = 0
@@ -393,6 +411,9 @@ TeamIdentifier=TEAM123456
         with patch(
             "whatyouship.inspectors.dmg_signature.shutil.which",
             side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
+        ), patch(
+            "whatyouship.inspectors.dmg_signature._codesign",
+            return_value=None,
         ), patch(
             "whatyouship.inspectors.dmg_signature.subprocess.run"
         ) as run:

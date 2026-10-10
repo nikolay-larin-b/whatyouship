@@ -8,11 +8,13 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from whatyouship.external_tools import RCODESIGN, installation_instruction
+from whatyouship.macos_tools import CODESIGN
 from whatyouship.model import ArtifactSignature, ArtifactSignatureStatus
 
 
@@ -327,11 +329,10 @@ def _codesign(source_path: Path) -> _CodesignMetadata | None:
     :param source_path: Signed DMG artifact.
     :returns: Native verification metadata, or ``None`` when unavailable.
     """
-    executable = shutil.which("codesign")
-    if executable is None:
+    if sys.platform != "darwin":
         return None
     common = [
-        executable,
+        CODESIGN,
         "--verify",
         "--strict=all",
         "--verbose=4",
@@ -358,7 +359,7 @@ def _codesign(source_path: Path) -> _CodesignMetadata | None:
             env=environment,
         )
         display = subprocess.run(
-            [executable, "--display", "--verbose=4", path],
+            [CODESIGN, "--display", "--verbose=4", path],
             capture_output=True,
             check=False,
             text=True,

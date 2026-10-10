@@ -77,12 +77,13 @@ extraction needs them but they are unavailable.
        ``cargo install apple-codesign``, and add ``rcodesign`` or
        ``rcodesign.exe`` to ``PATH``.
 
-All commands except ``hdiutil`` are discovered through ``PATH``; ``hdiutil`` is
-used from its standard macOS system location. A valid persistent extraction
-cache can be reused without the corresponding required extractor; the tool is
-needed again on a cache miss. Missing optional verification tools do not stop
-artifact inspection. Missing or failed ``rcodesign`` leaves complete
-verification of a signed DMG unsupported.
+The macOS system tools ``hdiutil``, ``codesign``, and ``security`` are invoked
+from their standard system locations. Third-party tools are discovered through
+``PATH``. A valid persistent extraction cache can be reused without the
+corresponding required extractor; the tool is needed again on a cache miss.
+Missing optional verification tools do not stop artifact inspection. Missing
+or failed ``rcodesign`` leaves complete verification of a signed DMG
+unsupported.
 
 By default, the build artifact rule checks ``.ilk``, ``.obj``, ``.iobj``,
 ``.ipdb``, ``.tlog``, and ``.lastbuildstate`` files, along with ``.dSYM``
