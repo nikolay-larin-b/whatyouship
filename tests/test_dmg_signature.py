@@ -6,6 +6,7 @@
 import hashlib
 import os
 import struct
+import subprocess
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -211,18 +212,79 @@ class DmgSignatureInspectorTests(unittest.TestCase):
         )
 
     def test_reports_signed_image_as_unsupported_without_rcodesign(self) -> None:
-        """Preserve static metadata when CMS verification is unavailable."""
+        """Preserve static metadata and explain how to enable CMS verification."""
         payload, _ = _signed_dmg()
         self.source.write_bytes(payload)
-        with patch(
-            "whatyouship.inspectors.dmg_signature.shutil.which",
-            return_value=None,
+        with (
+            patch(
+                "whatyouship.inspectors.dmg_signature.shutil.which",
+                return_value=None,
+            ),
+            patch("whatyouship.external_tools.sys.platform", "linux"),
         ):
             signature = DmgSignatureInspector().inspect(self.source)
 
         self.assertEqual(signature.status, "unsupported")
         self.assertEqual(signature.team_id, "TEAM123456")
         self.assertTrue(signature.notarization_ticket)
+        self.assertIn("rcodesign was not found in PATH", signature.verification_issue)
+        self.assertIn("Download the Linux binary", signature.verification_issue)
+        self.assertIn("cargo install apple-codesign", signature.verification_issue)
+
+    def test_reports_rcodesign_start_failure(self) -> None:
+        """Distinguish an installed tool that cannot be started."""
+        payload, _ = _signed_dmg()
+        self.source.write_bytes(payload)
+        with patch(
+            "whatyouship.inspectors.dmg_signature.shutil.which",
+            side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
+        ), patch(
+            "whatyouship.inspectors.dmg_signature.subprocess.run",
+            side_effect=OSError("permission denied"),
+        ):
+            signature = DmgSignatureInspector().inspect(self.source)
+
+        self.assertEqual(signature.status, "unsupported")
+        self.assertIn("could not be started: permission denied", signature.verification_issue)
+
+    def test_reports_rcodesign_command_failure(self) -> None:
+        """Include bounded diagnostics from a failed verification command."""
+        payload, _ = _signed_dmg()
+        self.source.write_bytes(payload)
+        failure = subprocess.CompletedProcess(
+            ["rcodesign"], 2, "ordinary output", "verification failed"
+        )
+        with patch(
+            "whatyouship.inspectors.dmg_signature.shutil.which",
+            side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
+        ), patch(
+            "whatyouship.inspectors.dmg_signature.subprocess.run",
+            return_value=failure,
+        ):
+            signature = DmgSignatureInspector().inspect(self.source)
+
+        self.assertEqual(signature.status, "unsupported")
+        self.assertIn(
+            "rcodesign failed with exit code 2: verification failed",
+            signature.verification_issue,
+        )
+
+    def test_reports_unrecognized_rcodesign_output(self) -> None:
+        """Explain that successful but incompatible output could not be parsed."""
+        payload, _ = _signed_dmg()
+        self.source.write_bytes(payload)
+        result = subprocess.CompletedProcess(["rcodesign"], 0, "unexpected", "")
+        with patch(
+            "whatyouship.inspectors.dmg_signature.shutil.which",
+            side_effect=lambda name: "rcodesign" if name == "rcodesign" else None,
+        ), patch(
+            "whatyouship.inspectors.dmg_signature.subprocess.run",
+            return_value=result,
+        ):
+            signature = DmgSignatureInspector().inspect(self.source)
+
+        self.assertEqual(signature.status, "unsupported")
+        self.assertIn("could not understand", signature.verification_issue)
 
     def test_uses_native_codesign_before_cross_platform_fallback(self) -> None:
         """Prefer native integrity and Apple-anchor checks on macOS."""

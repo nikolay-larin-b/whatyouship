@@ -31,12 +31,23 @@ def _render_compare(report: CompareReport) -> str:
     lines = [
         f"Old: {report.old_artifact.source_path}",
         f"New: {report.new_artifact.source_path}",
+    ]
+    for label, artifact in (
+        ("Old", report.old_artifact),
+        ("New", report.new_artifact),
+    ):
+        if artifact.signature.verification_issue is not None:
+            lines.append(
+                f"{label} artifact signature verification issue: "
+                f"{artifact.signature.verification_issue}"
+            )
+    lines.extend((
         f"Added: {len(comparison.added)}",
         f"Removed: {len(comparison.removed)}",
         f"Changed: {len(comparison.changed)}",
         f"Unchanged: {len(comparison.unchanged)}",
         f"Semantic differences: {len(comparison.semantic_differences)}",
-    ]
+    ))
     for label, paths in (
         ("Added", comparison.added),
         ("Removed", comparison.removed),
@@ -88,6 +99,10 @@ def _render_inspect(report: InspectReport) -> str:
     if artifact.signature.notarization_ticket is not None:
         state = "present" if artifact.signature.notarization_ticket else "absent"
         lines.append(f"  Stapled notarization ticket: {state}")
+    if artifact.signature.verification_issue is not None:
+        lines.append(
+            f"  Verification issue: {artifact.signature.verification_issue}"
+        )
     if artifact.installation_scope is not None:
         lines.append(f"Installation scope: {artifact.installation_scope.kind}")
     if artifact.license_agreement_present is not None:
@@ -126,6 +141,11 @@ def _render_inspect(report: InspectReport) -> str:
                 )
             if bundle.signature.team_id is not None:
                 lines.append(f"    Signature Team ID: {bundle.signature.team_id}")
+            if bundle.signature.verification_issue is not None:
+                lines.append(
+                    "    Signature verification issue: "
+                    f"{bundle.signature.verification_issue}"
+                )
             lines.extend(f"    Issue: {issue.message}" for issue in bundle.issues)
     if artifact.symbolic_links:
         lines.extend(["", "Symbolic links:"])
@@ -209,10 +229,28 @@ def _render_lint(report: LintReport) -> str:
     :param report: Structured lint result.
     :returns: Human-readable lint text.
     """
+    notices = []
+    if report.artifact.signature.verification_issue is not None:
+        notices.append(
+            "Artifact signature verification issue: "
+            f"{report.artifact.signature.verification_issue}"
+        )
+    if (
+        report.baseline_artifact is not None
+        and report.baseline_artifact.signature.verification_issue is not None
+    ):
+        notices.append(
+            "Baseline artifact signature verification issue: "
+            f"{report.baseline_artifact.signature.verification_issue}"
+        )
+    prefix = "\n".join(notices) + "\n\n" if notices else ""
     comparison = report.baseline_comparison
     if comparison is None:
-        return ("\n".join(_finding_line(finding) for finding in report.findings) + "\n"
-                if report.findings else "No findings.\n")
+        findings = (
+            "\n".join(_finding_line(finding) for finding in report.findings) + "\n"
+            if report.findings else "No findings.\n"
+        )
+        return prefix + findings
     lines = [
         f"New: {len(comparison.new)}",
         f"Existing: {len(comparison.existing)}",
@@ -226,7 +264,7 @@ def _render_lint(report: LintReport) -> str:
     if comparison.resolved:
         lines.extend(["", "Resolved findings:"])
         lines.extend(_finding_line(finding) for finding in comparison.resolved)
-    return "\n".join(lines) + "\n"
+    return prefix + "\n".join(lines) + "\n"
 
 
 def render_text(report: Report) -> str:

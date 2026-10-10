@@ -224,6 +224,11 @@ content and trailer digests, and reports the Team ID and presence of a stapled
 notarization ticket. On macOS, the system `codesign` command verifies CMS
 integrity and Apple trust and reports the signer and timestamp. On other
 platforms, `rcodesign` provides the same metadata when available in `PATH`.
+A missing or failed `rcodesign` does not stop DMG inspection. For a signed image,
+the signature status is reported as unsupported together with the verification
+issue and platform-specific installation guidance. Pre-built binaries are
+available from the apple-platform-rs releases, or the tool can be installed
+with `cargo install apple-codesign`.
 A signature with valid digests and CMS cryptography that does not chain to an
 Apple root is reported as untrusted. Current Gatekeeper policy and online
 notarization status are not evaluated.

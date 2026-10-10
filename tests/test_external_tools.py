@@ -8,8 +8,10 @@ from unittest.mock import Mock, patch
 
 from whatyouship.external_tools import (
     INNOEXTRACT,
+    RCODESIGN,
     SEVEN_ZIP,
     find_external_tool,
+    installation_instruction,
 )
 
 
@@ -87,4 +89,22 @@ class ExternalToolTests(unittest.TestCase):
 
         self.assertIn("system package manager", str(raised.exception))
         self.assertIn("package: innoextract", str(raised.exception))
+
+    def test_rcodesign_guidance_names_platform_binary_and_cargo(self) -> None:
+        """Offer official binaries and Cargo on every primary platform."""
+        cases = (
+            ("win32", "Windows"),
+            ("darwin", "macOS"),
+            ("linux", "Linux"),
+        )
+        for platform_name, expected in cases:
+            with self.subTest(platform_name=platform_name), patch(
+                "whatyouship.external_tools.sys.platform",
+                platform_name,
+            ):
+                instruction = installation_instruction(RCODESIGN)
+
+            self.assertIn(f"Download the {expected} binary", instruction)
+            self.assertIn("cargo install apple-codesign", instruction)
+            self.assertIn("apple-platform-rs/releases", instruction)
 

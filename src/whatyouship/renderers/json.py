@@ -89,6 +89,7 @@ def _bundle_data(bundle: AppBundleMetadata) -> dict[str, Any]:
                 if bundle.signature.timestamp is not None else None
             ),
             "team_id": bundle.signature.team_id,
+            "verification_issue": bundle.signature.verification_issue,
         },
         "issues": [
             {"identity": issue.identity, "message": issue.message}
@@ -117,6 +118,7 @@ def _artifact_data(artifact: ReleaseArtifact) -> dict[str, Any]:
             ),
             "team_id": artifact.signature.team_id,
             "notarization_ticket": artifact.signature.notarization_ticket,
+            "verification_issue": artifact.signature.verification_issue,
         },
         "installation_scope": None if scope is None else {
             "kind": scope.kind,
@@ -150,6 +152,18 @@ def _finding_data(finding: Finding) -> dict[str, Any]:
     }
 
 
+def _artifact_reference_data(artifact: ReleaseArtifact) -> dict[str, Any]:
+    """Serialize an artifact reference and any environment-specific limitation.
+
+    :param artifact: Artifact referenced by a lint or compare report.
+    :returns: Source path and optional signature verification issue.
+    """
+    data: dict[str, Any] = {"source_path": str(artifact.source_path)}
+    if artifact.signature.verification_issue is not None:
+        data["signature_verification_issue"] = artifact.signature.verification_issue
+    return data
+
+
 def render_json(report: Report) -> str:
     """Render a complete versioned JSON report.
 
@@ -165,12 +179,12 @@ def render_json(report: Report) -> str:
         data["artifact"] = _artifact_data(report.artifact)
     elif isinstance(report, LintReport):
         data["report_type"] = "lint"
-        data["artifact"] = {"source_path": str(report.artifact.source_path)}
+        data["artifact"] = _artifact_reference_data(report.artifact)
         data["findings"] = [_finding_data(finding) for finding in report.findings]
         if report.baseline_comparison is not None and report.baseline_artifact is not None:
             comparison = report.baseline_comparison
             data["baseline"] = {
-                "source_path": str(report.baseline_artifact.source_path),
+                **_artifact_reference_data(report.baseline_artifact),
                 "new": [_finding_data(finding) for finding in comparison.new],
                 "existing": [_finding_data(finding) for finding in comparison.existing],
                 "resolved": [_finding_data(finding) for finding in comparison.resolved],
@@ -180,8 +194,8 @@ def render_json(report: Report) -> str:
     else:
         comparison = report.comparison
         data["report_type"] = "compare"
-        data["old_artifact"] = {"source_path": str(report.old_artifact.source_path)}
-        data["new_artifact"] = {"source_path": str(report.new_artifact.source_path)}
+        data["old_artifact"] = _artifact_reference_data(report.old_artifact)
+        data["new_artifact"] = _artifact_reference_data(report.new_artifact)
         for category in ("added", "removed", "changed", "unchanged"):
             data[category] = [path.as_posix() for path in getattr(comparison, category)]
         data["semantic_differences"] = [

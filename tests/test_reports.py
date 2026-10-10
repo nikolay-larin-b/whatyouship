@@ -91,6 +91,7 @@ class ReportOutputTests(unittest.TestCase):
                 timestamp,
                 team_id="TEAM123456",
                 notarization_ticket=True,
+                verification_issue="Sample verification issue.",
             ),
             installation_scope=InstallationScope(
                 "ambiguous",
@@ -136,6 +137,7 @@ class ReportOutputTests(unittest.TestCase):
             "timestamp": timestamp.isoformat(),
             "team_id": "TEAM123456",
             "notarization_ticket": True,
+            "verification_issue": "Sample verification issue.",
         })
         self.assertEqual(data["artifact"]["installation_scope"], {
             "kind": "ambiguous", "conflicts": ["Conflicting registry root"],
@@ -156,6 +158,7 @@ class ReportOutputTests(unittest.TestCase):
                 "signer": "Developer ID Application: Example (TEAM123456)",
                 "timestamp": timestamp.isoformat(),
                 "team_id": "TEAM123456",
+                "verification_issue": None,
             },
             "issues": [{
                 "identity": "sample-issue",
@@ -193,6 +196,116 @@ class ReportOutputTests(unittest.TestCase):
                 },
             },
         })
+
+    def test_inspect_text_displays_signature_verification_issue(self) -> None:
+        """Explain why complete artifact signature verification was unavailable."""
+        artifact = ReleaseArtifact(
+            Path("release.dmg"),
+            signature=ArtifactSignature(
+                status="unsupported",
+                verification_issue="rcodesign was not found in PATH.",
+            ),
+        )
+        output = io.StringIO()
+
+        with (
+            patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(main(["inspect", "release.dmg"]), 0)
+
+        self.assertIn(
+            "Verification issue: rcodesign was not found in PATH.",
+            output.getvalue(),
+        )
+
+    def test_lint_and_compare_text_display_verification_issues(self) -> None:
+        """Keep environment limitations visible without creating lint findings."""
+        affected = ReleaseArtifact(
+            Path("affected.dmg"),
+            signature=ArtifactSignature(
+                status="unsupported",
+                verification_issue="rcodesign failed with exit code 2.",
+            ),
+        )
+        unaffected = ReleaseArtifact(Path("unaffected.dmg"))
+
+        lint_output = io.StringIO()
+        with (
+            patch("whatyouship.cli.inspect_artifact", return_value=affected),
+            contextlib.redirect_stdout(lint_output),
+        ):
+            self.assertEqual(main(["lint", "affected.dmg"]), 0)
+
+        self.assertIn(
+            "Artifact signature verification issue: rcodesign failed",
+            lint_output.getvalue(),
+        )
+        self.assertIn("No findings.", lint_output.getvalue())
+
+        compare_output = io.StringIO()
+        with (
+            patch(
+                "whatyouship.cli.inspect_artifact",
+                side_effect=[affected, unaffected],
+            ),
+            contextlib.redirect_stdout(compare_output),
+        ):
+            self.assertEqual(
+                main(["compare", "affected.dmg", "unaffected.dmg"]),
+                0,
+            )
+
+        self.assertIn(
+            "Old artifact signature verification issue: rcodesign failed",
+            compare_output.getvalue(),
+        )
+
+    def test_lint_and_compare_json_preserve_verification_issues(self) -> None:
+        """Serialize verification issues without treating them as comparisons."""
+        affected = ReleaseArtifact(
+            Path("affected.dmg"),
+            signature=ArtifactSignature(
+                status="unsupported",
+                verification_issue="rcodesign was not found in PATH.",
+            ),
+        )
+        unaffected = ReleaseArtifact(Path("unaffected.dmg"))
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            lint_target = root / "lint.json"
+            compare_target = root / "compare.json"
+            with patch("whatyouship.cli.inspect_artifact", return_value=affected):
+                self.assertEqual(
+                    main(["lint", "affected.dmg", "-o", str(lint_target)]),
+                    0,
+                )
+            with patch(
+                "whatyouship.cli.inspect_artifact",
+                side_effect=[affected, unaffected],
+            ):
+                self.assertEqual(
+                    main([
+                        "compare",
+                        "affected.dmg",
+                        "unaffected.dmg",
+                        "-o",
+                        str(compare_target),
+                    ]),
+                    0,
+                )
+            lint_data = json.loads(lint_target.read_text(encoding="utf-8"))
+            compare_data = json.loads(compare_target.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            lint_data["artifact"]["signature_verification_issue"],
+            "rcodesign was not found in PATH.",
+        )
+        self.assertEqual(
+            compare_data["old_artifact"]["signature_verification_issue"],
+            "rcodesign was not found in PATH.",
+        )
+        self.assertNotIn("signature_verification_issue", compare_data["new_artifact"])
 
     def test_inspect_text_displays_application_bundle_metadata(self) -> None:
         """Include bundle identity, versions, executable, and issues in text."""

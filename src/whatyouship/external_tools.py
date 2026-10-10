@@ -15,31 +15,39 @@ class ExternalTool:
 
     :param name: Human-readable tool name.
     :param executables: Supported executable names in lookup order.
+    :param download_url: Official download or installation page.
     :param linux_package: Package name used by supported Linux families.
     :param homebrew_formula: Homebrew formula used on macOS.
-    :param windows_url: Official Windows download or installation page.
+    :param cargo_package: Cargo package providing the executable.
     """
 
     name: str
     executables: tuple[str, ...]
-    linux_package: str
-    homebrew_formula: str
-    windows_url: str
+    download_url: str
+    linux_package: str | None = None
+    homebrew_formula: str | None = None
+    cargo_package: str | None = None
 
 
 SEVEN_ZIP = ExternalTool(
     name="7-Zip",
     executables=("7zz", "7z", "7z.exe"),
+    download_url="https://www.7-zip.org/download.html",
     linux_package="7zip",
     homebrew_formula="sevenzip",
-    windows_url="https://www.7-zip.org/download.html",
 )
 INNOEXTRACT = ExternalTool(
     name="innoextract",
     executables=("innoextract",),
+    download_url="https://constexpr.org/innoextract/",
     linux_package="innoextract",
     homebrew_formula="innoextract",
-    windows_url="https://constexpr.org/innoextract/",
+)
+RCODESIGN = ExternalTool(
+    name="rcodesign",
+    executables=("rcodesign", "rcodesign.exe"),
+    download_url="https://github.com/indygreg/apple-platform-rs/releases",
+    cargo_package="apple-codesign",
 )
 
 
@@ -59,17 +67,28 @@ def _linux_distribution_ids() -> set[str]:
     }
 
 
-def _installation_instruction(tool: ExternalTool) -> str:
+def installation_instruction(tool: ExternalTool) -> str:
     """Build an installation instruction for the current operating system.
 
     :param tool: Missing external tool.
     :returns: Platform-specific installation instruction.
     """
+    if tool.cargo_package is not None:
+        platform_name = (
+            "Windows" if sys.platform == "win32" else
+            "macOS" if sys.platform == "darwin" else
+            "Linux" if sys.platform.startswith("linux") else
+            "your operating system"
+        )
+        return (
+            f"Download the {platform_name} binary from {tool.download_url}, or "
+            f"install it with Cargo: cargo install {tool.cargo_package}."
+        )
     if sys.platform == "win32":
-        return f"Download and install it from {tool.windows_url}."
-    if sys.platform == "darwin":
+        return f"Download and install it from {tool.download_url}."
+    if sys.platform == "darwin" and tool.homebrew_formula is not None:
         return f"Install it with Homebrew: brew install {tool.homebrew_formula}."
-    if sys.platform.startswith("linux"):
+    if sys.platform.startswith("linux") and tool.linux_package is not None:
         distribution_ids = _linux_distribution_ids()
         if distribution_ids & {"debian", "ubuntu"}:
             return f"Install it with: sudo apt install {tool.linux_package}."
@@ -81,7 +100,7 @@ def _installation_instruction(tool: ExternalTool) -> str:
             "Install it with your system package manager "
             f"(package: {tool.linux_package})."
         )
-    return f"Install {tool.name} and add it to PATH."
+    return f"Download and install it from {tool.download_url}."
 
 
 def _executable_list(executables: tuple[str, ...]) -> str:
@@ -116,5 +135,5 @@ def find_external_tool(
     names = _executable_list(tool.executables)
     raise FileNotFoundError(
         f"{tool.name} was not found in PATH. It is required to {purpose}. "
-        f"{_installation_instruction(tool)} Ensure {names} is available in PATH."
+        f"{installation_instruction(tool)} Ensure {names} is available in PATH."
     )

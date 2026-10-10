@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from whatyouship.external_tools import RCODESIGN, installation_instruction
 from whatyouship.model import ArtifactSignature, ArtifactSignatureStatus
 
 
@@ -59,6 +60,14 @@ class _RcodesignMetadata:
     trusted: bool
     timestamp: datetime | None
     timestamp_valid: bool
+
+
+@dataclass(frozen=True)
+class _RcodesignResult:
+    """Hold optional verification metadata or an actionable failure reason."""
+
+    metadata: _RcodesignMetadata | None
+    issue: str | None = None
 
 
 @dataclass(frozen=True)
@@ -488,15 +497,33 @@ def _parse_rcodesign(output: str) -> _RcodesignMetadata | None:
     )
 
 
-def _rcodesign(source_path: Path) -> _RcodesignMetadata | None:
+def _rcodesign_failure_detail(stdout: str, stderr: str) -> str:
+    """Select bounded diagnostics from a failed ``rcodesign`` invocation.
+
+    :param stdout: Captured standard output.
+    :param stderr: Captured standard error.
+    :returns: Diagnostic text suitable for a report field.
+    """
+    output = stderr.strip() or stdout.strip()
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return " | ".join(lines[-6:])[:1000]
+
+
+def _rcodesign(source_path: Path) -> _RcodesignResult:
     """Inspect CMS metadata with an optional cross-platform tool.
 
     :param source_path: Signed DMG artifact.
-    :returns: Parsed metadata, or ``None`` when the tool cannot inspect it.
+    :returns: Parsed metadata or an actionable reason verification was incomplete.
     """
     executable = shutil.which("rcodesign") or shutil.which("rcodesign.exe")
     if executable is None:
-        return None
+        return _RcodesignResult(
+            None,
+            "CMS signature verification was not performed because rcodesign was "
+            "not found in PATH. Static CodeDirectory verification succeeded. "
+            f"{installation_instruction(RCODESIGN)} Ensure 'rcodesign' or "
+            "'rcodesign.exe' is available in PATH.",
+        )
     try:
         result = subprocess.run(
             [
@@ -512,11 +539,29 @@ def _rcodesign(source_path: Path) -> _RcodesignMetadata | None:
             encoding="utf-8",
             errors="replace",
         )
-    except OSError:
-        return None
+    except OSError as error:
+        return _RcodesignResult(
+            None,
+            "CMS signature verification was not completed because rcodesign "
+            f"could not be started: {error}",
+        )
     if result.returncode != 0:
-        return None
-    return _parse_rcodesign(result.stdout)
+        detail = _rcodesign_failure_detail(result.stdout, result.stderr)
+        suffix = f": {detail}" if detail else ""
+        return _RcodesignResult(
+            None,
+            "CMS signature verification was not completed because rcodesign "
+            f"failed with exit code {result.returncode}{suffix}",
+        )
+    metadata = _parse_rcodesign(result.stdout)
+    if metadata is None:
+        return _RcodesignResult(
+            None,
+            "CMS signature verification was not completed because rcodesign "
+            "returned output that WhatYouShip could not understand. Update "
+            "rcodesign or WhatYouShip and try again.",
+        )
+    return _RcodesignResult(metadata)
 
 
 class DmgSignatureInspector:
@@ -564,12 +609,14 @@ class DmgSignatureInspector:
                 team_id=signature.team_id or native.team_id,
                 notarization_ticket=signature.ticket_present,
             )
-        metadata = _rcodesign(source_path)
+        rcodesign_result = _rcodesign(source_path)
+        metadata = rcodesign_result.metadata
         if metadata is None:
             return ArtifactSignature(
                 status="unsupported",
                 team_id=signature.team_id,
                 notarization_ticket=signature.ticket_present,
+                verification_issue=rcodesign_result.issue,
             )
         algorithm = (metadata.digest_algorithm or "").lower().replace("-", "")
         try:
