@@ -115,7 +115,10 @@ class DmgSevenZipExtractionCacheTests(unittest.TestCase):
         with patch(
             "whatyouship.inspectors.dmg_7zip_cache.shutil.which",
             return_value=None,
-        ), self.assertRaisesRegex(FileNotFoundError, "requires 7-Zip"):
+        ), self.assertRaisesRegex(
+            FileNotFoundError,
+            "7-Zip was not found in PATH.*extract DMG contents outside macOS",
+        ):
             find_7zip()
 
     def test_cache_hit_does_not_require_7zip(self) -> None:

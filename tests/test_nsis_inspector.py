@@ -138,13 +138,33 @@ class NsisInspectorTests(unittest.TestCase):
             patch("whatyouship.inspectors.nsis_cache.subprocess.run") as run,
             self.assertRaisesRegex(
                 ValueError,
-                "NSIS extraction requires 7-Zip. Add '7z' or '7zz' to PATH.",
+                "7-Zip was not found in PATH.*extract NSIS installer payloads",
             ),
         ):
             NsisInspector().inspect(source)
 
         run.assert_not_called()
         self.assertFalse(self._entry(source).exists())
+
+    def test_missing_7zip_is_cli_tool_error_with_installation_guidance(self) -> None:
+        """Exit with code two and show the detected platform's installation command."""
+        source = self._source()
+        error_output = io.StringIO()
+
+        with (
+            patch("whatyouship.inspectors.nsis_cache.shutil.which", return_value=None),
+            patch("whatyouship.external_tools.sys.platform", "linux"),
+            patch(
+                "whatyouship.external_tools.platform.freedesktop_os_release",
+                return_value={"ID": "fedora"},
+            ),
+            contextlib.redirect_stderr(error_output),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main(["inspect", str(source)])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("sudo dnf install 7zip", error_output.getvalue())
 
     def test_successful_extraction_publishes_payload_and_stays_quiet(self) -> None:
         """Capture 7-Zip output and inspect the extracted payload tree."""

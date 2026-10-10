@@ -7,12 +7,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from whatyouship.external_tools import SEVEN_ZIP, find_external_tool
 from whatyouship.inspectors.extracted_tree_cache import ExtractedTreeCache
 from whatyouship.paths import cache_directory
-
-
-_SEVEN_ZIP_NAMES = ("7zz", "7z", "7z.exe")
-_SEVEN_ZIP_REQUIRED = "NSIS extraction requires 7-Zip. Add '7z' or '7zz' to PATH."
 
 
 def find_7zip() -> str:
@@ -21,11 +18,11 @@ def find_7zip() -> str:
     :returns: Resolved executable path.
     :raises FileNotFoundError: If no supported executable is on ``PATH``.
     """
-    for name in _SEVEN_ZIP_NAMES:
-        executable = shutil.which(name)
-        if executable is not None:
-            return executable
-    raise FileNotFoundError(_SEVEN_ZIP_REQUIRED)
+    return find_external_tool(
+        SEVEN_ZIP,
+        "extract NSIS installer payloads",
+        shutil.which,
+    )
 
 
 class NsisExtractionCache:

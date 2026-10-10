@@ -12,15 +12,12 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
 
+from whatyouship.external_tools import SEVEN_ZIP, find_external_tool
 from whatyouship.inspectors.extracted_tree_cache import ExtractedTreeCache
 from whatyouship.model import ArtifactSymbolicLink, symbolic_link_is_external
 from whatyouship.paths import cache_directory
 
 
-_SEVEN_ZIP_NAMES = ("7zz", "7z", "7z.exe")
-_SEVEN_ZIP_REQUIRED = (
-    "DMG extraction requires 7-Zip. Add '7z' or '7zz' to PATH."
-)
 _FILESYSTEM_TYPES = {"APFS", "HFS"}
 _MAX_LINK_TARGET_SIZE = 1024 * 1024
 _LINK_ARGUMENT_LIMIT = 16 * 1024
@@ -57,11 +54,11 @@ def find_7zip() -> str:
     :returns: Resolved executable path.
     :raises FileNotFoundError: If no supported executable is on ``PATH``.
     """
-    for name in _SEVEN_ZIP_NAMES:
-        executable = shutil.which(name)
-        if executable is not None:
-            return executable
-    raise FileNotFoundError(_SEVEN_ZIP_REQUIRED)
+    return find_external_tool(
+        SEVEN_ZIP,
+        "extract DMG contents outside macOS",
+        shutil.which,
+    )
 
 
 def _output_text(value: str | bytes) -> str:

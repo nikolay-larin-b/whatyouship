@@ -7,13 +7,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from whatyouship.external_tools import INNOEXTRACT, find_external_tool
 from whatyouship.inspectors.extracted_tree_cache import ExtractedTreeCache
 from whatyouship.paths import cache_directory
 
 
-_INNOEXTRACT_REQUIRED = (
-    "Inno Setup extraction requires innoextract. Add 'innoextract' to PATH."
-)
 _INNOEXTRACT_BOILERPLATE_PREFIXES = (
     "Done with ",
     "If you are sure the setup file is not corrupted",
@@ -49,10 +47,11 @@ def find_innoextract() -> str:
     :returns: Resolved executable path.
     :raises FileNotFoundError: If innoextract is not on ``PATH``.
     """
-    executable = shutil.which("innoextract")
-    if executable is None:
-        raise FileNotFoundError(_INNOEXTRACT_REQUIRED)
-    return executable
+    return find_external_tool(
+        INNOEXTRACT,
+        "extract Inno Setup installer payloads",
+        shutil.which,
+    )
 
 
 class InnoExtractionCache:

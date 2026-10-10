@@ -209,8 +209,8 @@ class InnoInspectorTests(unittest.TestCase):
             patch("whatyouship.inspectors.inno_cache.subprocess.run") as run,
             self.assertRaisesRegex(
                 ValueError,
-                "Inno Setup extraction requires innoextract. "
-                "Add 'innoextract' to PATH.",
+                "innoextract was not found in PATH.*"
+                "extract Inno Setup installer payloads",
             ),
         ):
             inspect_artifact(source)
