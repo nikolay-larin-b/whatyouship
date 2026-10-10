@@ -55,6 +55,29 @@ whatyouship compare --help
 whatyouship cache --help
 ```
 
+## External tools
+
+WhatYouShip uses external tools only for the artifact operations listed below.
+Required tools produce a fatal tool error with exit code `2` when an extraction
+needs them but they are unavailable.
+
+| Tool | Platforms | Used for | Requirement | Installation |
+| ---- | --------- | -------- | ----------- | ------------ |
+| [7-Zip](https://www.7-zip.org/download.html) (`7zz`, `7z`, or `7z.exe`) | Windows, macOS, Linux | NSIS payload extraction on every platform; DMG extraction on Linux and Windows | Required for extraction | Windows: use the official download. macOS: `brew install sevenzip`. Debian/Ubuntu: `sudo apt install 7zip`. Fedora: `sudo dnf install 7zip`. Arch/Manjaro: `sudo pacman -S 7zip`. |
+| [innoextract](https://constexpr.org/innoextract/) | Windows, macOS, Linux | Inno Setup payload extraction | Required for extraction | Windows: use the official download. macOS: `brew install innoextract`. Debian/Ubuntu: `sudo apt install innoextract`. Fedora: `sudo dnf install innoextract`. Arch/Manjaro: `sudo pacman -S innoextract`. |
+| `hdiutil` | macOS | DMG verification, normalization, and mounting | Required for DMG content inspection on macOS | Included with macOS. |
+| [OpenSSL](https://www.openssl.org/) (`openssl`) | Windows, macOS, Linux | CMS integrity, signer, and timestamp inspection for certificate-signed Mach-O binaries | Optional verification backend | Windows: install an OpenSSL distribution. macOS: `brew install openssl`. Debian/Ubuntu: `sudo apt install openssl`. Fedora: `sudo dnf install openssl`. Arch/Manjaro: `sudo pacman -S openssl`. Ensure `openssl` is in `PATH`. |
+| `security` | macOS | System-root trust evaluation for OpenSSL-based Mach-O verification | Optional verification backend | Included with macOS. |
+| `codesign` | macOS | Native trust and signature verification for DMG, Mach-O, and application bundles | Optional verification backend | Included with macOS. Verification falls back or is reported as unsupported when it is unavailable, depending on the artifact. |
+| [`rcodesign`](https://github.com/indygreg/apple-platform-rs/releases) | Windows and Linux; fallback on macOS when `codesign` is unavailable | Cross-platform DMG CMS and trust verification | Optional verification backend | Install a pre-built platform binary, or run `cargo install apple-codesign`, and add `rcodesign` or `rcodesign.exe` to `PATH`. |
+
+All commands except `hdiutil` are discovered through `PATH`; `hdiutil` is used
+from its standard macOS system location. A valid persistent extraction cache
+can be reused without the corresponding required extractor; the tool is needed
+again on a cache miss. Missing optional verification tools do not stop artifact
+inspection. Missing or failed `rcodesign` leaves complete verification of a
+signed DMG unsupported.
+
 ## What it looks for
 
 WhatYouShip analyzes the final release rather than assumptions made by the build system.
