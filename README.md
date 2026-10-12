@@ -62,6 +62,7 @@ The Python API is experimental until 1.0.
 - [CLI and lint-rule reference](https://whatyouship.readthedocs.io/en/latest/reference/cli.html)
 - [Python API](https://whatyouship.readthedocs.io/en/latest/python-api/index.html)
 - [Architecture and development](https://whatyouship.readthedocs.io/en/latest/development/architecture-overview.html)
+- [Changelog](https://github.com/nikolay-larin-b/whatyouship/blob/master/CHANGELOG.md)
 
 WhatYouShip is a release linter, not an MSI validator, SBOM generator, or
 security scanner. Detailed platform limitations, report contracts, cache
