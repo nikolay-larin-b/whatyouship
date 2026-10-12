@@ -13,6 +13,7 @@ author = "Nikolay Larin"
 release = __version__
 
 extensions = [
+    "myst_parser",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.viewcode",

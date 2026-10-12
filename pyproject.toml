@@ -39,6 +39,7 @@ dependencies = [
 ]
 
 [project.urls]
+Changelog = "https://github.com/nikolay-larin-b/whatyouship/blob/master/CHANGELOG.md"
 Documentation = "https://whatyouship.readthedocs.io/"
 Repository = "https://github.com/nikolay-larin-b/whatyouship"
 Issues = "https://github.com/nikolay-larin-b/whatyouship/issues"

@@ -85,3 +85,9 @@ Choose a route
    development/artifact-backends
    development/lint-and-comparison
    development/testing-and-extending
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Project
+
+   changelog
