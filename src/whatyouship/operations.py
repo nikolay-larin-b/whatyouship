@@ -121,7 +121,8 @@ def lint(
 ) -> LintReport:
     """Inspect and lint one release artifact without command-line output.
 
-    ``config`` may be a prepared :class:`LintConfiguration` or an explicit TOML
+    ``config`` may be a prepared
+    :class:`whatyouship.config.LintConfiguration` or an explicit TOML
     configuration path. When ``baseline`` is supplied, its findings are
     classified as new, existing, and resolved relative to the current artifact.
 

@@ -11,6 +11,9 @@ from whatyouship.renderers.json import render_json
 from whatyouship.renderers.text import render_text
 
 
+__all__ = ["OutputFormat", "render_report"]
+
+
 OutputFormat = Literal["text", "json", "csv"]
 
 

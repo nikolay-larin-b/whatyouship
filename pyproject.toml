@@ -39,6 +39,7 @@ dependencies = [
 ]
 
 [project.urls]
+Documentation = "https://whatyouship.readthedocs.io/"
 Repository = "https://github.com/nikolay-larin-b/whatyouship"
 Issues = "https://github.com/nikolay-larin-b/whatyouship/issues"
 
