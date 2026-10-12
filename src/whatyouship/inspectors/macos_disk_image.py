@@ -13,6 +13,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from whatyouship.exceptions import ExternalToolError
+
 from whatyouship.macos_tools import HDIUTIL
 
 
@@ -89,7 +91,7 @@ def inspect_disk_image_metadata(source_path: Path) -> DiskImageMetadata:
 
     :param source_path: Disk image whose metadata should be queried.
     :returns: Parsed disk image properties.
-    :raises FileNotFoundError: If ``hdiutil`` cannot be executed.
+    :raises ExternalToolError: If ``hdiutil`` cannot be executed.
     :raises ValueError: If metadata cannot be read or is malformed.
     """
     if sys.platform != "darwin":
@@ -108,7 +110,7 @@ def inspect_disk_image_metadata(source_path: Path) -> DiskImageMetadata:
             check=False,
         )
     except OSError as error:
-        raise FileNotFoundError(
+        raise ExternalToolError(
             f"Unable to run macOS disk image utility '{HDIUTIL}': {error}"
         ) from error
     if result.returncode != 0:
@@ -141,7 +143,7 @@ def convert_disk_image(source_path: Path, destination_path: Path) -> None:
 
     :param source_path: Disk image to convert.
     :param destination_path: Exact path for the converted image.
-    :raises FileNotFoundError: If ``hdiutil`` cannot be executed.
+    :raises ExternalToolError: If ``hdiutil`` cannot be executed.
     :raises ValueError: If conversion fails.
     """
     raw_path = destination_path.parent / "intermediate.cdr"
@@ -167,7 +169,7 @@ def convert_disk_image(source_path: Path, destination_path: Path) -> None:
                     check=False,
                 )
             except OSError as error:
-                raise FileNotFoundError(
+                raise ExternalToolError(
                     f"Unable to run macOS disk image utility '{HDIUTIL}': {error}"
                 ) from error
             if result.returncode != 0:
@@ -192,7 +194,8 @@ def verify_disk_image(source_path: Path) -> None:
     """Verify a disk image against its internal checksums.
 
     :param source_path: Disk image to verify.
-    :raises FileNotFoundError: If the image or ``hdiutil`` does not exist.
+    :raises ExternalToolError: If ``hdiutil`` cannot be executed.
+    :raises FileNotFoundError: If the image does not exist.
     :raises IsADirectoryError: If the image path is not a regular file.
     :raises ValueError: If verification is unavailable or fails.
     """
@@ -216,7 +219,7 @@ def verify_disk_image(source_path: Path) -> None:
             check=False,
         )
     except OSError as error:
-        raise FileNotFoundError(
+        raise ExternalToolError(
             f"Unable to run macOS disk image utility '{HDIUTIL}': {error}"
         ) from error
     if result.returncode != 0:
@@ -253,7 +256,8 @@ class MacOSDiskImageMounter:
 
         :param source_path: Disk image to attach.
         :returns: Context manager yielding the mounted volume root.
-        :raises FileNotFoundError: If the image or ``hdiutil`` does not exist.
+        :raises ExternalToolError: If ``hdiutil`` cannot be executed.
+        :raises FileNotFoundError: If the image does not exist.
         :raises IsADirectoryError: If the image path is not a regular file.
         :raises ValueError: If the platform or attachment result is unsupported.
         """
@@ -292,7 +296,7 @@ class MacOSDiskImageMounter:
                     check=False,
                 )
             except OSError as error:
-                raise FileNotFoundError(
+                raise ExternalToolError(
                     f"Unable to run macOS disk image utility '{HDIUTIL}': {error}"
                 ) from error
 

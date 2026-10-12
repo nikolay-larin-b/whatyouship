@@ -8,6 +8,11 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from whatyouship.exceptions import (
+    ArtifactExtractionError,
+    ExternalToolError,
+    WhatYouShipError,
+)
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.inno_cache import InnoExtractionCache
 from whatyouship.model import ArtifactSignature, ReleaseArtifact
@@ -25,7 +30,7 @@ class InnoInspector:
         :returns: Artifact with paths relative to the extracted payload root.
         :raises FileNotFoundError: If the installer or innoextract does not exist.
         :raises IsADirectoryError: If the installer is not a regular file.
-        :raises ValueError: If extraction or payload inspection fails.
+        :raises ArtifactExtractionError: If extraction or payload inspection fails.
         """
         if not source_path.exists():
             raise FileNotFoundError(f"Artifact does not exist: {source_path}")
@@ -42,8 +47,14 @@ class InnoInspector:
                 source_path=source_path,
                 signature=self._signature(source_path),
             )
+        except ExternalToolError as error:
+            raise ExternalToolError(
+                f"Unable to inspect Inno Setup '{source_path}': {error}"
+            ) from error
+        except WhatYouShipError:
+            raise
         except (OSError, ValueError, RuntimeError) as error:
-            raise ValueError(
+            raise ArtifactExtractionError(
                 f"Unable to inspect Inno Setup '{source_path}': {error}"
             ) from error
 

@@ -3,13 +3,22 @@
 
 """Provide the experimental high-level Python API for artifact operations."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from os import PathLike
 from pathlib import Path
 
 from whatyouship.compare import compare_artifacts
 from whatyouship.config import LintConfiguration, load_config
+from whatyouship.exceptions import (
+    ArtifactInspectionError,
+    ArtifactNotFoundError,
+    ConfigurationError,
+    WhatYouShipError,
+)
 from whatyouship.inspectors import inspect_artifact
 from whatyouship.lint import LintEngine, compare_findings
+from whatyouship.model import ReleaseArtifact
 from whatyouship.paths import _operation_cache_scope
 from whatyouship.report import CompareReport, InspectReport, LintReport
 
@@ -29,6 +38,65 @@ def _path(value: _ArtifactPath) -> Path:
     return Path(value)
 
 
+@contextmanager
+def _operation_scope(persistent: bool) -> Iterator[None]:
+    """Manage an operation cache and normalize expected filesystem failures.
+
+    :param persistent: Whether to use the persistent user cache.
+    :yields: Control while the operation cache is active.
+    :raises ArtifactInspectionError: If the cache cannot be created or cleaned up.
+    """
+    try:
+        with _operation_cache_scope(persistent=persistent):
+            yield
+    except WhatYouShipError:
+        raise
+    except OSError as error:
+        raise ArtifactInspectionError(
+            f"Unable to access the artifact extraction cache: {error}"
+        ) from error
+
+
+def _inspect_source(source: _ArtifactPath) -> ReleaseArtifact:
+    """Inspect one source while normalizing expected filesystem errors.
+
+    :param source: Artifact path accepted by the public API.
+    :returns: Inspected release artifact.
+    :raises WhatYouShipError: If the artifact cannot be inspected.
+    """
+    source_path = _path(source)
+    try:
+        return inspect_artifact(source_path)
+    except WhatYouShipError:
+        raise
+    except FileNotFoundError as error:
+        raise ArtifactNotFoundError(str(error)) from error
+    except OSError as error:
+        raise ArtifactInspectionError(
+            f"Unable to inspect artifact '{source_path}': {error}"
+        ) from error
+
+
+def _lint_configuration(
+    config: _LintConfigurationInput | None,
+) -> LintConfiguration:
+    """Resolve a prepared or file-backed lint configuration.
+
+    :param config: Prepared settings, an explicit TOML path, or ``None``.
+    :returns: Validated lint configuration.
+    :raises ConfigurationError: If an explicit configuration cannot be loaded.
+    """
+    if config is None:
+        return LintConfiguration()
+    if isinstance(config, LintConfiguration):
+        return config
+    config_path = _path(config)
+    try:
+        return load_config(config_path)
+    except (OSError, ValueError) as error:
+        raise ConfigurationError(str(error)) from error
+
+
 def inspect(source: _ArtifactPath, *, cache: bool = False) -> InspectReport:
     """Inspect one release artifact without producing command-line output.
 
@@ -39,11 +107,10 @@ def inspect(source: _ArtifactPath, *, cache: bool = False) -> InspectReport:
     :param source: Directory or supported release artifact to inspect.
     :param cache: Whether to use the persistent user cache.
     :returns: Structured inspection report.
-    :raises FileNotFoundError: If the artifact does not exist.
-    :raises ValueError: If the artifact is unsupported or cannot be inspected.
+    :raises WhatYouShipError: If the artifact cannot be inspected.
     """
-    with _operation_cache_scope(persistent=cache):
-        return InspectReport(inspect_artifact(_path(source)))
+    with _operation_scope(persistent=cache):
+        return InspectReport(_inspect_source(source))
 
 
 def lint(
@@ -64,20 +131,14 @@ def lint(
     :param config: Lint settings or path to a TOML configuration file.
     :param cache: Whether to use the persistent user cache.
     :returns: Structured lint report, including baseline results when requested.
-    :raises FileNotFoundError: If an artifact or configuration file does not exist.
-    :raises ValueError: If an artifact or configuration is invalid or unsupported.
+    :raises WhatYouShipError: If an artifact or configuration cannot be processed.
     """
-    with _operation_cache_scope(persistent=cache):
-        artifact = inspect_artifact(_path(source))
+    with _operation_scope(persistent=cache):
+        artifact = _inspect_source(source)
         baseline_artifact = (
-            inspect_artifact(_path(baseline)) if baseline is not None else None
+            _inspect_source(baseline) if baseline is not None else None
         )
-        if config is None:
-            configuration = LintConfiguration()
-        elif isinstance(config, LintConfiguration):
-            configuration = config
-        else:
-            configuration = load_config(_path(config))
+        configuration = _lint_configuration(config)
         engine = LintEngine(configuration.rules())
         findings = engine.run(artifact)
         baseline_comparison = (
@@ -108,12 +169,11 @@ def compare(
     :param new_source: Later directory or supported release artifact.
     :param cache: Whether to use the persistent user cache.
     :returns: Structured comparison report.
-    :raises FileNotFoundError: If either artifact does not exist.
-    :raises ValueError: If either artifact is unsupported or cannot be inspected.
+    :raises WhatYouShipError: If either artifact cannot be inspected.
     """
-    with _operation_cache_scope(persistent=cache):
-        old_artifact = inspect_artifact(_path(old_source))
-        new_artifact = inspect_artifact(_path(new_source))
+    with _operation_scope(persistent=cache):
+        old_artifact = _inspect_source(old_source)
+        new_artifact = _inspect_source(new_source)
         return CompareReport(
             old_artifact,
             new_artifact,

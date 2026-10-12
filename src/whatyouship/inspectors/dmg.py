@@ -8,6 +8,12 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from whatyouship.exceptions import (
+    ArtifactExtractionError,
+    ArtifactInspectionError,
+    ExternalToolError,
+    WhatYouShipError,
+)
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.dmg_7zip_cache import DmgSevenZipExtractionCache
 from whatyouship.inspectors.dmg_cache import DmgConversionCache
@@ -34,7 +40,7 @@ class DmgInspector:
         :returns: Artifact with paths relative to the mounted volume root.
         :raises FileNotFoundError: If the artifact does not exist.
         :raises IsADirectoryError: If the artifact is not a regular file.
-        :raises ValueError: If the image cannot be mounted or inspected.
+        :raises ArtifactInspectionError: If the image cannot be mounted or inspected.
         """
         if not source_path.exists():
             raise FileNotFoundError(f"Artifact does not exist: {source_path}")
@@ -45,8 +51,14 @@ class DmgInspector:
             if sys.platform == "darwin":
                 return self._inspect_native(source_path)
             return self._inspect_with_7zip(source_path)
+        except ExternalToolError as error:
+            raise ExternalToolError(
+                f"Unable to inspect DMG '{source_path}': {error}"
+            ) from error
+        except WhatYouShipError:
+            raise
         except (OSError, ValueError, RuntimeError) as error:
-            raise ValueError(
+            raise ArtifactInspectionError(
                 f"Unable to inspect DMG '{source_path}': {error}"
             ) from error
 
@@ -83,16 +95,27 @@ class DmgInspector:
 
         :param source_path: DMG artifact to inspect.
         :returns: Artifact whose license agreement metadata is unavailable.
+        :raises ArtifactExtractionError: If the image cannot be safely extracted.
+        :raises ExternalToolError: If 7-Zip is unavailable.
         """
-        with source_path.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        volume = DmgSevenZipExtractionCache().load_or_populate(digest, source_path)
-        artifact = DirectoryInspector().inspect(
-            volume.root,
-            volume.symbolic_links,
-        )
-        return replace(
-            artifact,
-            source_path=source_path,
-            signature=DmgSignatureInspector().inspect(source_path),
-        )
+        try:
+            with source_path.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            volume = DmgSevenZipExtractionCache().load_or_populate(
+                digest, source_path
+            )
+            artifact = DirectoryInspector().inspect(
+                volume.root,
+                volume.symbolic_links,
+            )
+            return replace(
+                artifact,
+                source_path=source_path,
+                signature=DmgSignatureInspector().inspect(source_path),
+            )
+        except WhatYouShipError:
+            raise
+        except (OSError, ValueError, RuntimeError) as error:
+            raise ArtifactExtractionError(
+                f"Unable to inspect DMG '{source_path}': {error}"
+            ) from error

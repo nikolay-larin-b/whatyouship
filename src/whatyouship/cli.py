@@ -15,6 +15,7 @@ from whatyouship.cache import (
     clear_cache,
     inspect_cache,
 )
+from whatyouship.exceptions import WhatYouShipError
 from whatyouship.model import Finding
 from whatyouship.operations import compare as compare_operation
 from whatyouship.operations import inspect as inspect_operation
@@ -287,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
             print(rendered, end="")
         else:
             args.output.write_text(rendered, encoding="utf-8")
-    except (OSError, ValueError) as error:
+    except (WhatYouShipError, OSError, ValueError) as error:
         parser.error(str(error))
     return exit_code
 

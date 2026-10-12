@@ -5,6 +5,7 @@
 
 from pathlib import Path
 
+from whatyouship.exceptions import ArtifactNotFoundError, UnsupportedArtifactError
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.dmg import DmgInspector
 from whatyouship.inspectors.inno import InnoInspector
@@ -23,11 +24,11 @@ def inspect_artifact(source_path: Path) -> ReleaseArtifact:
 
     :param source_path: Path to the release artifact.
     :returns: Files contained in the artifact.
-    :raises FileNotFoundError: If the artifact does not exist.
-    :raises ValueError: If the artifact type is unsupported.
+    :raises ArtifactNotFoundError: If the artifact does not exist.
+    :raises UnsupportedArtifactError: If the artifact type is unsupported.
     """
     if not source_path.exists():
-        raise FileNotFoundError(f"Artifact does not exist: {source_path}")
+        raise ArtifactNotFoundError(f"Artifact does not exist: {source_path}")
     if source_path.is_dir():
         return DirectoryInspector().inspect(source_path)
     if source_path.is_file() and source_path.suffix.lower() == ".msi":
@@ -41,8 +42,8 @@ def inspect_artifact(source_path: Path) -> ReleaseArtifact:
             return NsisInspector().inspect(source_path)
         if is_inno_installer(source_path):
             return InnoInspector().inspect(source_path)
-        raise ValueError(
+        raise UnsupportedArtifactError(
             "Unsupported EXE artifact "
             f"(not an NSIS or Inno Setup installer): {source_path}"
         )
-    raise ValueError(f"Unsupported artifact type: {source_path}")
+    raise UnsupportedArtifactError(f"Unsupported artifact type: {source_path}")

@@ -8,6 +8,8 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from whatyouship.exceptions import ExternalToolError
+
 
 @dataclass(frozen=True)
 class ExternalTool:
@@ -126,14 +128,14 @@ def find_external_tool(
     :param purpose: Operation that requires the tool.
     :param which: Executable lookup function, normally :func:`shutil.which`.
     :returns: Resolved executable path.
-    :raises FileNotFoundError: If no supported executable is on ``PATH``.
+    :raises ExternalToolError: If no supported executable is on ``PATH``.
     """
     for executable_name in tool.executables:
         executable = which(executable_name)
         if executable is not None:
             return executable
     names = _executable_list(tool.executables)
-    raise FileNotFoundError(
+    raise ExternalToolError(
         f"{tool.name} was not found in PATH. It is required to {purpose}. "
         f"{installation_instruction(tool)} Ensure {names} is available in PATH."
     )

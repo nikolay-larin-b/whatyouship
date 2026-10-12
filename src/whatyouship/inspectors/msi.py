@@ -14,6 +14,7 @@ import pymsi
 from pymsi.msi.file import File
 
 from whatyouship.binary.pe import PeInspector
+from whatyouship.exceptions import ArtifactInspectionError
 from whatyouship.inspectors.msi_cache import MsiPayloadCache
 from whatyouship.inspectors.msi_scope import MsiScopeInspector
 from whatyouship.inspectors.msi_signature import MsiSignatureInspector
@@ -41,7 +42,7 @@ class MsiInspector:
         :returns: An artifact with files ordered by relative installation path.
         :raises FileNotFoundError: If the package does not exist.
         :raises IsADirectoryError: If the path is not a regular file.
-        :raises ValueError: If the package or a file payload cannot be read.
+        :raises ArtifactInspectionError: If the package or a payload cannot be read.
         """
         if not source_path.exists():
             raise FileNotFoundError(f"Artifact does not exist: {source_path}")
@@ -65,8 +66,10 @@ class MsiInspector:
                 )
                 for file in cached
             ]
-        except Exception as error:
-            raise ValueError(f"Unable to inspect MSI '{source_path}': {error}") from error
+        except (EOFError, LookupError, OSError, RuntimeError, ValueError) as error:
+            raise ArtifactInspectionError(
+                f"Unable to inspect MSI '{source_path}': {error}"
+            ) from error
 
         files.sort(key=attrgetter("relative_path"))
         return ReleaseArtifact(

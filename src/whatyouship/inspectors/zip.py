@@ -8,6 +8,7 @@ import zipfile
 from dataclasses import replace
 from pathlib import Path
 
+from whatyouship.exceptions import ArtifactExtractionError
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.zip_cache import ZipExtractionCache
 from whatyouship.model import ReleaseArtifact
@@ -25,7 +26,7 @@ class ZipInspector:
         :returns: Artifact with paths relative to the archive root.
         :raises FileNotFoundError: If the archive does not exist.
         :raises IsADirectoryError: If the path is not a regular file.
-        :raises ValueError: If the ZIP cannot be safely extracted.
+        :raises ArtifactExtractionError: If the ZIP cannot be safely extracted.
         """
         if not source_path.exists():
             raise FileNotFoundError(f"Artifact does not exist: {source_path}")
@@ -37,5 +38,13 @@ class ZipInspector:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
             extracted = ZipExtractionCache().load_or_populate(digest, source_path)
             return replace(DirectoryInspector().inspect(extracted), source_path=source_path)
-        except (OSError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile) as error:
-            raise ValueError(f"Unable to inspect ZIP '{source_path}': {error}") from error
+        except (
+            OSError,
+            ValueError,
+            RuntimeError,
+            NotImplementedError,
+            zipfile.BadZipFile,
+        ) as error:
+            raise ArtifactExtractionError(
+                f"Unable to inspect ZIP '{source_path}': {error}"
+            ) from error
