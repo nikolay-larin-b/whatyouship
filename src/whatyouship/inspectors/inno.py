@@ -11,11 +11,13 @@ from pathlib import Path
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.inno_cache import InnoExtractionCache
 from whatyouship.model import ArtifactSignature, ReleaseArtifact
+from whatyouship.paths import _default_cache_scope
 
 
 class InnoInspector:
     """Build a release artifact from an Inno Setup installer payload."""
 
+    @_default_cache_scope
     def inspect(self, source_path: Path) -> ReleaseArtifact:
         """Extract an Inno installer through the cache and inspect its payload.
 

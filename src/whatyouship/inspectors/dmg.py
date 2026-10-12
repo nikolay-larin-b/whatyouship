@@ -17,11 +17,13 @@ from whatyouship.inspectors.macos_disk_image import (
     inspect_disk_image_metadata,
 )
 from whatyouship.model import ReleaseArtifact
+from whatyouship.paths import _default_cache_scope
 
 
 class DmgInspector:
     """Build a release artifact from a single-volume DMG disk image."""
 
+    @_default_cache_scope
     def inspect(self, source_path: Path) -> ReleaseArtifact:
         """Inspect the regular files in a single-volume DMG.
 

@@ -11,11 +11,13 @@ from pathlib import Path
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.nsis_cache import NsisExtractionCache
 from whatyouship.model import ArtifactSignature, ReleaseArtifact
+from whatyouship.paths import _default_cache_scope
 
 
 class NsisInspector:
     """Build a release artifact from an NSIS installer payload."""
 
+    @_default_cache_scope
     def inspect(self, source_path: Path) -> ReleaseArtifact:
         """Extract an NSIS installer through the cache and inspect its payload.
 

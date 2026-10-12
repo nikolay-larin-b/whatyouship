@@ -14,8 +14,10 @@ from whatyouship.inspectors.nsis import NsisInspector
 from whatyouship.inspectors.nsis_detection import is_nsis_installer
 from whatyouship.inspectors.zip import ZipInspector
 from whatyouship.model import ReleaseArtifact
+from whatyouship.paths import _default_cache_scope
 
 
+@_default_cache_scope
 def inspect_artifact(source_path: Path) -> ReleaseArtifact:
     """Inspect a directory, DMG, MSI, NSIS, Inno Setup, or ZIP artifact.
 

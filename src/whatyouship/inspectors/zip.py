@@ -11,11 +11,13 @@ from pathlib import Path
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.inspectors.zip_cache import ZipExtractionCache
 from whatyouship.model import ReleaseArtifact
+from whatyouship.paths import _default_cache_scope
 
 
 class ZipInspector:
     """Build a release artifact from a ZIP distribution."""
 
+    @_default_cache_scope
     def inspect(self, source_path: Path) -> ReleaseArtifact:
         """Extract a ZIP through the cache and inspect its file tree.
 

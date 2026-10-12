@@ -18,6 +18,7 @@ from whatyouship.inspectors.msi_cache import MsiPayloadCache
 from whatyouship.inspectors.msi_scope import MsiScopeInspector
 from whatyouship.inspectors.msi_signature import MsiSignatureInspector
 from whatyouship.model import ArtifactFile, ReleaseArtifact
+from whatyouship.paths import _default_cache_scope
 
 
 def _long_name(value: str) -> str:
@@ -32,6 +33,7 @@ def _long_name(value: str) -> str:
 class MsiInspector:
     """Build a release artifact from the files in an MSI package."""
 
+    @_default_cache_scope
     def inspect(self, source_path: Path) -> ReleaseArtifact:
         """Read installed file paths and payloads from an MSI package.
 
