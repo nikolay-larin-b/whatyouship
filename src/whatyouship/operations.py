@@ -64,16 +64,15 @@ def _inspect_source(source: _ArtifactPath) -> ReleaseArtifact:
     :returns: Inspected release artifact.
     :raises WhatYouShipError: If the artifact cannot be inspected.
     """
-    source_path = _path(source)
     try:
-        return inspect_artifact(source_path)
+        return inspect_artifact(source)
     except WhatYouShipError:
         raise
     except FileNotFoundError as error:
         raise ArtifactNotFoundError(str(error)) from error
     except OSError as error:
         raise ArtifactInspectionError(
-            f"Unable to inspect artifact '{source_path}': {error}"
+            f"Unable to inspect artifact '{source}': {error}"
         ) from error
 
 

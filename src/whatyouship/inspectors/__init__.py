@@ -3,6 +3,7 @@
 
 """Inspect release artifacts from supported sources."""
 
+from os import PathLike
 from pathlib import Path
 
 from whatyouship.exceptions import ArtifactNotFoundError, UnsupportedArtifactError
@@ -19,31 +20,33 @@ from whatyouship.paths import _default_cache_scope
 
 
 @_default_cache_scope
-def inspect_artifact(source_path: Path) -> ReleaseArtifact:
+def inspect_artifact(source_path: str | PathLike[str]) -> ReleaseArtifact:
     """Inspect a directory, DMG, MSI, NSIS, Inno Setup, or ZIP artifact.
 
-    :param source_path: Path to the release artifact.
+    :param source_path: String or path-like release artifact path.
     :returns: Files contained in the artifact.
     :raises ArtifactNotFoundError: If the artifact does not exist.
     :raises UnsupportedArtifactError: If the artifact type is unsupported.
+    :raises TypeError: If ``source_path`` is not string or path-like.
     """
-    if not source_path.exists():
-        raise ArtifactNotFoundError(f"Artifact does not exist: {source_path}")
-    if source_path.is_dir():
-        return DirectoryInspector().inspect(source_path)
-    if source_path.is_file() and source_path.suffix.lower() == ".msi":
-        return MsiInspector().inspect(source_path)
-    if source_path.is_file() and source_path.suffix.lower() == ".zip":
-        return ZipInspector().inspect(source_path)
-    if source_path.is_file() and source_path.suffix.lower() == ".dmg":
-        return DmgInspector().inspect(source_path)
-    if source_path.is_file() and source_path.suffix.lower() == ".exe":
-        if is_nsis_installer(source_path):
-            return NsisInspector().inspect(source_path)
-        if is_inno_installer(source_path):
-            return InnoInspector().inspect(source_path)
+    artifact_path = Path(source_path)
+    if not artifact_path.exists():
+        raise ArtifactNotFoundError(f"Artifact does not exist: {artifact_path}")
+    if artifact_path.is_dir():
+        return DirectoryInspector().inspect(artifact_path)
+    if artifact_path.is_file() and artifact_path.suffix.lower() == ".msi":
+        return MsiInspector().inspect(artifact_path)
+    if artifact_path.is_file() and artifact_path.suffix.lower() == ".zip":
+        return ZipInspector().inspect(artifact_path)
+    if artifact_path.is_file() and artifact_path.suffix.lower() == ".dmg":
+        return DmgInspector().inspect(artifact_path)
+    if artifact_path.is_file() and artifact_path.suffix.lower() == ".exe":
+        if is_nsis_installer(artifact_path):
+            return NsisInspector().inspect(artifact_path)
+        if is_inno_installer(artifact_path):
+            return InnoInspector().inspect(artifact_path)
         raise UnsupportedArtifactError(
             "Unsupported EXE artifact "
-            f"(not an NSIS or Inno Setup installer): {source_path}"
+            f"(not an NSIS or Inno Setup installer): {artifact_path}"
         )
-    raise UnsupportedArtifactError(f"Unsupported artifact type: {source_path}")
+    raise UnsupportedArtifactError(f"Unsupported artifact type: {artifact_path}")

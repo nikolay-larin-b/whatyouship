@@ -7,6 +7,7 @@ import contextlib
 import io
 import tempfile
 import unittest
+from os import PathLike
 from pathlib import Path
 from unittest.mock import patch
 
@@ -155,7 +156,7 @@ class OperationTests(unittest.TestCase):
         """Avoid persistent cache writes when the caller does not opt in."""
         selected_roots: list[Path] = []
 
-        def inspect_with_cache(source: Path) -> ReleaseArtifact:
+        def inspect_with_cache(source: str | PathLike[str]) -> ReleaseArtifact:
             """Record and populate the selected extraction cache.
 
             :param source: Artifact path received from the operation.
@@ -164,7 +165,7 @@ class OperationTests(unittest.TestCase):
             selected_root = cache_root_directory()
             selected_roots.append(selected_root)
             cache_directory("zip").mkdir(parents=True)
-            return ReleaseArtifact(source)
+            return ReleaseArtifact(Path(source))
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             home = Path(temporary_directory) / "home"
@@ -186,7 +187,7 @@ class OperationTests(unittest.TestCase):
         """Preserve and reuse the user cache only for ``cache=True``."""
         selected_roots: list[Path] = []
 
-        def inspect_with_cache(source: Path) -> ReleaseArtifact:
+        def inspect_with_cache(source: str | PathLike[str]) -> ReleaseArtifact:
             """Record and populate the selected persistent cache.
 
             :param source: Artifact path received from the operation.
@@ -195,7 +196,7 @@ class OperationTests(unittest.TestCase):
             selected_root = cache_root_directory()
             selected_roots.append(selected_root)
             cache_directory("zip").mkdir(parents=True, exist_ok=True)
-            return ReleaseArtifact(source)
+            return ReleaseArtifact(Path(source))
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             home = Path(temporary_directory) / "home"
@@ -216,14 +217,14 @@ class OperationTests(unittest.TestCase):
         """Keep a caller-owned cache scope active across API operations."""
         selected_roots: list[Path] = []
 
-        def inspect_with_cache(source: Path) -> ReleaseArtifact:
+        def inspect_with_cache(source: str | PathLike[str]) -> ReleaseArtifact:
             """Record the cache root selected by the outer scope.
 
             :param source: Artifact path received from the operation.
             :returns: Empty artifact for the supplied path.
             """
             selected_roots.append(cache_root_directory())
-            return ReleaseArtifact(source)
+            return ReleaseArtifact(Path(source))
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             home = Path(temporary_directory) / "home"
