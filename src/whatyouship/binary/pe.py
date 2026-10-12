@@ -9,6 +9,7 @@ from pathlib import Path
 
 import lief
 
+from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.model import BinaryMetadata, SignatureMetadata
 
 
@@ -39,30 +40,31 @@ class PeInspector:
         """Inspect a path or in-memory payload when it contains a PE file.
 
         :param source: Path or bytes of a potential PE file.
-        :returns: PE metadata, or ``None`` for non-PE or unreadable files.
+        :returns: PE metadata, or ``None`` when the source is not recognized as PE.
+        :raises BinaryAnalysisError: If a recognized PE file cannot be analyzed.
         """
-        try:
-            if isinstance(source, Path):
-                with source.open("rb") as stream:
-                    if stream.read(2) != b"MZ":
-                        return None
-                parse_source = source
-            else:
-                if bytes(source[:2]) != b"MZ":
-                    return None
-                parse_source = bytes(source)
+        if not self._has_pe_signature(source):
+            return None
 
+        parse_source = source if isinstance(source, Path) else bytes(source)
+        try:
             with lief.logging.level_scope(lief.logging.LEVEL.OFF):
                 binary = lief.PE.parse(parse_source)
-            if binary is None:
-                return None
+        except (RuntimeError, ValueError) as error:
+            reason = str(error) or type(error).__name__
+            raise BinaryAnalysisError("PE", reason) from error
+        if binary is None:
+            raise BinaryAnalysisError("PE", "LIEF could not parse the file")
 
+        try:
             header = binary.header
             machine = header.machine
             architecture = _ARCHITECTURES.get(machine, machine.name.lower())
             if header.has_characteristic(lief.PE.Header.CHARACTERISTICS.DLL):
                 kind = "library"
-            elif header.has_characteristic(lief.PE.Header.CHARACTERISTICS.EXECUTABLE_IMAGE):
+            elif header.has_characteristic(
+                lief.PE.Header.CHARACTERISTICS.EXECUTABLE_IMAGE
+            ):
                 kind = "executable"
             else:
                 kind = "other"
@@ -78,8 +80,30 @@ class PeInspector:
                 product_version=product_version,
                 signature=signature,
             )
-        except Exception:
-            return None
+        except (RuntimeError, ValueError) as error:
+            reason = str(error) or type(error).__name__
+            raise BinaryAnalysisError("PE", reason) from error
+
+    def _has_pe_signature(self, source: Path | bytes | memoryview) -> bool:
+        """Check the DOS header and referenced PE signature.
+
+        :param source: Path or bytes of a potential PE file.
+        :returns: Whether the source contains a complete PE signature.
+        """
+        if isinstance(source, Path):
+            with source.open("rb") as stream:
+                header = stream.read(64)
+                if len(header) < 64 or header[:2] != b"MZ":
+                    return False
+                pe_offset = int.from_bytes(header[60:64], "little")
+                stream.seek(pe_offset)
+                return stream.read(4) == b"PE\x00\x00"
+
+        content = memoryview(source)
+        if len(content) < 64 or bytes(content[:2]) != b"MZ":
+            return False
+        pe_offset = int.from_bytes(content[60:64], "little")
+        return bytes(content[pe_offset:pe_offset + 4]) == b"PE\x00\x00"
 
     def _versions(self, binary: lief.PE.Binary) -> tuple[str | None, str | None]:
         """Read string and fixed versions from a PE version resource.
@@ -104,19 +128,21 @@ class PeInspector:
                 for table in string_info.children:
                     file_version = file_version or table.get("FileVersion")
                     product_version = product_version or table.get("ProductVersion")
-        except Exception:
+        except (RuntimeError, ValueError):
             return None, None
 
         if file_version is None or product_version is None:
             try:
                 fixed = version.file_info
+                if fixed is None:
+                    return file_version, product_version
                 file_version = file_version or _fixed_version(
                     fixed.file_version_ms, fixed.file_version_ls
                 )
                 product_version = product_version or _fixed_version(
                     fixed.product_version_ms, fixed.product_version_ls
                 )
-            except Exception:
+            except (RuntimeError, ValueError):
                 pass
         return file_version, product_version
 
@@ -131,7 +157,7 @@ class PeInspector:
         """
         try:
             signatures = list(binary.signatures)
-        except Exception:
+        except (RuntimeError, ValueError):
             signatures = None
 
         signer: str | None = None
@@ -162,7 +188,7 @@ class PeInspector:
                             if timestamp is None
                             else timestamp or has_timestamp
                         )
-                except Exception:
+                except (RuntimeError, ValueError):
                     pass
 
         if sys.platform == "win32":
@@ -180,7 +206,7 @@ class PeInspector:
                     == lief.PE.Signature.VERIFICATION_FLAGS.OK
                 )
                 valid = verified if valid is None else valid or verified
-            except Exception:
+            except (RuntimeError, ValueError):
                 pass
         return SignatureMetadata(
             present=True,
@@ -206,13 +232,16 @@ class PeInspector:
             WindowsAuthenticodeVerifier,
         )
 
-        if isinstance(source, Path):
-            status = WindowsAuthenticodeVerifier().verify(source).status
-        else:
-            with tempfile.TemporaryDirectory() as temporary_directory:
-                path = Path(temporary_directory) / "payload.exe"
-                path.write_bytes(bytes(source))
-                status = WindowsAuthenticodeVerifier().verify(path).status
+        try:
+            if isinstance(source, Path):
+                status = WindowsAuthenticodeVerifier().verify(source).status
+            else:
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    path = Path(temporary_directory) / "payload.exe"
+                    path.write_bytes(bytes(source))
+                    status = WindowsAuthenticodeVerifier().verify(path).status
+        except OSError:
+            return SignatureMetadata(present=None)
 
         if status == "unsigned":
             return SignatureMetadata(present=False, valid=None, timestamp=None)

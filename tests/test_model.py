@@ -6,7 +6,12 @@
 import unittest
 from pathlib import Path
 
-from whatyouship.model import ArtifactFile, ArtifactSignature, ReleaseArtifact
+from whatyouship.model import (
+    ArtifactFile,
+    ArtifactSignature,
+    BinaryAnalysisDiagnostic,
+    ReleaseArtifact,
+)
 
 
 class ModelTests(unittest.TestCase):
@@ -39,6 +44,19 @@ class ModelTests(unittest.TestCase):
 
         self.assertEqual(len(first.files), 1)
         self.assertEqual(second.files, [])
+
+    def test_default_binary_diagnostic_lists_are_independent(self) -> None:
+        """Give each release artifact its own binary diagnostic list."""
+        first = ReleaseArtifact(source_path=Path("first.zip"))
+        second = ReleaseArtifact(source_path=Path("second.zip"))
+        first.binary_diagnostics.append(BinaryAnalysisDiagnostic(
+            Path("broken.exe"),
+            "PE",
+            "truncated headers",
+        ))
+
+        self.assertEqual(len(first.binary_diagnostics), 1)
+        self.assertEqual(second.binary_diagnostics, [])
 
     def test_artifact_signature_defaults_to_unsupported(self) -> None:
         """Represent artifact types without a signature checker explicitly."""

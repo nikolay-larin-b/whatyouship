@@ -5,7 +5,7 @@
 
 from pathlib import Path
 
-from whatyouship.model import Finding
+from whatyouship.model import Finding, ReleaseArtifact
 from whatyouship.report import CompareReport, InspectReport, LintReport, Report
 
 
@@ -19,6 +19,29 @@ def _finding_line(finding: Finding) -> str:
         f"{finding.rule_id} | {finding.severity} | "
         f"{finding.relative_path.as_posix()} | {finding.message}"
     )
+
+
+def _binary_diagnostic_lines(
+    heading: str,
+    artifact: ReleaseArtifact,
+) -> list[str]:
+    """Format a non-empty binary analysis diagnostic section.
+
+    :param heading: Section heading.
+    :param artifact: Artifact whose diagnostics should be displayed.
+    :returns: Section lines, or an empty list when there are no diagnostics.
+    """
+    if not artifact.binary_diagnostics:
+        return []
+    return [
+        "",
+        heading,
+        *(
+            f"  {diagnostic.relative_path.as_posix()} | "
+            f"{diagnostic.format} | {diagnostic.reason}"
+            for diagnostic in artifact.binary_diagnostics
+        ),
+    ]
 
 
 def _render_compare(report: CompareReport) -> str:
@@ -41,6 +64,14 @@ def _render_compare(report: CompareReport) -> str:
                 f"{label} artifact signature verification issue: "
                 f"{artifact.signature.verification_issue}"
             )
+        lines.extend(_binary_diagnostic_lines(
+            f"{label} binary analysis diagnostics:", artifact
+        ))
+    if (
+        report.old_artifact.binary_diagnostics
+        or report.new_artifact.binary_diagnostics
+    ):
+        lines.append("")
     lines.extend((
         f"Added: {len(comparison.added)}",
         f"Removed: {len(comparison.removed)}",
@@ -154,6 +185,9 @@ def _render_inspect(report: InspectReport) -> str:
             lines.append(
                 f"  {link.relative_path.as_posix()} -> {link.target}{scope}"
             )
+    lines.extend(_binary_diagnostic_lines(
+        "Binary analysis diagnostics:", artifact
+    ))
     lines.extend(["", "Relative path | Size (bytes) | SHA-256"])
     for file in artifact.files:
         lines.append(
@@ -243,6 +277,22 @@ def _render_lint(report: LintReport) -> str:
             "Baseline artifact signature verification issue: "
             f"{report.baseline_artifact.signature.verification_issue}"
         )
+    if report.artifact.binary_diagnostics:
+        if notices:
+            notices.append("")
+        notices.extend(_binary_diagnostic_lines(
+            "Binary analysis diagnostics:", report.artifact
+        )[1:])
+    if (
+        report.baseline_artifact is not None
+        and report.baseline_artifact.binary_diagnostics
+    ):
+        if notices:
+            notices.append("")
+        notices.extend(_binary_diagnostic_lines(
+            "Baseline binary analysis diagnostics:",
+            report.baseline_artifact,
+        )[1:])
     prefix = "\n".join(notices) + "\n\n" if notices else ""
     comparison = report.baseline_comparison
     if comparison is None:

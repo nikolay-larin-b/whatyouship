@@ -21,6 +21,7 @@ from whatyouship.model import (
     ArtifactFile,
     ArtifactSignature,
     ArtifactSymbolicLink,
+    BinaryAnalysisDiagnostic,
     BinaryDependency,
     BinaryEntitlement,
     BinaryMetadata,
@@ -119,6 +120,11 @@ class ReportOutputTests(unittest.TestCase):
                 ArtifactSymbolicLink(Path("Current"), "Versions/A"),
                 ArtifactSymbolicLink(Path("Applications"), "/Applications", True),
             ],
+            binary_diagnostics=[BinaryAnalysisDiagnostic(
+                Path("bin/broken.exe"),
+                "PE",
+                "LIEF could not parse the file",
+            )],
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
             target = Path(temporary_directory) / "inspect.json"
@@ -128,7 +134,7 @@ class ReportOutputTests(unittest.TestCase):
                 self.assertEqual(main(["inspect", "release.msi", "--output", str(target)]), 0)
             data = json.loads(target.read_text(encoding="utf-8"))
 
-        self.assertEqual(data["schema_version"], 1)
+        self.assertEqual(data["schema_version"], 2)
         self.assertEqual(data["tool_version"], __version__)
         self.assertEqual(data["report_type"], "inspect")
         self.assertEqual(data["artifact"]["source_path"], "release.msi")
@@ -145,6 +151,11 @@ class ReportOutputTests(unittest.TestCase):
             "kind": "ambiguous", "conflicts": ["Conflicting registry root"],
         })
         self.assertIsNone(data["artifact"]["license_agreement_present"])
+        self.assertEqual(data["artifact"]["binary_diagnostics"], [{
+            "relative_path": "bin/broken.exe",
+            "format": "PE",
+            "reason": "LIEF could not parse the file",
+        }])
         self.assertEqual(data["artifact"]["bundles"], [{
             "relative_path": "Sample.app",
             "identifier": "com.example.sample",
@@ -263,6 +274,72 @@ class ReportOutputTests(unittest.TestCase):
             compare_output.getvalue(),
         )
 
+    def test_text_reports_display_binary_analysis_diagnostics(self) -> None:
+        """Display current, baseline, old, and new binary diagnostics."""
+        current = ReleaseArtifact(
+            Path("current.zip"),
+            binary_diagnostics=[BinaryAnalysisDiagnostic(
+                Path("broken.exe"), "PE", "truncated headers"
+            )],
+        )
+        baseline = ReleaseArtifact(
+            Path("baseline.zip"),
+            binary_diagnostics=[BinaryAnalysisDiagnostic(
+                Path("broken.dylib"), "Mach-O", "invalid load command"
+            )],
+        )
+
+        inspect_output = io.StringIO()
+        with (
+            patch("whatyouship.operations.inspect_artifact", return_value=current),
+            contextlib.redirect_stdout(inspect_output),
+        ):
+            self.assertEqual(main(["inspect", "current.zip"]), 0)
+        self.assertIn("Binary analysis diagnostics:", inspect_output.getvalue())
+        self.assertIn(
+            "broken.exe | PE | truncated headers",
+            inspect_output.getvalue(),
+        )
+
+        lint_output = io.StringIO()
+        with (
+            patch(
+                "whatyouship.operations.inspect_artifact",
+                side_effect=[current, baseline],
+            ),
+            contextlib.redirect_stdout(lint_output),
+        ):
+            self.assertEqual(
+                main(["lint", "current.zip", "--baseline", "baseline.zip"]),
+                0,
+            )
+        self.assertIn("Binary analysis diagnostics:", lint_output.getvalue())
+        self.assertIn(
+            "Baseline binary analysis diagnostics:",
+            lint_output.getvalue(),
+        )
+
+        compare_output = io.StringIO()
+        with (
+            patch(
+                "whatyouship.operations.inspect_artifact",
+                side_effect=[baseline, current],
+            ),
+            contextlib.redirect_stdout(compare_output),
+        ):
+            self.assertEqual(
+                main(["compare", "baseline.zip", "current.zip"]),
+                0,
+            )
+        self.assertIn(
+            "Old binary analysis diagnostics:",
+            compare_output.getvalue(),
+        )
+        self.assertIn(
+            "New binary analysis diagnostics:",
+            compare_output.getvalue(),
+        )
+
     def test_lint_and_compare_json_preserve_verification_issues(self) -> None:
         """Serialize verification issues without treating them as comparisons."""
         affected = ReleaseArtifact(
@@ -271,6 +348,9 @@ class ReportOutputTests(unittest.TestCase):
                 status="unsupported",
                 verification_issue="rcodesign was not found in PATH.",
             ),
+            binary_diagnostics=[BinaryAnalysisDiagnostic(
+                Path("broken.dylib"), "Mach-O", "truncated load commands"
+            )],
         )
         unaffected = ReleaseArtifact(Path("unaffected.dmg"))
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -303,11 +383,21 @@ class ReportOutputTests(unittest.TestCase):
             lint_data["artifact"]["signature_verification_issue"],
             "rcodesign was not found in PATH.",
         )
+        self.assertEqual(lint_data["artifact"]["binary_diagnostics"], [{
+            "relative_path": "broken.dylib",
+            "format": "Mach-O",
+            "reason": "truncated load commands",
+        }])
         self.assertEqual(
             compare_data["old_artifact"]["signature_verification_issue"],
             "rcodesign was not found in PATH.",
         )
         self.assertNotIn("signature_verification_issue", compare_data["new_artifact"])
+        self.assertEqual(
+            compare_data["old_artifact"]["binary_diagnostics"],
+            lint_data["artifact"]["binary_diagnostics"],
+        )
+        self.assertEqual(compare_data["new_artifact"]["binary_diagnostics"], [])
 
     def test_inspect_text_displays_application_bundle_metadata(self) -> None:
         """Include bundle identity, versions, executable, and issues in text."""
@@ -417,9 +507,12 @@ class ReportOutputTests(unittest.TestCase):
             self.assertEqual(main(["lint", str(new), "--baseline", str(old), "-o", str(target)]), 0)
             data = json.loads(target.read_text(encoding="utf-8"))
 
-        self.assertEqual(data["schema_version"], 1)
+        self.assertEqual(data["schema_version"], 2)
         self.assertEqual(data["report_type"], "lint")
-        self.assertEqual(data["artifact"], {"source_path": str(new)})
+        self.assertEqual(data["artifact"], {
+            "source_path": str(new),
+            "binary_diagnostics": [],
+        })
         self.assertEqual(data["baseline"]["source_path"], str(old))
         self.assertEqual(
             {category: [item["relative_path"] for item in data["baseline"][category]]
@@ -457,10 +550,16 @@ class ReportOutputTests(unittest.TestCase):
                 )
             data = json.loads(target.read_text(encoding="utf-8"))
 
-        self.assertEqual(data["schema_version"], 1)
+        self.assertEqual(data["schema_version"], 2)
         self.assertEqual(data["report_type"], "compare")
-        self.assertEqual(data["old_artifact"], {"source_path": "old.zip"})
-        self.assertEqual(data["new_artifact"], {"source_path": "new.zip"})
+        self.assertEqual(data["old_artifact"], {
+            "source_path": "old.zip",
+            "binary_diagnostics": [],
+        })
+        self.assertEqual(data["new_artifact"], {
+            "source_path": "new.zip",
+            "binary_diagnostics": [],
+        })
         self.assertEqual(
             {category: data[category] for category in ("added", "removed", "changed", "unchanged")},
             {"added": ["added.txt"], "removed": ["removed.txt"],
@@ -485,6 +584,21 @@ class ReportOutputTests(unittest.TestCase):
         self.assertEqual(rows[0]["size_bytes"], "4")
         self.assertIn('"name,""quoted"".txt"', raw)
         self.assertNotIn(str(artifact.source_path), raw)
+
+    def test_inspect_csv_does_not_include_binary_diagnostics(self) -> None:
+        """Keep binary analysis diagnostics out of the tabular CSV contract."""
+        artifact = ReleaseArtifact(
+            Path("release"),
+            [ArtifactFile(Path("broken.exe"), 4, "a" * 64)],
+            binary_diagnostics=[BinaryAnalysisDiagnostic(
+                Path("broken.exe"), "PE", "truncated headers"
+            )],
+        )
+
+        raw = render_csv(InspectReport(artifact))
+
+        self.assertNotIn("binary_diagnostics", raw)
+        self.assertNotIn("truncated headers", raw)
 
     def test_inspect_csv_includes_macho_metadata(self) -> None:
         """Serialize Mach-O versions and loader metadata in CSV output."""

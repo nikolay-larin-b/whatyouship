@@ -158,6 +158,20 @@ class ArtifactFile:
     binary: BinaryMetadata | None = None
 
 
+@dataclass(frozen=True)
+class BinaryAnalysisDiagnostic:
+    """Describe a failed analysis of a recognized binary file.
+
+    :param relative_path: File path relative to the release artifact root.
+    :param format: Recognized binary format.
+    :param reason: Human-readable reason why analysis failed.
+    """
+
+    relative_path: Path
+    format: str
+    reason: str
+
+
 def symbolic_link_is_external(relative_path: Path, target: str) -> bool:
     """Determine whether a POSIX symbolic-link target escapes an artifact.
 
@@ -250,6 +264,8 @@ class ReleaseArtifact:
         agreement, or ``None`` when the format does not expose that metadata.
     :param bundles: Application bundles found inside the artifact.
     :param symbolic_links: Symbolic links contained in the artifact.
+    :param binary_diagnostics: Failures encountered while analyzing recognized
+        binary files.
     """
 
     source_path: Path
@@ -259,6 +275,7 @@ class ReleaseArtifact:
     license_agreement_present: bool | None = None
     bundles: list[AppBundleMetadata] = field(default_factory=list)
     symbolic_links: list[ArtifactSymbolicLink] = field(default_factory=list)
+    binary_diagnostics: list[BinaryAnalysisDiagnostic] = field(default_factory=list)
 
 
 @dataclass

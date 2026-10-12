@@ -48,6 +48,50 @@ class OperationTests(unittest.TestCase):
             [Path("payload.txt")],
         )
 
+    def test_inspect_returns_binary_diagnostics(self) -> None:
+        """Expose recognized binary parse failures through the public API."""
+        payload = bytearray(68)
+        payload[:2] = b"MZ"
+        payload[60:64] = (64).to_bytes(4, "little")
+        payload[64:68] = b"PE\x00\x00"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory)
+            (source / "broken.exe").write_bytes(payload)
+
+            report = inspect(source)
+
+        self.assertIsNone(report.artifact.files[0].binary)
+        self.assertEqual(len(report.artifact.binary_diagnostics), 1)
+        diagnostic = report.artifact.binary_diagnostics[0]
+        self.assertEqual(diagnostic.relative_path, Path("broken.exe"))
+        self.assertEqual(diagnostic.format, "PE")
+        self.assertTrue(diagnostic.reason)
+
+    def test_lint_and_compare_preserve_binary_diagnostics(self) -> None:
+        """Carry diagnostics through all public high-level operations."""
+        payload = bytearray(68)
+        payload[:2] = b"MZ"
+        payload[60:64] = (64).to_bytes(4, "little")
+        payload[64:68] = b"PE\x00\x00"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old = root / "old"
+            new = root / "new"
+            old.mkdir()
+            new.mkdir()
+            (old / "old.exe").write_bytes(payload)
+            (new / "new.exe").write_bytes(payload)
+
+            lint_report = lint(new, baseline=old)
+            compare_report = compare(old, new)
+
+        self.assertEqual(len(lint_report.artifact.binary_diagnostics), 1)
+        self.assertIsNotNone(lint_report.baseline_artifact)
+        assert lint_report.baseline_artifact is not None
+        self.assertEqual(len(lint_report.baseline_artifact.binary_diagnostics), 1)
+        self.assertEqual(len(compare_report.old_artifact.binary_diagnostics), 1)
+        self.assertEqual(len(compare_report.new_artifact.binary_diagnostics), 1)
+
     def test_lint_accepts_path_like_and_returns_report(self) -> None:
         """Apply default lint rules through the public operation."""
         with tempfile.TemporaryDirectory() as temporary_directory:

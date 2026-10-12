@@ -18,6 +18,7 @@ from typing import Literal
 
 import lief
 
+from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.macos_tools import CODESIGN, SECURITY
 from whatyouship.model import (
     BinaryDependency,
@@ -1032,27 +1033,34 @@ class MachOInspector:
         """Inspect a path or in-memory payload when it contains Mach-O code.
 
         :param source: Path or bytes of a potential Mach-O file.
-        :returns: Mach-O metadata, or ``None`` for non-Mach-O or unreadable files.
+        :returns: Mach-O metadata, or ``None`` when the source is not Mach-O.
+        :raises BinaryAnalysisError: If a recognized Mach-O file cannot be analyzed.
         """
-        try:
-            if isinstance(source, Path):
-                with source.open("rb") as stream:
-                    if stream.read(4) not in _MACHO_MAGICS:
-                        return None
-                parse_source = source
-            else:
-                if bytes(source[:4]) not in _MACHO_MAGICS:
+        if isinstance(source, Path):
+            with source.open("rb") as stream:
+                if stream.read(4) not in _MACHO_MAGICS:
                     return None
-                parse_source = bytes(source)
+            parse_source = source
+        else:
+            if bytes(source[:4]) not in _MACHO_MAGICS:
+                return None
+            parse_source = bytes(source)
 
+        try:
             with lief.logging.level_scope(lief.logging.LEVEL.OFF):
                 fat_binary = lief.MachO.parse(parse_source)
-            if fat_binary is None:
-                return None
+        except (RuntimeError, ValueError) as error:
+            reason = str(error) or type(error).__name__
+            raise BinaryAnalysisError("Mach-O", reason) from error
+        if fat_binary is None:
+            raise BinaryAnalysisError("Mach-O", "LIEF could not parse the file")
 
+        try:
             slices = list(fat_binary)
             if not slices:
-                return None
+                raise BinaryAnalysisError(
+                    "Mach-O", "the file contains no architecture slices"
+                )
             architectures = {
                 _ARCHITECTURES.get(
                     binary.header.cpu_type,
@@ -1061,33 +1069,35 @@ class MachOInspector:
                 for binary in slices
             }
             kinds = {_kind(binary.header.file_type) for binary in slices}
-            try:
-                signature = _signature(source, slices)
-            except Exception:
-                signature = SignatureMetadata(present=None)
-            try:
-                minimum_os_version = _minimum_os_version(slices)
-            except Exception:
-                minimum_os_version = None
-            try:
-                file_version = _current_library_version(slices)
-            except Exception:
-                file_version = None
-            try:
-                dependencies = _dependencies(slices)
-                runtime_search_paths = _runtime_search_paths(slices)
-            except Exception:
-                dependencies = ()
-                runtime_search_paths = ()
-            return BinaryMetadata(
-                format="Mach-O",
-                architecture="+".join(sorted(architectures)),
-                kind=kinds.pop() if len(kinds) == 1 else "other",
-                file_version=file_version,
-                signature=signature,
-                minimum_os_version=minimum_os_version,
-                dependencies=dependencies,
-                runtime_search_paths=runtime_search_paths,
-            )
-        except Exception:
-            return None
+        except (RuntimeError, ValueError) as error:
+            reason = str(error) or type(error).__name__
+            raise BinaryAnalysisError("Mach-O", reason) from error
+
+        try:
+            signature = _signature(source, slices)
+        except (OSError, RuntimeError, ValueError):
+            signature = SignatureMetadata(present=None)
+        try:
+            minimum_os_version = _minimum_os_version(slices)
+        except (RuntimeError, ValueError):
+            minimum_os_version = None
+        try:
+            file_version = _current_library_version(slices)
+        except (RuntimeError, ValueError):
+            file_version = None
+        try:
+            dependencies = _dependencies(slices)
+            runtime_search_paths = _runtime_search_paths(slices)
+        except (RuntimeError, ValueError):
+            dependencies = ()
+            runtime_search_paths = ()
+        return BinaryMetadata(
+            format="Mach-O",
+            architecture="+".join(sorted(architectures)),
+            kind=kinds.pop() if len(kinds) == 1 else "other",
+            file_version=file_version,
+            signature=signature,
+            minimum_os_version=minimum_os_version,
+            dependencies=dependencies,
+            runtime_search_paths=runtime_search_paths,
+        )

@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
+from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.inspectors.msi import MsiInspector
 from whatyouship.model import ArtifactSignature, BinaryMetadata, InstallationScope
 
@@ -154,6 +155,49 @@ class MsiInspectorTests(unittest.TestCase):
             extract.assert_called_once_with(source)
             self.assertEqual(first, second)
             self.assertEqual(binary_inspect.call_count, 2)
+
+    def test_binary_parse_failure_is_recorded_per_payload(self) -> None:
+        """Keep inspecting an MSI when one extracted PE cannot be analyzed."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "release.msi"
+            source.write_bytes(_MSI_HEADER + b"payload archive")
+
+            with (
+                patch(
+                    "whatyouship.inspectors.msi_cache.cache_directory",
+                    return_value=root / "cache" / "msi" / "v1",
+                ),
+                patch.object(
+                    MsiInspector,
+                    "_extract_payloads",
+                    return_value=iter([
+                        (Path("App/broken.exe"), b"broken"),
+                        (Path("App/readme.txt"), b"text"),
+                    ]),
+                ),
+                patch(
+                    "whatyouship.inspectors.msi.PeInspector.inspect",
+                    side_effect=[
+                        BinaryAnalysisError("PE", "truncated headers"),
+                        None,
+                    ],
+                ),
+            ):
+                artifact = MsiInspector().inspect(source)
+
+        self.assertEqual(len(artifact.files), 2)
+        self.assertTrue(all(file.binary is None for file in artifact.files))
+        self.assertEqual(len(artifact.binary_diagnostics), 1)
+        self.assertEqual(
+            artifact.binary_diagnostics[0].relative_path,
+            Path("App/broken.exe"),
+        )
+        self.assertEqual(artifact.binary_diagnostics[0].format, "PE")
+        self.assertEqual(
+            artifact.binary_diagnostics[0].reason,
+            "truncated headers",
+        )
 
     def test_identical_msi_content_at_different_paths_shares_entry(self) -> None:
         """Key extracted content by MSI bytes instead of source name or path."""

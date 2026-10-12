@@ -8,8 +8,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.inspectors.directory import DirectoryInspector
-from whatyouship.model import ReleaseArtifact, symbolic_link_is_external
+from whatyouship.model import BinaryMetadata, ReleaseArtifact, symbolic_link_is_external
 
 
 class DirectoryInspectorTests(unittest.TestCase):
@@ -108,14 +109,46 @@ class DirectoryInspectorTests(unittest.TestCase):
         """Keep the artifact intact when one PE candidate cannot be parsed."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            (root / "broken.exe").write_bytes(b"MZbroken")
+            (root / "broken.exe").write_bytes(b"broken")
+            (root / "working.exe").write_bytes(b"working")
             (root / "readme.txt").write_bytes(b"text")
 
-            with patch("whatyouship.binary.pe.lief.PE.parse", side_effect=RuntimeError("bad PE")):
+            def inspect_binary(path: Path) -> BinaryMetadata | None:
+                """Return metadata or a failure based on the synthetic file name.
+
+                :param path: Synthetic artifact file.
+                :returns: Metadata for the working PE or ``None`` for text.
+                :raises BinaryAnalysisError: For the broken PE.
+                """
+                if path.name == "broken.exe":
+                    raise BinaryAnalysisError("PE", "truncated headers")
+                if path.name == "working.exe":
+                    return BinaryMetadata("PE", "x86_64", "executable")
+                return None
+
+            with patch(
+                "whatyouship.inspectors.directory.PeInspector.inspect",
+                side_effect=inspect_binary,
+            ):
                 artifact = DirectoryInspector().inspect(root)
 
-            self.assertEqual([file.relative_path for file in artifact.files], [Path("broken.exe"), Path("readme.txt")])
-            self.assertTrue(all(file.binary is None for file in artifact.files))
+            self.assertEqual(
+                [file.relative_path for file in artifact.files],
+                [Path("broken.exe"), Path("readme.txt"), Path("working.exe")],
+            )
+            self.assertIsNone(artifact.files[0].binary)
+            self.assertIsNone(artifact.files[1].binary)
+            self.assertEqual(artifact.files[2].binary.format, "PE")
+            self.assertEqual(len(artifact.binary_diagnostics), 1)
+            self.assertEqual(
+                artifact.binary_diagnostics[0].relative_path,
+                Path("broken.exe"),
+            )
+            self.assertEqual(artifact.binary_diagnostics[0].format, "PE")
+            self.assertEqual(
+                artifact.binary_diagnostics[0].reason,
+                "truncated headers",
+            )
 
 
 if __name__ == "__main__":

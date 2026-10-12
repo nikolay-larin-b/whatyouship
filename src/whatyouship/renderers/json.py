@@ -11,7 +11,23 @@ from whatyouship.model import AppBundleMetadata, ArtifactFile, Finding, ReleaseA
 from whatyouship.report import CompareReport, InspectReport, LintReport, Report
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+
+def _binary_diagnostics_data(artifact: ReleaseArtifact) -> list[dict[str, str]]:
+    """Convert binary analysis diagnostics to JSON data.
+
+    :param artifact: Artifact whose diagnostics should be serialized.
+    :returns: JSON-compatible diagnostic records.
+    """
+    return [
+        {
+            "relative_path": diagnostic.relative_path.as_posix(),
+            "format": diagnostic.format,
+            "reason": diagnostic.reason,
+        }
+        for diagnostic in artifact.binary_diagnostics
+    ]
 
 
 def _file_data(file: ArtifactFile) -> dict[str, Any]:
@@ -125,6 +141,7 @@ def _artifact_data(artifact: ReleaseArtifact) -> dict[str, Any]:
             "conflicts": [conflict.message for conflict in scope.conflicts],
         },
         "license_agreement_present": artifact.license_agreement_present,
+        "binary_diagnostics": _binary_diagnostics_data(artifact),
         "bundles": [_bundle_data(bundle) for bundle in artifact.bundles],
         "symbolic_links": [
             {
@@ -158,7 +175,10 @@ def _artifact_reference_data(artifact: ReleaseArtifact) -> dict[str, Any]:
     :param artifact: Artifact referenced by a lint or compare report.
     :returns: Source path and optional signature verification issue.
     """
-    data: dict[str, Any] = {"source_path": str(artifact.source_path)}
+    data: dict[str, Any] = {
+        "source_path": str(artifact.source_path),
+        "binary_diagnostics": _binary_diagnostics_data(artifact),
+    }
     if artifact.signature.verification_issue is not None:
         data["signature_verification_issue"] = artifact.signature.verification_issue
     return data

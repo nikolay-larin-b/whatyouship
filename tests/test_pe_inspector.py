@@ -9,10 +9,11 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import lief
 
+from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.binary.pe import PeInspector
 from whatyouship.cli import main
 from whatyouship.inspectors.directory import DirectoryInspector
@@ -41,6 +42,18 @@ def _make_pe(kind: str) -> bytes:
             path = Path(temporary_directory) / "sample.exe"
             binary.write(path)
             return path.read_bytes()
+
+
+def _make_pe_candidate() -> bytes:
+    """Create a truncated payload with a confirmed PE signature.
+
+    :returns: DOS header and PE signature without complete PE metadata.
+    """
+    payload = bytearray(68)
+    payload[:2] = b"MZ"
+    payload[60:64] = (64).to_bytes(4, "little")
+    payload[64:68] = b"PE\x00\x00"
+    return bytes(payload)
 
 
 class PeInspectorTests(unittest.TestCase):
@@ -84,6 +97,7 @@ class PeInspectorTests(unittest.TestCase):
             self.assertEqual(artifact.files[0].binary.format, "PE")
             self.assertEqual(artifact.files[0].binary.kind, "executable")
             self.assertIsNone(artifact.files[1].binary)
+            self.assertEqual(artifact.binary_diagnostics, [])
 
     def test_reads_embedded_versions(self) -> None:
         """Prefer embedded version strings when the resource provides them."""
@@ -105,10 +119,11 @@ class PeInspectorTests(unittest.TestCase):
             header=header,
             has_resources=True,
             resources_manager=SimpleNamespace(has_version=True, version=[version]),
+            signatures=[],
         )
 
         with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
-            metadata = PeInspector().inspect(b"MZsynthetic")
+            metadata = PeInspector().inspect(_make_pe_candidate())
 
         self.assertIsNotNone(metadata)
         self.assertEqual(metadata.architecture, "x86")
@@ -133,10 +148,11 @@ class PeInspectorTests(unittest.TestCase):
             header=header,
             has_resources=True,
             resources_manager=SimpleNamespace(has_version=True, version=[version]),
+            signatures=[],
         )
 
         with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
-            metadata = PeInspector().inspect(b"MZsynthetic")
+            metadata = PeInspector().inspect(_make_pe_candidate())
 
         self.assertIsNotNone(metadata)
         self.assertEqual(metadata.file_version, "1.2.3.4")
@@ -157,20 +173,35 @@ class PeInspectorTests(unittest.TestCase):
             header=header,
             has_resources=True,
             resources_manager=SimpleNamespace(has_version=True, version=[version]),
+            signatures=[],
         )
 
         with patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary):
-            metadata = PeInspector().inspect(b"MZsynthetic")
+            metadata = PeInspector().inspect(_make_pe_candidate())
 
         self.assertIsNotNone(metadata)
         self.assertEqual(metadata.file_version, "1.2.3")
         self.assertIsNone(metadata.product_version)
 
-    def test_skips_non_pe_and_parse_failures(self) -> None:
-        """Return no metadata for other files and failed PE parses."""
+    def test_distinguishes_non_pe_and_parse_failures(self) -> None:
+        """Return ``None`` for other files and raise for recognized broken PE."""
         self.assertIsNone(PeInspector().inspect(b"plain text"))
+        self.assertIsNone(PeInspector().inspect(b"MZbroken"))
         with patch("whatyouship.binary.pe.lief.PE.parse", side_effect=RuntimeError("bad PE")):
-            self.assertIsNone(PeInspector().inspect(b"MZbroken"))
+            with self.assertRaisesRegex(BinaryAnalysisError, "bad PE") as result:
+                PeInspector().inspect(_make_pe_candidate())
+
+        self.assertEqual(result.exception.binary_format, "PE")
+        self.assertIsInstance(result.exception.__cause__, RuntimeError)
+
+    def test_does_not_hide_unexpected_programming_errors(self) -> None:
+        """Allow unexpected parser errors to retain their traceback."""
+        with patch(
+            "whatyouship.binary.pe.lief.PE.parse",
+            side_effect=AssertionError("unexpected defect"),
+        ):
+            with self.assertRaisesRegex(AssertionError, "unexpected defect"):
+                PeInspector().inspect(_make_pe_candidate())
 
     def test_reads_signed_pe_metadata(self) -> None:
         """Read verification result, signer subject, and timestamp presence."""
@@ -193,7 +224,7 @@ class PeInspectorTests(unittest.TestCase):
             patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
             patch("whatyouship.binary.pe.sys.platform", "linux"),
         ):
-            metadata = PeInspector().inspect(b"MZsynthetic")
+            metadata = PeInspector().inspect(_make_pe_candidate())
 
         self.assertIsNotNone(metadata)
         self.assertTrue(metadata.signature.present)
@@ -219,7 +250,7 @@ class PeInspectorTests(unittest.TestCase):
             patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
             patch("whatyouship.binary.pe.sys.platform", "linux"),
         ):
-            metadata = PeInspector().inspect(b"MZsynthetic")
+            metadata = PeInspector().inspect(_make_pe_candidate())
 
         self.assertIsNotNone(metadata)
         self.assertEqual(metadata.kind, "executable")
@@ -243,7 +274,7 @@ class PeInspectorTests(unittest.TestCase):
             patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
             patch("whatyouship.binary.pe.sys.platform", "linux"),
         ):
-            metadata = PeInspector().inspect(b"MZsynthetic")
+            metadata = PeInspector().inspect(_make_pe_candidate())
 
         self.assertIsNotNone(metadata)
         self.assertTrue(metadata.signature.present)
@@ -254,13 +285,18 @@ class PeInspectorTests(unittest.TestCase):
         header = Mock()
         header.machine = lief.PE.Header.MACHINE_TYPES.AMD64
         header.has_characteristic.side_effect = [False, True]
-        binary = SimpleNamespace(header=header, has_resources=False)
+        binary = Mock()
+        binary.header = header
+        binary.has_resources = False
+        type(binary).signatures = PropertyMock(
+            side_effect=RuntimeError("signature table is unreadable")
+        )
 
         with (
             patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
             patch("whatyouship.binary.pe.sys.platform", "linux"),
         ):
-            metadata = PeInspector().inspect(b"MZsynthetic")
+            metadata = PeInspector().inspect(_make_pe_candidate())
 
         self.assertIsNotNone(metadata)
         self.assertIsNone(metadata.signature.present)
@@ -289,7 +325,7 @@ class PeInspectorTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             source = Path(temporary_directory) / "sample.exe"
-            source.write_bytes(b"MZsynthetic")
+            source.write_bytes(_make_pe_candidate())
             for status, present, valid in (
                 ("valid", True, True),
                 ("unsigned", False, None),
@@ -322,6 +358,27 @@ class PeInspectorTests(unittest.TestCase):
 
         binary.verify_signature.assert_not_called()
 
+    def test_unavailable_windows_trust_provider_keeps_pe_metadata(self) -> None:
+        """Treat an unavailable optional trust provider as unknown signature state."""
+        header = Mock()
+        header.machine = lief.PE.Header.MACHINE_TYPES.AMD64
+        header.has_characteristic.return_value = True
+        binary = SimpleNamespace(header=header, has_resources=False, signatures=[])
+
+        with (
+            patch("whatyouship.binary.pe.lief.PE.parse", return_value=binary),
+            patch("whatyouship.binary.pe.sys.platform", "win32"),
+            patch(
+                "whatyouship.inspectors.windows_authenticode."
+                "WindowsAuthenticodeVerifier.verify",
+                side_effect=OSError("WinVerifyTrust unavailable"),
+            ),
+        ):
+            metadata = PeInspector().inspect(_make_pe_candidate())
+
+        self.assertIsNotNone(metadata)
+        self.assertIsNone(metadata.signature.present)
+
     def test_rfc3161_diagnostics_do_not_reach_cli_output(self) -> None:
         """Keep LIEF countersignature diagnostics out of normal lint output."""
         signer = SimpleNamespace(
@@ -344,7 +401,7 @@ class PeInspectorTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             source = Path(temporary_directory) / "timestamped.exe"
-            source.write_bytes(b"MZsynthetic")
+            source.write_bytes(_make_pe_candidate())
             stdout = io.StringIO()
             stderr = io.StringIO()
             with (

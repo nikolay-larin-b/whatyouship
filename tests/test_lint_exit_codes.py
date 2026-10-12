@@ -12,7 +12,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from whatyouship.cli import main
-from whatyouship.model import ArtifactFile, BinaryMetadata, ReleaseArtifact, SignatureMetadata
+from whatyouship.model import (
+    ArtifactFile,
+    BinaryAnalysisDiagnostic,
+    BinaryMetadata,
+    ReleaseArtifact,
+    SignatureMetadata,
+)
 
 
 class LintExitCodeTests(unittest.TestCase):
@@ -64,6 +70,40 @@ class LintExitCodeTests(unittest.TestCase):
                     self.assertEqual(
                         main(["lint", str(artifact), "--fail-on", threshold]), 0
                     )
+
+    def test_binary_diagnostics_do_not_affect_lint_gate_or_baseline(self) -> None:
+        """Keep incomplete binary analysis separate from lint findings."""
+        current = ReleaseArtifact(
+            Path("current"),
+            binary_diagnostics=[BinaryAnalysisDiagnostic(
+                Path("current.exe"), "PE", "truncated headers"
+            )],
+        )
+        previous = ReleaseArtifact(
+            Path("previous"),
+            binary_diagnostics=[BinaryAnalysisDiagnostic(
+                Path("previous.exe"), "PE", "truncated headers"
+            )],
+        )
+        for threshold in ("error", "warning"):
+            with (
+                self.subTest(threshold=threshold),
+                patch(
+                    "whatyouship.operations.inspect_artifact",
+                    side_effect=[current, previous],
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                result = main([
+                    "lint",
+                    "current",
+                    "--baseline",
+                    "previous",
+                    "--fail-on",
+                    threshold,
+                ])
+
+            self.assertEqual(result, 0)
 
     def test_baseline_existing_and_resolved_errors_do_not_fail(self) -> None:
         """Apply the gate only to findings newly present in the current release."""

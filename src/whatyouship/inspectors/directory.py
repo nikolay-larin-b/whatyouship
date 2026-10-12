@@ -8,12 +8,14 @@ import os
 from collections.abc import Iterable
 from pathlib import Path
 
+from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.binary.macho import MachOInspector
 from whatyouship.binary.pe import PeInspector
 from whatyouship.inspectors.app_bundle import AppBundleInspector
 from whatyouship.model import (
     ArtifactFile,
     ArtifactSymbolicLink,
+    BinaryAnalysisDiagnostic,
     ReleaseArtifact,
     symbolic_link_is_external,
 )
@@ -45,6 +47,7 @@ class DirectoryInspector:
             raise NotADirectoryError(f"Path is not a directory: {directory}")
 
         files = []
+        binary_diagnostics = []
         links_by_path = {link.relative_path: link for link in symbolic_links}
         pe_inspector = PeInspector()
         macho_inspector = MachOInspector()
@@ -63,16 +66,26 @@ class DirectoryInspector:
 
             with path.open("rb") as stream:
                 sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
-            files.append(
-                ArtifactFile(
-                    relative_path=path.relative_to(directory),
-                    size_bytes=path.stat().st_size,
-                    sha256=sha256,
-                    binary=(
-                        pe_inspector.inspect(path) or macho_inspector.inspect(path)
-                    ),
-                )
-            )
+            relative_path = path.relative_to(directory)
+            binary = None
+            for inspector in (pe_inspector, macho_inspector):
+                try:
+                    binary = inspector.inspect(path)
+                except BinaryAnalysisError as error:
+                    binary_diagnostics.append(BinaryAnalysisDiagnostic(
+                        relative_path,
+                        error.binary_format,
+                        error.reason,
+                    ))
+                    break
+                if binary is not None:
+                    break
+            files.append(ArtifactFile(
+                relative_path=relative_path,
+                size_bytes=path.stat().st_size,
+                sha256=sha256,
+                binary=binary,
+            ))
 
         bundles = AppBundleInspector().inspect(
             directory,
@@ -85,4 +98,5 @@ class DirectoryInspector:
             files=files,
             symbolic_links=[links_by_path[path] for path in sorted(links_by_path)],
             bundles=bundles,
+            binary_diagnostics=binary_diagnostics,
         )

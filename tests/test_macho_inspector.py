@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import lief
 
+from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.binary.macho import MachOInspector, _cms_signature, _native_signature
 from whatyouship.inspectors.directory import DirectoryInspector
 from whatyouship.model import BinaryDependency, BinaryEntitlement
@@ -272,7 +273,11 @@ def _mock_slice(
         code_signature=code_signature,
         fat_offset=fat_offset,
         libraries=[
-            SimpleNamespace(name=name, command=command)
+            SimpleNamespace(
+                name=name,
+                command=command,
+                current_version=(0, 0, 0),
+            )
             for name, command in dependencies
         ],
         rpaths=[SimpleNamespace(path=path) for path in runtime_search_paths],
@@ -802,16 +807,41 @@ class MachOInspectorTests(unittest.TestCase):
         self.assertEqual(metadata.architecture, "arm64")
         self.assertIsNone(metadata.minimum_os_version)
 
-    def test_skips_other_files_and_parse_failures(self) -> None:
-        """Return no metadata for non-Mach-O and malformed payloads."""
+    def test_distinguishes_other_files_and_parse_failures(self) -> None:
+        """Return ``None`` for other files and raise for recognized broken Mach-O."""
         self.assertIsNone(MachOInspector().inspect(b"plain text"))
         with patch(
             "whatyouship.binary.macho.lief.MachO.parse",
             side_effect=RuntimeError("bad Mach-O"),
         ):
-            self.assertIsNone(
-                MachOInspector().inspect(_make_thin_macho(_CPU_ARM64, _FILE_EXECUTE))
-            )
+            with self.assertRaisesRegex(BinaryAnalysisError, "bad Mach-O") as result:
+                MachOInspector().inspect(
+                    _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+                )
+
+        self.assertEqual(result.exception.binary_format, "Mach-O")
+        self.assertIsInstance(result.exception.__cause__, RuntimeError)
+
+    def test_truncated_macho_magic_is_a_parse_failure(self) -> None:
+        """Diagnose a truncated file after recognizing its Mach-O magic."""
+        with self.assertRaisesRegex(
+            BinaryAnalysisError,
+            "LIEF could not parse the file",
+        ) as result:
+            MachOInspector().inspect(b"\xcf\xfa\xed\xfe")
+
+        self.assertEqual(result.exception.binary_format, "Mach-O")
+
+    def test_does_not_hide_unexpected_programming_errors(self) -> None:
+        """Allow unexpected parser errors to retain their traceback."""
+        with patch(
+            "whatyouship.binary.macho.lief.MachO.parse",
+            side_effect=AssertionError("unexpected defect"),
+        ):
+            with self.assertRaisesRegex(AssertionError, "unexpected defect"):
+                MachOInspector().inspect(
+                    _make_thin_macho(_CPU_ARM64, _FILE_EXECUTE)
+                )
 
     def test_mixed_slice_kinds_are_other(self) -> None:
         """Do not choose an arbitrary kind for inconsistent universal slices."""

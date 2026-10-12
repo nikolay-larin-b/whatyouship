@@ -13,12 +13,17 @@ from pathlib import Path
 import pymsi
 from pymsi.msi.file import File
 
+from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.binary.pe import PeInspector
 from whatyouship.exceptions import ArtifactInspectionError
 from whatyouship.inspectors.msi_cache import MsiPayloadCache
 from whatyouship.inspectors.msi_scope import MsiScopeInspector
 from whatyouship.inspectors.msi_signature import MsiSignatureInspector
-from whatyouship.model import ArtifactFile, ReleaseArtifact
+from whatyouship.model import (
+    ArtifactFile,
+    BinaryAnalysisDiagnostic,
+    ReleaseArtifact,
+)
 from whatyouship.paths import _default_cache_scope
 
 
@@ -57,26 +62,37 @@ class MsiInspector:
                 digest, lambda: self._extract_payloads(source_path)
             )
             binary_inspector = PeInspector()
-            files = [
-                ArtifactFile(
+            files = []
+            binary_diagnostics = []
+            for file in cached:
+                try:
+                    binary = binary_inspector.inspect(file.payload_path)
+                except BinaryAnalysisError as error:
+                    binary = None
+                    binary_diagnostics.append(BinaryAnalysisDiagnostic(
+                        file.relative_path,
+                        error.binary_format,
+                        error.reason,
+                    ))
+                files.append(ArtifactFile(
                     relative_path=file.relative_path,
                     size_bytes=file.size_bytes,
                     sha256=file.sha256,
-                    binary=binary_inspector.inspect(file.payload_path),
-                )
-                for file in cached
-            ]
+                    binary=binary,
+                ))
         except (EOFError, LookupError, OSError, RuntimeError, ValueError) as error:
             raise ArtifactInspectionError(
                 f"Unable to inspect MSI '{source_path}': {error}"
             ) from error
 
         files.sort(key=attrgetter("relative_path"))
+        binary_diagnostics.sort(key=attrgetter("relative_path"))
         return ReleaseArtifact(
             source_path=source_path,
             files=files,
             signature=signature,
             installation_scope=installation_scope,
+            binary_diagnostics=binary_diagnostics,
         )
 
     def _msi_sha256(self, source_path: Path) -> str:
