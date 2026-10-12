@@ -122,7 +122,9 @@ class ReportOutputTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
             target = Path(temporary_directory) / "inspect.json"
-            with patch("whatyouship.cli.inspect_artifact", return_value=artifact):
+            with patch(
+                "whatyouship.operations.inspect_artifact", return_value=artifact
+            ):
                 self.assertEqual(main(["inspect", "release.msi", "--output", str(target)]), 0)
             data = json.loads(target.read_text(encoding="utf-8"))
 
@@ -209,7 +211,7 @@ class ReportOutputTests(unittest.TestCase):
         output = io.StringIO()
 
         with (
-            patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+            patch("whatyouship.operations.inspect_artifact", return_value=artifact),
             contextlib.redirect_stdout(output),
         ):
             self.assertEqual(main(["inspect", "release.dmg"]), 0)
@@ -232,7 +234,7 @@ class ReportOutputTests(unittest.TestCase):
 
         lint_output = io.StringIO()
         with (
-            patch("whatyouship.cli.inspect_artifact", return_value=affected),
+            patch("whatyouship.operations.inspect_artifact", return_value=affected),
             contextlib.redirect_stdout(lint_output),
         ):
             self.assertEqual(main(["lint", "affected.dmg"]), 0)
@@ -246,7 +248,7 @@ class ReportOutputTests(unittest.TestCase):
         compare_output = io.StringIO()
         with (
             patch(
-                "whatyouship.cli.inspect_artifact",
+                "whatyouship.operations.inspect_artifact",
                 side_effect=[affected, unaffected],
             ),
             contextlib.redirect_stdout(compare_output),
@@ -275,13 +277,13 @@ class ReportOutputTests(unittest.TestCase):
             root = Path(temporary_directory)
             lint_target = root / "lint.json"
             compare_target = root / "compare.json"
-            with patch("whatyouship.cli.inspect_artifact", return_value=affected):
+            with patch("whatyouship.operations.inspect_artifact", return_value=affected):
                 self.assertEqual(
                     main(["lint", "affected.dmg", "-o", str(lint_target)]),
                     0,
                 )
             with patch(
-                "whatyouship.cli.inspect_artifact",
+                "whatyouship.operations.inspect_artifact",
                 side_effect=[affected, unaffected],
             ):
                 self.assertEqual(
@@ -362,7 +364,7 @@ class ReportOutputTests(unittest.TestCase):
         output = io.StringIO()
 
         with (
-            patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+            patch("whatyouship.operations.inspect_artifact", return_value=artifact),
             contextlib.redirect_stdout(output),
         ):
             self.assertEqual(main(["inspect", "release.dmg"]), 0)
@@ -441,10 +443,18 @@ class ReportOutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             target = Path(temporary_directory) / "compare.json"
             with (
-                patch("whatyouship.cli.inspect_artifact", side_effect=[old, new]),
-                patch("whatyouship.cli.compare_artifacts", return_value=comparison),
+                patch(
+                    "whatyouship.operations.inspect_artifact", side_effect=[old, new]
+                ),
+                patch(
+                    "whatyouship.operations.compare_artifacts",
+                    return_value=comparison,
+                ),
             ):
-                self.assertEqual(main(["compare", "old.zip", "new.zip", "-o", str(target)]), 0)
+                self.assertEqual(
+                    main(["compare", "old.zip", "new.zip", "-o", str(target)]),
+                    0,
+                )
             data = json.loads(target.read_text(encoding="utf-8"))
 
         self.assertEqual(data["schema_version"], 1)

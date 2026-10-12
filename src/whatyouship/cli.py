@@ -15,13 +15,11 @@ from whatyouship.cache import (
     clear_cache,
     inspect_cache,
 )
-from whatyouship.compare import compare_artifacts
-from whatyouship.config import LintConfiguration, load_config
-from whatyouship.inspectors import inspect_artifact
-from whatyouship.lint import LintEngine, compare_findings
 from whatyouship.model import Finding
-from whatyouship.paths import cache_scope
-from whatyouship.report import CompareReport, InspectReport, LintReport, Report
+from whatyouship.operations import compare as compare_operation
+from whatyouship.operations import inspect as inspect_operation
+from whatyouship.operations import lint as lint_operation
+from whatyouship.report import Report
 from whatyouship.renderers import OutputFormat, render_report
 
 
@@ -261,52 +259,34 @@ def main(argv: list[str] | None = None) -> int:
                 print(_render_cleared_cache(result), end="")
                 return 1 if result.failures else 0
             return 0
-        with cache_scope(args.cache):
-            output_format = _output_format(args.output, args.command)
-            if args.command == "compare":
-                old_artifact = inspect_artifact(args.old_artifact)
-                new_artifact = inspect_artifact(args.new_artifact)
-                report: Report = CompareReport(
-                    old_artifact,
-                    new_artifact,
-                    compare_artifacts(old_artifact, new_artifact),
-                )
-            else:
-                artifact = inspect_artifact(args.artifact)
-                if args.command == "inspect":
-                    report = InspectReport(artifact)
-                else:
-                    baseline_artifact = (
-                        inspect_artifact(args.baseline)
-                        if args.baseline is not None
-                        else None
-                    )
-                    configuration = (
-                        load_config(args.config)
-                        if args.config is not None
-                        else LintConfiguration()
-                    )
-                    engine = LintEngine(configuration.rules())
-                    findings = engine.run(artifact)
-                    baseline_comparison = (
-                        compare_findings(engine.run(baseline_artifact), findings)
-                        if baseline_artifact is not None
-                        else None
-                    )
-                    report = LintReport(
-                        artifact, findings, baseline_artifact, baseline_comparison
-                    )
-                    eligible_findings = (
-                        baseline_comparison.new
-                        if baseline_comparison is not None
-                        else findings
-                    )
-                    exit_code = _lint_exit_code(eligible_findings, args.fail_on)
-            rendered = render_report(report, output_format)
-            if args.output is None:
-                print(rendered, end="")
-            else:
-                args.output.write_text(rendered, encoding="utf-8")
+        output_format = _output_format(args.output, args.command)
+        if args.command == "compare":
+            report: Report = compare_operation(
+                args.old_artifact,
+                args.new_artifact,
+                cache=args.cache,
+            )
+        elif args.command == "inspect":
+            report = inspect_operation(args.artifact, cache=args.cache)
+        else:
+            lint_report = lint_operation(
+                args.artifact,
+                baseline=args.baseline,
+                config=args.config,
+                cache=args.cache,
+            )
+            report = lint_report
+            eligible_findings = (
+                lint_report.baseline_comparison.new
+                if lint_report.baseline_comparison is not None
+                else lint_report.findings
+            )
+            exit_code = _lint_exit_code(eligible_findings, args.fail_on)
+        rendered = render_report(report, output_format)
+        if args.output is None:
+            print(rendered, end="")
+        else:
+            args.output.write_text(rendered, encoding="utf-8")
     except (OSError, ValueError) as error:
         parser.error(str(error))
     return exit_code

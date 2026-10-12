@@ -105,6 +105,21 @@ def _default_cache_scope(
     return wrapped
 
 
+@contextmanager
+def _operation_cache_scope(persistent: bool) -> Iterator[None]:
+    """Select an operation cache while preserving an explicit outer scope.
+
+    :param persistent: Whether the operation explicitly requests the persistent
+        user cache.
+    :yields: Control while the selected cache root is active.
+    """
+    if _cache_scope_active.get() and not persistent:
+        yield
+        return
+    with cache_scope(persistent=persistent):
+        yield
+
+
 def config_directory() -> Path:
     """Return the reserved directory for user configuration.
 

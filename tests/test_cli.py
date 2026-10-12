@@ -211,7 +211,8 @@ class CliTests(unittest.TestCase):
                 ["compare", str(source), str(source)],
             )
             with patch(
-                "whatyouship.cli.cache_scope", side_effect=record_cache_scope
+                "whatyouship.operations._operation_cache_scope",
+                side_effect=record_cache_scope,
             ):
                 for command in commands:
                     with self.subTest(command=command[0]), contextlib.redirect_stdout(
@@ -236,7 +237,8 @@ class CliTests(unittest.TestCase):
             yield
 
         with tempfile.TemporaryDirectory() as temporary_directory, patch(
-            "whatyouship.cli.cache_scope", side_effect=record_cache_scope
+            "whatyouship.operations._operation_cache_scope",
+            side_effect=record_cache_scope,
         ), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(
                 main(["inspect", temporary_directory, "--cache"]), 0
@@ -432,7 +434,10 @@ class CliTests(unittest.TestCase):
         )
         output = io.StringIO()
 
-        with patch("whatyouship.cli.inspect_artifact", return_value=artifact), contextlib.redirect_stdout(output):
+        with (
+            patch("whatyouship.operations.inspect_artifact", return_value=artifact),
+            contextlib.redirect_stdout(output),
+        ):
             result = main(["inspect", str(source)])
 
         self.assertEqual(result, 0)
@@ -460,7 +465,10 @@ class CliTests(unittest.TestCase):
         )
         output = io.StringIO()
 
-        with patch("whatyouship.cli.inspect_artifact", return_value=artifact), contextlib.redirect_stdout(output):
+        with (
+            patch("whatyouship.operations.inspect_artifact", return_value=artifact),
+            contextlib.redirect_stdout(output),
+        ):
             result = main(["inspect", "release"])
 
         self.assertEqual(result, 0)
@@ -485,7 +493,10 @@ class CliTests(unittest.TestCase):
         )
         output = io.StringIO()
 
-        with patch("whatyouship.cli.inspect_artifact", return_value=artifact), contextlib.redirect_stdout(output):
+        with (
+            patch("whatyouship.operations.inspect_artifact", return_value=artifact),
+            contextlib.redirect_stdout(output),
+        ):
             result = main(["inspect", "release.msi"])
 
         self.assertEqual(result, 0)
@@ -504,7 +515,7 @@ class CliTests(unittest.TestCase):
         output = io.StringIO()
 
         with (
-            patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+            patch("whatyouship.operations.inspect_artifact", return_value=artifact),
             contextlib.redirect_stdout(output),
         ):
             result = main(["inspect", "release.msi"])
@@ -531,7 +542,7 @@ class CliTests(unittest.TestCase):
                 output.seek(0)
                 output.truncate(0)
                 with (
-                    patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+                    patch("whatyouship.operations.inspect_artifact", return_value=artifact),
                     contextlib.redirect_stdout(output),
                 ):
                     result = main(["lint", "release.msi"])
@@ -556,7 +567,7 @@ class CliTests(unittest.TestCase):
         output = io.StringIO()
 
         with (
-            patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+            patch("whatyouship.operations.inspect_artifact", return_value=artifact),
             contextlib.redirect_stdout(output),
         ):
             result = main(["lint", "release.msi"])
@@ -578,7 +589,10 @@ class CliTests(unittest.TestCase):
         )
         output = io.StringIO()
 
-        with patch("whatyouship.cli.inspect_artifact", return_value=artifact), contextlib.redirect_stdout(output):
+        with (
+            patch("whatyouship.operations.inspect_artifact", return_value=artifact),
+            contextlib.redirect_stdout(output),
+        ):
             result = main(["lint", "release"])
 
         self.assertEqual(result, 0)
@@ -759,7 +773,7 @@ class CliTests(unittest.TestCase):
             output = io.StringIO()
 
             with (
-                patch("whatyouship.cli.inspect_artifact", return_value=artifact),
+                patch("whatyouship.operations.inspect_artifact", return_value=artifact),
                 contextlib.redirect_stdout(output),
             ):
                 result = main(["lint", "release", "--config", str(config)])
@@ -877,7 +891,7 @@ class CliTests(unittest.TestCase):
         output = io.StringIO()
 
         with (
-            patch("whatyouship.cli.inspect_artifact", side_effect=[old, new]),
+            patch("whatyouship.operations.inspect_artifact", side_effect=[old, new]),
             contextlib.redirect_stdout(output),
         ):
             result = main(["compare", "old.msi", "new.msi"])
@@ -937,7 +951,10 @@ class CliTests(unittest.TestCase):
         )])
         output = io.StringIO()
 
-        with patch("whatyouship.cli.inspect_artifact", side_effect=[old, new]), contextlib.redirect_stdout(output):
+        with (
+            patch("whatyouship.operations.inspect_artifact", side_effect=[old, new]),
+            contextlib.redirect_stdout(output),
+        ):
             result = main(["compare", "old", "new"])
 
         self.assertEqual(result, 0)
@@ -960,7 +977,10 @@ class CliTests(unittest.TestCase):
         )])
         output = io.StringIO()
 
-        with patch("whatyouship.cli.inspect_artifact", side_effect=[old, new]), contextlib.redirect_stdout(output):
+        with (
+            patch("whatyouship.operations.inspect_artifact", side_effect=[old, new]),
+            contextlib.redirect_stdout(output),
+        ):
             result = main(["compare", "old", "new"])
 
         self.assertEqual(result, 0)

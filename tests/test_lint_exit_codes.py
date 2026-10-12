@@ -109,7 +109,10 @@ class LintExitCodeTests(unittest.TestCase):
             for threshold, expected in (("error", 0), ("warning", 1)):
                 with (
                     self.subTest(threshold=threshold),
-                    patch("whatyouship.cli.inspect_artifact", side_effect=[current, previous]),
+                    patch(
+                        "whatyouship.operations.inspect_artifact",
+                        side_effect=[current, previous],
+                    ),
                     contextlib.redirect_stdout(io.StringIO()),
                 ):
                     self.assertEqual(main([
