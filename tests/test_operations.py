@@ -385,12 +385,11 @@ class OperationTests(unittest.TestCase):
             source.mkdir()
             baseline = root / "missing-baseline.zip"
 
-            with self.assertRaisesRegex(
-                ArtifactNotFoundError, str(baseline)
-            ) as raised:
+            with self.assertRaises(ArtifactNotFoundError) as raised:
                 lint(source, baseline=baseline)
 
         self.assertIsInstance(raised.exception, WhatYouShipError)
+        self.assertIn(str(baseline), str(raised.exception))
 
     def test_programming_errors_are_not_wrapped(self) -> None:
         """Let unexpected implementation failures retain their traceback and type."""

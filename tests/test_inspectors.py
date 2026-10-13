@@ -72,12 +72,11 @@ class InspectorDispatcherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             missing = Path(temporary_directory) / "missing.zip"
 
-            with self.assertRaisesRegex(
-                ArtifactNotFoundError, str(missing)
-            ) as raised:
+            with self.assertRaises(ArtifactNotFoundError) as raised:
                 inspect_artifact(str(missing))
 
         self.assertIsInstance(raised.exception, WhatYouShipError)
+        self.assertIn(str(missing), str(raised.exception))
 
     def test_unsupported_path_uses_public_error_contract(self) -> None:
         """Report an unsupported path-like input without changing detection."""
@@ -85,12 +84,11 @@ class InspectorDispatcherTests(unittest.TestCase):
             source = Path(temporary_directory) / "release.bin"
             source.write_bytes(b"payload")
 
-            with self.assertRaisesRegex(
-                UnsupportedArtifactError, str(source)
-            ) as raised:
+            with self.assertRaises(UnsupportedArtifactError) as raised:
                 inspect_artifact(_CustomPath(source))
 
         self.assertIsInstance(raised.exception, WhatYouShipError)
+        self.assertIn(str(source), str(raised.exception))
 
     def test_low_level_and_public_api_normalize_paths_consistently(self) -> None:
         """Return equivalent artifacts from both supported entry points."""
