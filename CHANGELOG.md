@@ -7,6 +7,25 @@ and version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 
 ## [Unreleased]
 
+## [0.1.0b3] - 2026-10-18
+
+### Added
+
+- Added cryptographic signature verification for Mach-O binaries and macOS application bundles, plus deeper DMG signature verification with actionable diagnostics when complete verification is unavailable.
+- Added lint rules for invalid or untrusted binary and application signatures, unsigned application bundles, incompatible bundled architectures, and non-portable Mach-O runtime search paths.
+- Added a high-level Python API for `inspect`, `lint`, and `compare`, with structured reports, path-like inputs, and a public exception hierarchy.
+- Added comprehensive Sphinx documentation for installation, workflows, configuration, reports, the Python API, and project architecture, with Read the Docs integration.
+
+### Changed
+
+- Extended Mach-O inspection with dynamic-library versions and slice-specific dependency metadata, and marked increased minimum OS requirements as comparison warnings.
+- Reported recognized PE and Mach-O analysis failures as diagnostics instead of silently omitting their metadata, and improved external-tool errors with platform-specific installation guidance.
+
+### Fixed
+
+- Prevented false missing-library findings when resolving Mach-O dependencies in application bundles extracted from DMG images.
+- Improved cache cleanup around inaccessible entries and hardened normalized DMG cache validation against incomplete or changed content.
+
 ## [0.1.0b2] - 2026-10-03
 
 ### Added
@@ -41,6 +60,7 @@ and version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 
 - Established the Python package, CLI foundation, project conventions, licensing, and test layout that became the first beta.
 
-[Unreleased]: https://github.com/nikolay-larin-b/whatyouship/compare/v0.1.0b2...HEAD
+[Unreleased]: https://github.com/nikolay-larin-b/whatyouship/compare/v0.1.0b3...HEAD
+[0.1.0b3]: https://github.com/nikolay-larin-b/whatyouship/compare/v0.1.0b2...v0.1.0b3
 [0.1.0b2]: https://github.com/nikolay-larin-b/whatyouship/compare/v0.1.0b1...v0.1.0b2
 [0.1.0b1]: https://github.com/nikolay-larin-b/whatyouship/releases/tag/v0.1.0b1
