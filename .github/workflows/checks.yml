@@ -1,0 +1,85 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.14']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Build wheel
+        run: python -m pip wheel --no-deps --wheel-dir wheelhouse .
+      - name: Test installed wheel in an isolated environment
+        shell: python
+        run: |
+          import os
+          import subprocess
+          import tempfile
+          import venv
+          from pathlib import Path
+
+          repository = Path.cwd()
+          wheels = list((repository / "wheelhouse").glob("*.whl"))
+          assert len(wheels) == 1, f"Expected one wheel, found {wheels}"
+          with tempfile.TemporaryDirectory() as temporary:
+              root = Path(temporary)
+              environment = root / "venv"
+              venv.EnvBuilder(with_pip=True).create(environment)
+              scripts = environment / ("Scripts" if os.name == "nt" else "bin")
+              python = scripts / ("python.exe" if os.name == "nt" else "python")
+              cli = scripts / ("whatyouship.exe" if os.name == "nt" else "whatyouship")
+              subprocess.run(
+                  [str(python), "-m", "pip", "install", str(wheels[0]), "pytest>=9,<10"],
+                  check=True,
+              )
+              subprocess.run([str(python), "-m", "pip", "check"], check=True)
+              subprocess.run(
+                  [str(python), "-m", "pytest", str(repository / "tests"), "-q"],
+                  cwd=root,
+                  check=True,
+              )
+              payload = root / "payload"
+              payload.mkdir()
+              (payload / "README.txt").write_text("Release smoke test\n", encoding="utf-8")
+              for arguments in (
+                  ["--version"],
+                  ["--help"],
+                  ["inspect", str(payload)],
+                  ["lint", str(payload)],
+                  ["compare", str(payload), str(payload)],
+              ):
+                  subprocess.run([str(cli), *arguments], cwd=root, check=True)
+
+  documentation:
+    name: Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install documentation dependencies
+        run: python -m pip install . -r docs/requirements.txt
+      - name: Build documentation
+        run: python -m sphinx -W --keep-going -b html docs docs/_build/html

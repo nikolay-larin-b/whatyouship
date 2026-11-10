@@ -19,6 +19,29 @@ temporary directories. Cache tests must verify cleanup on success and
 exceptions. Backend tests should distinguish detection, extraction, metadata,
 and required-tool failures.
 
+Continuous integration
+----------------------
+
+The ``Checks`` GitHub Actions workflow in ``.github/workflows/checks.yml`` runs
+on pushes, pull requests, and manual requests. Its test matrix covers Python
+3.11 and 3.14 on Linux, Windows, and macOS.
+
+Each matrix job builds a wheel, installs it and pytest into a fresh virtual
+environment, checks dependency consistency, and runs the test suite outside
+the checkout directory. It then runs the installed CLI's version, help,
+``inspect``, ``lint``, and ``compare`` commands against a temporary directory
+artifact. Native DMG integration tests run on macOS; platform-specific skips
+still apply elsewhere. These jobs do not add real MSI, NSIS, or Inno Setup
+integration fixtures or native signature-verification scenarios.
+
+A separate Linux job builds the documentation on Python 3.13 with warnings
+treated as errors.
+
+After pushing the workflow to GitHub, open the repository's **Actions** tab
+and select **Checks** to inspect job logs. To start a manual run, select
+**Run workflow** once the workflow is present on the default branch. A failed
+job identifies the step and command that failed.
+
 Adding a built-in lint rule
 ---------------------------
 
