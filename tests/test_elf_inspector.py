@@ -20,7 +20,7 @@ from whatyouship.binary.elf import ElfInspector
 from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.inspectors.msi import MsiInspector
 from whatyouship.model import ArtifactSignature, BinaryDependency, InstallationScope
-from whatyouship.operations import inspect, lint
+from whatyouship.operations import compare, inspect, lint
 from whatyouship.renderers import render_report
 
 
@@ -350,6 +350,86 @@ class ElfInspectorTests(unittest.TestCase):
                     self.assertEqual(json.loads(rows[0]["dependencies"]), data["dependencies"])
                     self.assertEqual(rows[0]["interpreter"], data["interpreter"])
                     self.assertEqual(rows[0]["library_name"], data["library_name"])
+
+    def test_compare_elf_loader_changes_in_python_and_cli_reports(self) -> None:
+        """Compare real ELF declarations through directory and ZIP operations and CLI reports."""
+        old_payload = _make_elf(
+            dependencies=("liba.so.1", "libb.so.1"),
+            rpath="$ORIGIN/lib:", interpreter="/lib/old-loader.so", soname="libold.so.1",
+        )
+        new_payload = _make_elf(
+            dependencies=("libb.so.1", "liba.so.1"),
+            runpath="$ORIGIN/lib:", interpreter="/lib/new-loader.so", soname="libnew.so.2",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            old, new = root / "old", root / "new"
+            old.mkdir()
+            new.mkdir()
+            (old / "program").write_bytes(old_payload)
+            (new / "program").write_bytes(new_payload)
+            archive = root / "release.zip"
+            with zipfile.ZipFile(archive, "w") as stream:
+                stream.writestr("program", new_payload)
+            for current in (new, archive):
+                with self.subTest(current=current):
+                    report = compare(old, current)
+                    self.assertEqual(report.comparison.changed, [Path("program")])
+                    differences = report.comparison.semantic_differences
+                    self.assertEqual([item.field for item in differences], [
+                        "Dynamic dependencies", "RPATH", "RUNPATH", "Interpreter", "Library name",
+                    ])
+                    by_field = {item.field: item for item in differences}
+                    self.assertEqual(json.loads(by_field["Dynamic dependencies"].new_value), ["libb.so.1", "liba.so.1"])
+                    self.assertEqual(json.loads(by_field["RPATH"].old_value), ["$ORIGIN/lib", ""])
+                    self.assertEqual(json.loads(by_field["RPATH"].new_value), [])
+                    self.assertEqual(json.loads(by_field["RUNPATH"].old_value), [])
+                    self.assertEqual(json.loads(by_field["RUNPATH"].new_value), ["$ORIGIN/lib", ""])
+                    text = render_report(report, "text")
+                    self.assertIn("RPATH", text)
+                    self.assertIn("RUNPATH", text)
+                    self.assertIn("/lib/new-loader.so", text)
+                    self.assertIn("libnew.so.2", text)
+                    output = root / "compare.json"
+                    self.assertEqual(main(["compare", str(old), str(current), "-o", str(output)]), 0)
+                    data = json.loads(output.read_text(encoding="utf-8"))
+                    self.assertEqual(data["changed"], ["program"])
+                    self.assertEqual([item["field"] for item in data["semantic_differences"]],
+                                     [item.field for item in differences])
+                    self.assertTrue(all(item["severity"] is None for item in data["semantic_differences"]))
+
+    def test_compare_elf_empty_path_tags_and_identical_inputs(self) -> None:
+        """Distinguish empty path elements from missing tags and avoid changes for identical ELF."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            old, new = root / "old", root / "new"
+            old.mkdir()
+            new.mkdir()
+            (old / "program").write_bytes(_make_elf())
+            (new / "program").write_bytes(_make_elf(rpath="", runpath=""))
+            report = compare(old, new)
+            self.assertEqual(
+                [(item.field, item.old_value, item.new_value) for item in report.comparison.semantic_differences],
+                [("RPATH", "[]", '[""]'), ("RUNPATH", "[]", '[""]')],
+            )
+            same = compare(new, new)
+            self.assertEqual(same.comparison.unchanged, [Path("program")])
+            self.assertEqual(same.comparison.semantic_differences, [])
+
+    def test_compare_elf_parse_failures_remain_diagnostics(self) -> None:
+        """Do not reinterpret an unreadable ELF as removal of its loader declarations."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            old, new = root / "old", root / "new"
+            old.mkdir()
+            new.mkdir()
+            (old / "program").write_bytes(_make_elf(runpath="$ORIGIN/lib", soname="libsample.so.1"))
+            (new / "program").write_bytes(b"\x7fELF")
+            report = compare(old, new)
+        self.assertEqual(report.comparison.changed, [Path("program")])
+        self.assertEqual(report.comparison.semantic_differences, [])
+        self.assertEqual(report.old_artifact.binary_diagnostics, [])
+        self.assertEqual(report.new_artifact.binary_diagnostics[0].format, "ELF")
 
     def test_non_elf_does_not_call_parser(self) -> None:
         """Do not infer ELF from a filename or an incomplete magic prefix."""

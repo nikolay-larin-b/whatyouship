@@ -60,6 +60,15 @@ so diagnostics are associated with one side. It also contains ``added``,
 ``semantic_differences``. Each difference includes path, field, old and new
 values, dangerous flag, nullable severity, and nullable warning.
 
+ELF differences use ``Dynamic dependencies``, ``RPATH``, ``RUNPATH``,
+``Interpreter``, and ``Library name`` field labels, plus the shared
+``Architecture`` and ``Type`` labels. ``old_value`` and ``new_value`` remain
+strings. ELF dependency and path-list values encode ordered JSON arrays inside
+those strings, preserving duplicate declarations and distinguishing absent
+path tags (``[]``) from empty elements (``[""]``). These changes do not assign
+severity or a dangerous flag automatically. Existing PE and Mach-O path and
+dependency display formats are retained.
+
 .. _binary-diagnostics:
 
 Binary analysis diagnostics

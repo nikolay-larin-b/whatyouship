@@ -17,6 +17,20 @@ runtime search paths, Hardened Runtime, entitlements and signatures; app-bundle
 metadata and signatures; symbolic-link targets; outer artifact signatures; and
 MSI installation scope.
 
+ELF comparison includes architecture, executable/library/other kind,
+DT_NEEDED dependencies, separate ``RPATH`` and ``RUNPATH`` fields,
+``Interpreter`` (PT_INTERP), and ``Library name`` (DT_SONAME). Moving a path
+from RPATH to RUNPATH produces two changes because the loader declarations
+have different semantics. Loader tokens remain literal; dependency and path
+declaration order and duplicates are significant.
+
+For ELF dependencies and path lists, old/new values are JSON-array strings in
+both text and JSON reports. This distinguishes no path tag (``[]``) from an
+empty path element (``[""]``) and avoids ambiguity in names containing commas.
+Interpreter and library-name additions/removals use ``unavailable`` for the
+absent value. Loader metadata changes are informational and carry no automatic
+regression severity or compare failure exit code.
+
 Some semantic differences carry a warning and severity. Examples include a
 version downgrade, removal of a version, increased minimum OS, or a transition
 from signed to unsigned. These annotations help review but are not lint

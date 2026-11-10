@@ -114,7 +114,9 @@ An absent path tag is an empty tuple/list; a present empty tag contains one
 empty element. Both path tags are reported even when RUNPATH would override
 RPATH at runtime. Runtime search path lint rules inspect both declarations,
 accept literal loader-relative paths, and report repeated paths only once per
-binary. Additional loader-metadata comparison is planned separately.
+binary. Comparison covers dependency declarations, separate RPATH and RUNPATH
+lists, interpreter, library identity, architecture, and binary kind, preserving
+declaration order, duplicates, empty path elements, and literal tokens.
 
 Recognized but malformed PE, Mach-O, or ELF files produce :ref:`binary-diagnostics`
 and do not abort the artifact. A matching ``.exe`` or ``.dll`` extension alone

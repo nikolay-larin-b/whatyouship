@@ -3,6 +3,7 @@
 
 """Compare release artifact contents and semantic metadata."""
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -77,8 +78,11 @@ def _dependency_state(binary: BinaryMetadata) -> str:
     """Format dynamic dependencies for semantic comparison.
 
     :param binary: Binary metadata to describe.
-    :returns: Comma-separated dependency paths and weak markers.
+    :returns: Ordered ELF dependency names as a JSON array, or comma-separated
+        paths and weak markers for other formats.
     """
+    if binary.format == "ELF":
+        return json.dumps([dependency.path for dependency in binary.dependencies], ensure_ascii=False)
     return ", ".join(
         dependency.path + (" (weak)" if not dependency.required else "")
         for dependency in binary.dependencies
@@ -89,8 +93,11 @@ def _runtime_search_path_state(binary: BinaryMetadata) -> str:
     """Format runtime search paths for semantic comparison.
 
     :param binary: Binary metadata to describe.
-    :returns: Comma-separated paths, or ``none``.
+    :returns: An ordered JSON array for ELF, or comma-separated paths and
+        ``none`` for other formats.
     """
+    if binary.format == "ELF":
+        return json.dumps(binary.runtime_search_paths, ensure_ascii=False)
     return ", ".join(binary.runtime_search_paths) or "none"
 
 
@@ -203,10 +210,17 @@ def _binary_differences(
         ),
         ("Dynamic dependencies", _dependency_state(old), _dependency_state(new)),
         (
-            "Runtime search paths",
+            "RPATH" if old.format == "ELF" else "Runtime search paths",
             _runtime_search_path_state(old),
             _runtime_search_path_state(new),
         ),
+        (
+            "RUNPATH" if old.format == "ELF" else "Runtime run paths",
+            json.dumps(old.runtime_run_paths, ensure_ascii=False),
+            json.dumps(new.runtime_run_paths, ensure_ascii=False),
+        ),
+        ("Interpreter", old.interpreter, new.interpreter),
+        ("Library name", old.library_name, new.library_name),
         (
             "Hardened Runtime",
             _hardened_runtime_state(old),
@@ -230,7 +244,9 @@ def _binary_differences(
             new.signature.team_id if new.signature is not None else None,
         ),
     )
-    if old.kind != new.kind and {old.kind, new.kind} == {"executable", "library"}:
+    if old.kind != new.kind and (
+        old.format == "ELF" or {old.kind, new.kind} == {"executable", "library"}
+    ):
         differences.append(
             SemanticDifference(
                 path,

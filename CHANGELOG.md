@@ -9,6 +9,8 @@ and version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 
 ### Added
 
+- Added ELF release comparison for separate RPATH/RUNPATH, interpreter, SONAME, and all binary-kind transitions, with ordered dependency and path values that retain duplicates and empty elements.
+
 - Extended runtime search path lint rules to ELF RUNPATH as well as RPATH, with duplicate paths reported once per binary and stable finding identities across both tags.
 
 - Added ELF loader metadata: required libraries, separate RPATH and RUNPATH lists, interpreter, and SONAME library identity, exposed through Python, text, JSON, and appended CSV columns.

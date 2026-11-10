@@ -4,6 +4,7 @@
 """Tests for release artifact comparison."""
 
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from whatyouship.compare import ComparisonResult, SemanticDifference, compare_artifacts
@@ -51,6 +52,112 @@ def _version_differences(
 
 class CompareTests(unittest.TestCase):
     """Verify file classification by relative path and content digest."""
+
+    def test_elf_loader_metadata_changes(self) -> None:
+        """Compare every ELF loader field, architecture, and binary kind in stable order."""
+        old_binary = BinaryMetadata(
+            "ELF", "x86_64", "executable",
+            dependencies=(BinaryDependency("libold.so.1"),),
+            runtime_search_paths=("$ORIGIN/old",),
+            runtime_run_paths=("$ORIGIN/old-run",),
+            interpreter="/lib/old-loader.so", library_name="libold.so.1",
+        )
+        new_binary = BinaryMetadata(
+            "ELF", "arm64", "library",
+            dependencies=(BinaryDependency("libnew.so.2"),),
+            runtime_search_paths=("$ORIGIN/new",),
+            runtime_run_paths=("$ORIGIN/new-run",),
+            interpreter="/lib/new-loader.so", library_name="libnew.so.2",
+        )
+        path = Path("program")
+        old = ReleaseArtifact(Path("old"), [ArtifactFile(path, 1, "a", old_binary)])
+        new = ReleaseArtifact(Path("new"), [ArtifactFile(path, 1, "b", new_binary)])
+        result = compare_artifacts(old, new)
+        self.assertEqual(result.changed, [path])
+        self.assertEqual(
+            [(item.field, item.old_value, item.new_value) for item in result.semantic_differences],
+            [
+                ("Type", "executable", "library"),
+                ("Architecture", "x86_64", "arm64"),
+                ("Dynamic dependencies", '["libold.so.1"]', '["libnew.so.2"]'),
+                ("RPATH", '["$ORIGIN/old"]', '["$ORIGIN/new"]'),
+                ("RUNPATH", '["$ORIGIN/old-run"]', '["$ORIGIN/new-run"]'),
+                ("Interpreter", "/lib/old-loader.so", "/lib/new-loader.so"),
+                ("Library name", "libold.so.1", "libnew.so.2"),
+            ],
+        )
+        self.assertTrue(all(item.severity is None and not item.potentially_dangerous
+                            for item in result.semantic_differences))
+
+    def test_elf_path_comparison_preserves_order_duplicates_and_empty_elements(self) -> None:
+        """Distinguish path sequences that would collide when joined into display text."""
+        for attribute, field_name in (
+            ("runtime_search_paths", "RPATH"), ("runtime_run_paths", "RUNPATH"),
+        ):
+            for old_paths, new_paths in (
+                ((), ("",)),
+                (("",), ()),
+                (("a", "b"), ("b", "a")),
+                (("a",), ("a", "a")),
+                (("a, b",), ("a", "b")),
+                ((), ("none",)),
+                (("a", ""), ("a",)),
+            ):
+                with self.subTest(attribute=attribute, old=old_paths, new=new_paths):
+                    binary = BinaryMetadata("ELF", "x86_64", "executable")
+                    old = ReleaseArtifact(Path("old"), [ArtifactFile(
+                        Path("program"), 1, "a", replace(binary, **{attribute: old_paths}),
+                    )])
+                    new = ReleaseArtifact(Path("new"), [ArtifactFile(
+                        Path("program"), 1, "b", replace(binary, **{attribute: new_paths}),
+                    )])
+                    differences = compare_artifacts(old, new).semantic_differences
+                    self.assertEqual([item.field for item in differences], [field_name])
+                    self.assertNotEqual(differences[0].old_value, differences[0].new_value)
+
+    def test_elf_dependency_comparison_preserves_declaration_sequence(self) -> None:
+        """Keep dependency additions, removals, ordering, duplicates, and literal names visible."""
+        for old_names, new_names in (
+            ((), ("lib.so",)), (("lib.so",), ()),
+            (("liba.so", "libb.so"), ("libb.so", "liba.so")),
+            (("lib.so",), ("lib.so", "lib.so")),
+            (("liba.so, libb.so",), ("liba.so", "libb.so")),
+            ((), ("none",)),
+        ):
+            with self.subTest(old=old_names, new=new_names):
+                binary = BinaryMetadata("ELF", "x86_64", "library")
+                old = ReleaseArtifact(Path("old"), [ArtifactFile(
+                    Path("lib.so"), 1, "a",
+                    replace(binary, dependencies=tuple(BinaryDependency(name) for name in old_names)),
+                )])
+                new = ReleaseArtifact(Path("new"), [ArtifactFile(
+                    Path("lib.so"), 1, "b",
+                    replace(binary, dependencies=tuple(BinaryDependency(name) for name in new_names)),
+                )])
+                differences = compare_artifacts(old, new).semantic_differences
+                self.assertEqual([item.field for item in differences], ["Dynamic dependencies"])
+                self.assertNotEqual(differences[0].old_value, differences[0].new_value)
+
+    def test_elf_optional_loader_values_and_other_kind_transitions(self) -> None:
+        """Report added or removed loader declarations and transitions involving other ELF kinds."""
+        for attribute, field_name, values in (
+            ("interpreter", "Interpreter", (None, "/lib/loader.so")),
+            ("library_name", "Library name", (None, "libsample.so.1")),
+            ("kind", "Type", ("executable", "other")),
+        ):
+            for earlier, later in (values, tuple(reversed(values))):
+                with self.subTest(attribute=attribute, earlier=earlier, later=later):
+                    binary = BinaryMetadata("ELF", "x86_64", "executable")
+                    old = ReleaseArtifact(Path("old"), [ArtifactFile(
+                        Path("program"), 1, "a", replace(binary, **{attribute: earlier}),
+                    )])
+                    new = ReleaseArtifact(Path("new"), [ArtifactFile(
+                        Path("program"), 1, "b", replace(binary, **{attribute: later}),
+                    )])
+                    differences = compare_artifacts(old, new).semantic_differences
+                    self.assertEqual([item.field for item in differences], [field_name])
+                    self.assertEqual(differences[0].old_value, earlier if earlier is not None else "unavailable")
+                    self.assertEqual(differences[0].new_value, later if later is not None else "unavailable")
 
     def test_classifies_all_paths_in_sorted_order(self) -> None:
         """Classify added, removed, changed, and unchanged paths."""

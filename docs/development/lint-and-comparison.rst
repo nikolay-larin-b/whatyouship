@@ -43,6 +43,14 @@ symbolic links, artifact signature, and installation scope.
 ``SemanticDifference`` can mark a change potentially dangerous and attach a
 warning/severity, but comparison remains descriptive rather than a lint gate.
 
+For ELF, binary comparison includes all kind transitions, separate RPATH and
+RUNPATH lists, interpreter, and runtime library name. ELF dependency and path
+sequences use JSON-array strings for unambiguous comparisons: ordering,
+duplicates, empty elements, and punctuation are retained. Comparison uses the
+original sequences rather than lint's deduplicated path view. Moving a path
+between tags changes two separate fields. Loader metadata changes carry no
+automatic severity or dangerous flag.
+
 Binary diagnostics are carried on the old and new artifacts. They are neither
 findings nor semantic differences because a parse failure is evidence of
 incomplete analysis, not proof that the shipped product is defective.
