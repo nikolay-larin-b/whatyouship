@@ -14,6 +14,7 @@ import pymsi
 from pymsi.msi.file import File
 
 from whatyouship.binary.errors import BinaryAnalysisError
+from whatyouship.binary.elf import ElfInspector
 from whatyouship.binary.pe import PeInspector
 from whatyouship.exceptions import ArtifactInspectionError
 from whatyouship.inspectors.msi_cache import MsiPayloadCache
@@ -62,11 +63,14 @@ class MsiInspector:
                 digest, lambda: self._extract_payloads(source_path)
             )
             binary_inspector = PeInspector()
+            elf_inspector = ElfInspector()
             files = []
             binary_diagnostics = []
             for file in cached:
                 try:
                     binary = binary_inspector.inspect(file.payload_path)
+                    if binary is None:
+                        binary = elf_inspector.inspect(file.payload_path)
                 except BinaryAnalysisError as error:
                     binary = None
                     binary_diagnostics.append(BinaryAnalysisDiagnostic(

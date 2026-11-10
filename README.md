@@ -9,7 +9,7 @@ and compare two releases.
 
 Supported top-level artifacts are directories, Windows MSI packages, ZIP
 archives, NSIS installers, Inno Setup installers, and macOS DMG images.
-WhatYouShip also analyzes PE and Mach-O binaries and macOS application bundles
+WhatYouShip also analyzes PE, Mach-O, and ELF binaries and macOS application bundles
 inside those artifacts when the required metadata and platform tools are
 available.
 

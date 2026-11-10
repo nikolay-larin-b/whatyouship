@@ -22,7 +22,7 @@ Packages
 --------
 
 ``inspectors`` contains artifact detection, extraction backends, signature
-adapters, and cache layouts. ``binary`` contains PE and Mach-O parsers plus the
+adapters, and cache layouts. ``binary`` contains PE, Mach-O, and ELF parsers plus the
 internal per-file ``BinaryAnalysisError``. ``rules`` contains the built-in
 lint policy. ``renderers`` converts reports to text, JSON, or CSV.
 
@@ -36,7 +36,7 @@ It holds the source path; ``ArtifactFile`` inventory; outer
 ``BinaryAnalysisDiagnostic`` records.
 
 ``ArtifactFile.binary`` optionally points to ``BinaryMetadata``. That record is
-shared by PE and Mach-O and carries format, architecture, kind, versions,
+shared by PE, Mach-O, and ELF and carries format, architecture, kind, versions,
 dependencies, runtime paths, and optional ``SignatureMetadata``. Unsupported
 metadata remains optional rather than adding backend-specific subclasses.
 

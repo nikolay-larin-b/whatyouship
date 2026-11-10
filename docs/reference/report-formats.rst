@@ -59,8 +59,8 @@ values, dangerous flag, nullable severity, and nullable warning.
 Binary analysis diagnostics
 ---------------------------
 
-Each ``binary_diagnostics`` entry has ``relative_path``, ``format`` (``PE`` or
-``Mach-O``), and a concise ``reason``. It means the format was recognized but
+Each ``binary_diagnostics`` entry has ``relative_path``, ``format`` (``PE``,
+``Mach-O``, or ``ELF``), and a concise ``reason``. It means the format was recognized but
 expected parsing failed. It has no traceback and is not a lint finding.
 
 CSV

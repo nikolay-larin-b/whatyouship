@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from whatyouship.binary.errors import BinaryAnalysisError
+from whatyouship.binary.elf import ElfInspector
 from whatyouship.binary.macho import MachOInspector
 from whatyouship.binary.pe import PeInspector
 from whatyouship.inspectors.app_bundle import AppBundleInspector
@@ -51,6 +52,7 @@ class DirectoryInspector:
         links_by_path = {link.relative_path: link for link in symbolic_links}
         pe_inspector = PeInspector()
         macho_inspector = MachOInspector()
+        elf_inspector = ElfInspector()
         for path in sorted(directory.rglob("*")):
             if path.is_symlink():
                 relative_path = path.relative_to(directory)
@@ -68,7 +70,7 @@ class DirectoryInspector:
                 sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
             relative_path = path.relative_to(directory)
             binary = None
-            for inspector in (pe_inspector, macho_inspector):
+            for inspector in (pe_inspector, macho_inspector, elf_inspector):
                 try:
                     binary = inspector.inspect(path)
                 except BinaryAnalysisError as error:

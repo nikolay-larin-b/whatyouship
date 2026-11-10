@@ -28,28 +28,32 @@ Container flow
                                              v
                               DirectoryInspector / MSI payload walk
                                   │      │       │       │
-                                  hash   PE    Mach-O   .app bundles
+                                  hash   PE/Mach-O/ELF   .app bundles
                                   │      └── diagnostics ─┘
                                   v
                             ReleaseArtifact ─> operation report
 
 ZIP, NSIS, Inno, and DMG backends extract or mount content and reuse shared
 directory-tree analysis. MSI has specialized table extraction and scope
-analysis, then builds the same file and PE models. Paths stored in models are
+analysis, then builds the same file, PE, and ELF models. Paths stored in models are
 relative and portable; hashes cover file content.
 
 Best-effort binary analysis
 ---------------------------
 
-For each file, ``DirectoryInspector`` asks ``PeInspector`` and then
-``MachOInspector`` for metadata. ``None`` means the format was not recognized.
+For each file, ``DirectoryInspector`` asks ``PeInspector``, ``MachOInspector``,
+and ``ElfInspector`` for metadata in order. ``None`` means the format was not recognized.
 Successful parsing returns ``BinaryMetadata``. An expected parser failure after
 recognition raises internal ``BinaryAnalysisError`` with format and reason;
 the container inspector records ``BinaryAnalysisDiagnostic`` and leaves the
 file's binary metadata ``None``. MSI performs the same per-payload recovery.
 
 PE recognition validates both the DOS and PE signatures. Mach-O uses its magic
-values. Optional signature-tool absence produces unknown/unsupported signature
+values. ELF uses its magic, identification fields, and complete class-specific
+header. ``ElfInspector`` reads architecture and kind; ET_DYN with PT_INTERP or
+DF_1_PIE is classified as executable, while other ET_DYN files are libraries.
+MSI payload analysis tries PE followed by ELF. ELF signature metadata remains
+unavailable. Optional signature-tool absence produces unknown/unsupported signature
 state, not a malformed-binary diagnostic. Unexpected exceptions propagate so
 defects remain visible.
 

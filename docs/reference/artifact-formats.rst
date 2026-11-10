@@ -28,7 +28,7 @@ Artifact formats
      - ``hdiutil`` on macOS; 7-Zip on Linux/Windows
      - Platform-dependent metadata and filesystem support
 
-All extracted trees receive shared file hashing, PE/Mach-O, symbolic-link, and
+All extracted trees receive shared file hashing, PE/Mach-O/ELF, symbolic-link, and
 macOS application-bundle analysis. Persistent cache namespaces are ``msi/v1``,
 ``zip/v1``, ``nsis/v1``, ``inno/v1``, native ``dmg/v1``, and
 ``dmg-7zip/v2``. See :ref:`cache-management` for policy.
@@ -99,7 +99,16 @@ come from ``LC_ID_DYLIB`` when slices agree. Signature verification checks
 signed ranges and embedded special slots in each slice before optional CMS and
 trust evaluation; mixed, ad-hoc, and certificate signatures remain distinct.
 
-Recognized but malformed PE or Mach-O files produce :ref:`binary-diagnostics`
+ELF recognition uses the ``\\x7fELF`` magic and checks identification and header
+completeness before parsing with LIEF. Analysis is host-independent and exposes
+architecture and executable/library/other kind, including dynamic and static
+PIE identification. ELF payloads are also analyzed inside MSI packages. No
+compiler, external Linux tools, or binary execution is required. ELF signature
+verification is unsupported; signature metadata remains unavailable rather
+than unsigned. Loader metadata, ELF-specific lint checks, and loader-metadata
+comparison are not yet implemented.
+
+Recognized but malformed PE, Mach-O, or ELF files produce :ref:`binary-diagnostics`
 and do not abort the artifact. A matching ``.exe`` or ``.dll`` extension alone
 does not establish a PE file.
 

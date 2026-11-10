@@ -17,6 +17,10 @@ runtime-path, and signature metadata when available. Artifact-level data can
 include an outer signature, MSI installation scope, DMG license agreement,
 symbolic links, and macOS application bundles.
 
+Recognized ELF files add architecture and executable/library/other kind on
+every supported host. ELF signature and loader metadata are not currently
+analyzed.
+
 Unknown is not unsigned
 -----------------------
 
@@ -30,8 +34,8 @@ and extracted installer layouts cannot reproduce every runtime condition.
 Diagnostics versus findings
 ---------------------------
 
-A binary analysis diagnostic means a file was confidently recognized as PE or
-Mach-O but expected parsing failed. It records the relative path, format, and
+A binary analysis diagnostic means a file was confidently recognized as PE,
+Mach-O, or ELF but expected parsing failed. It records the relative path, format, and
 reason. The file remains in the inventory with ``binary`` set to ``None``, and
 analysis continues for other files.
 
