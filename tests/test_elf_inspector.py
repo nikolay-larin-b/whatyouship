@@ -15,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from whatyouship.cli import main
 from whatyouship.binary.elf import ElfInspector
 from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.inspectors.msi import MsiInspector
@@ -193,6 +194,127 @@ class ElfInspectorTests(unittest.TestCase):
         self.assertEqual(empty.runtime_search_paths, ("",))
         self.assertEqual(empty.runtime_run_paths, ("",))
         self.assertIsNone(empty.signature)
+
+    def test_lint_checks_both_path_tags_without_duplicate_findings(self) -> None:
+        """Report declared developer and absolute paths once across both ELF tags."""
+        payload = _make_elf(
+            rpath="/home/build/lib:/opt/vendor/lib:/home/build/lib",
+            runpath="/tmp/build/lib:/usr/local/lib:/home/build/lib:/opt/vendor/lib",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "program").write_bytes(payload)
+            report = lint(root)
+        self.assertEqual(
+            [(finding.rule_id, finding.severity, finding.identity) for finding in report.findings],
+            [
+                ("developer-runtime-search-path", "error", "runtime-search-path:/home/build/lib"),
+                ("developer-runtime-search-path", "error", "runtime-search-path:/tmp/build/lib"),
+                ("absolute-runtime-search-path", "warning", "runtime-search-path:/opt/vendor/lib"),
+                ("absolute-runtime-search-path", "warning", "runtime-search-path:/usr/local/lib"),
+            ],
+        )
+        self.assertTrue(all(finding.relative_path == Path("program") for finding in report.findings))
+
+    def test_lint_accepts_literal_origin_and_relative_paths(self) -> None:
+        """Do not expand loader tokens against the host or flag relative paths as absolute."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "program").write_bytes(_make_elf(
+                rpath="$ORIGIN/../lib:${ORIGIN}/lib:$ORIGIN/home/build/lib",
+                runpath="${ORIGIN}/${LIB}/$PLATFORM:relative/lib::",
+            ))
+            self.assertEqual(lint(root).findings, [])
+
+    def test_lint_does_not_exempt_absolute_paths_containing_loader_tokens(self) -> None:
+        """Keep developer and absolute prefixes actionable even with embedded tokens."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "program").write_bytes(_make_elf(
+                rpath="/home/build/$LIB", runpath="/opt/vendor/${PLATFORM}",
+            ))
+            report = lint(root)
+        self.assertEqual([finding.identity for finding in report.findings], [
+            "runtime-search-path:/home/build/$LIB",
+            "runtime-search-path:/opt/vendor/${PLATFORM}",
+        ])
+
+    def test_lint_signature_rules_accept_unavailable_elf_signatures(self) -> None:
+        """Keep all signature rules silent for ELF programs, libraries, and PIE."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for file_type, interpreter, static_pie in (
+                (2, False, False), (3, False, False),
+                (3, True, False), (3, False, True),
+            ):
+                with self.subTest(file_type=file_type, interpreter=interpreter, static_pie=static_pie):
+                    (root / "binary").write_bytes(_make_elf(
+                        file_type=file_type, interpreter=interpreter, static_pie=static_pie,
+                        runpath="$ORIGIN/../lib",
+                    ))
+                    report = lint(root)
+                    self.assertIsNone(report.artifact.files[0].binary.signature)
+                    self.assertEqual(report.findings, [])
+
+    def test_elf_path_suppressions_and_baseline_identity(self) -> None:
+        """Apply TOML exceptions to both artifacts and preserve identities across path tags."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            old, new = root / "old", root / "new"
+            for directory in (old, new):
+                (directory / "vendor").mkdir(parents=True)
+                (directory / "vendor" / "helper").write_bytes(_make_elf(runpath="/tmp/vendor/lib"))
+            (old / "program").write_bytes(_make_elf(rpath="/home/build/lib"))
+            (new / "program").write_bytes(_make_elf(runpath="/home/build/lib"))
+            config = root / "config.toml"
+            config.write_text(
+                '[[ignore]]\nrule = "developer-runtime-search-path"\n'
+                'path = "vendor/**"\nreason = "Approved vendor payload."\n',
+                encoding="utf-8",
+            )
+            report = lint(new, baseline=old, config=config)
+        comparison = report.baseline_comparison
+        assert comparison is not None
+        self.assertEqual(comparison.new, [])
+        self.assertEqual(comparison.resolved, [])
+        self.assertEqual(len(comparison.existing), 1)
+        self.assertEqual(comparison.existing[0].identity, "runtime-search-path:/home/build/lib")
+        self.assertEqual(len(report.suppressed_findings), 1)
+        self.assertEqual(len(report.baseline_suppressed_findings), 1)
+        self.assertEqual(report.suppressed_findings[0].ignore.reason, "Approved vendor payload.")
+        self.assertEqual(report.suppressed_findings[0].finding.relative_path, Path("vendor/helper"))
+
+    def test_elf_lint_cli_thresholds_settings_and_suppression_reports(self) -> None:
+        """Gate active ELF path findings while honoring settings, exceptions, and baselines."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload, baseline = root / "payload", root / "baseline"
+            for directory in (payload, baseline):
+                (directory / "vendor").mkdir(parents=True)
+                (directory / "vendor" / "helper").write_bytes(_make_elf(runpath="/home/vendor/lib"))
+                (directory / "program").write_bytes(_make_elf(runpath="/opt/vendor/lib"))
+            config = root / "config.toml"
+            output = root / "lint.json"
+            ignore = (
+                '[[ignore]]\nrule = "developer-runtime-search-path"\n'
+                'path = "vendor/helper"\nreason = "Approved vendor tool."\n'
+            )
+            for settings, arguments, expected in (
+                ("", [], 0),
+                ("", ["--fail-on", "warning"], 1),
+                ("", ["--fail-on", "never"], 0),
+                ('[rules.absolute-runtime-search-path]\nseverity = "error"\n', [], 1),
+                ('[rules.absolute-runtime-search-path]\nenabled = false\n', ["--fail-on", "warning"], 0),
+                ("", ["--baseline", str(baseline), "--fail-on", "warning"], 0),
+            ):
+                with self.subTest(settings=settings, arguments=arguments):
+                    config.write_text(settings + ignore, encoding="utf-8")
+                    self.assertEqual(main([
+                        "lint", str(payload), "--config", str(config), "-o", str(output), *arguments,
+                    ]), expected)
+                    data = json.loads(output.read_text(encoding="utf-8"))
+                    self.assertEqual(len(data["suppressed_findings"]), 1)
+                    self.assertEqual(data["suppressed_findings"][0]["ignore"]["reason"], "Approved vendor tool.")
 
     def test_loader_metadata_in_artifact_reports(self) -> None:
         """Preserve loader metadata in Python, text, JSON, and CSV for directory and ZIP inputs."""

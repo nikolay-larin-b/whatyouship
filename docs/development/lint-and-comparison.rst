@@ -24,6 +24,15 @@ the stable cause—such as an extension, entitlement key, runtime path, signatur
 state, or bundle issue. Severity and human message are intentionally excluded,
 so wording or policy-level changes do not make the same issue appear new.
 
+Runtime search path rules inspect the unique declared paths from
+``runtime_search_paths`` and ``runtime_run_paths``, in first-occurrence order.
+Both ELF tags are analyzed without choosing an effective loader path list or
+expanding tokens against the host. The existing ``runtime-search-path:<path>``
+identity is shared across tags, avoiding duplicate findings and artificial
+baseline regressions when the same path moves between tags. ELF signature
+metadata remains unavailable, so signature rules have no positive evidence for
+unsigned, invalid, or untrusted findings.
+
 Comparison
 ----------
 

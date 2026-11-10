@@ -112,8 +112,9 @@ than unsigned. Loader tokens such as ``$ORIGIN``, ``${ORIGIN}``, ``$LIB``, and
 Path order, duplicate entries, and empty colon-separated elements are retained.
 An absent path tag is an empty tuple/list; a present empty tag contains one
 empty element. Both path tags are reported even when RUNPATH would override
-RPATH at runtime. ELF-specific lint and additional loader-metadata comparison
-are planned separately.
+RPATH at runtime. Runtime search path lint rules inspect both declarations,
+accept literal loader-relative paths, and report repeated paths only once per
+binary. Additional loader-metadata comparison is planned separately.
 
 Recognized but malformed PE, Mach-O, or ELF files produce :ref:`binary-diagnostics`
 and do not abort the artifact. A matching ``.exe`` or ``.dll`` extension alone

@@ -9,6 +9,8 @@ and version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 
 ### Added
 
+- Extended runtime search path lint rules to ELF RUNPATH as well as RPATH, with duplicate paths reported once per binary and stable finding identities across both tags.
+
 - Added ELF loader metadata: required libraries, separate RPATH and RUNPATH lists, interpreter, and SONAME library identity, exposed through Python, text, JSON, and appended CSV columns.
 
 - Added cross-platform basic ELF analysis for artifact contents, including architecture, executable/library classification with PIE support, and diagnostics for recognized parsing failures.

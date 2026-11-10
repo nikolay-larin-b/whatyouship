@@ -33,12 +33,28 @@ File and binary rules
    ``get-task-allow`` entitlement in recognized binary signature metadata.
 
 ``developer-runtime-search-path`` (error)
-   Reports Mach-O runtime search paths rooted in known user or temporary
+   Reports Mach-O runtime search paths and ELF RPATH/RUNPATH entries rooted in known user or temporary
    directories such as ``/Users/``, ``/home/``, or ``/tmp/``.
 
 ``absolute-runtime-search-path`` (warning)
-   Reports other absolute Mach-O runtime search paths. Paths handled by the
+   Reports other absolute Mach-O runtime search paths and ELF RPATH/RUNPATH
+   entries. Paths handled by the
    developer-path rule are not duplicated.
+
+For both path rules, matching uses literal declarations rather than paths
+expanded against the analysis host. ELF ``$ORIGIN`` and ``${ORIGIN}`` paths,
+including ``$ORIGIN/../lib``, are not absolute and do not trigger these rules.
+Other relative paths and empty elements also do not trigger these two rules.
+An absolute path containing loader tokens, such as ``/home/build/$LIB``, is
+still checked by its absolute prefix. These checks do not establish that a
+relative path is valid or that a required library exists.
+
+All declared RPATH and RUNPATH entries are checked, even when RUNPATH would
+override RPATH in the loader. A repeated path produces one finding per rule
+and binary, including when repeated across both tags. Finding identity uses
+the literal path without a tag, so moving the same issue between RPATH and
+RUNPATH does not make it new in a lint baseline. Signature rules do not report
+ELF binaries because ELF signature verification remains unsupported.
 
 Application bundle rules
 ------------------------

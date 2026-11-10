@@ -3,7 +3,7 @@
 
 """Report non-portable runtime search paths in release binaries."""
 
-from whatyouship.model import Finding, ReleaseArtifact, Severity
+from whatyouship.model import BinaryMetadata, Finding, ReleaseArtifact, Severity
 
 
 _DEVELOPER_PATH_PREFIXES = (
@@ -15,6 +15,15 @@ _DEVELOPER_PATH_PREFIXES = (
     "/var/folders/",
 )
 _DEVELOPER_PATHS = {prefix.rstrip("/") for prefix in _DEVELOPER_PATH_PREFIXES}
+
+
+def _runtime_paths(binary: BinaryMetadata) -> tuple[str, ...]:
+    """Collect unique declared paths without applying host loader semantics.
+
+    :param binary: Binary with runtime search paths and optional ELF RUNPATH.
+    :returns: Paths in first-declaration order across both path lists.
+    """
+    return tuple(dict.fromkeys(binary.runtime_search_paths + binary.runtime_run_paths))
 
 
 def _is_developer_path(path: str) -> bool:
@@ -46,7 +55,7 @@ class DeveloperRuntimeSearchPathRule:
         for file in artifact.files:
             if file.binary is None:
                 continue
-            for path in file.binary.runtime_search_paths:
+            for path in _runtime_paths(file.binary):
                 if _is_developer_path(path):
                     findings.append(Finding(
                         rule_id="developer-runtime-search-path",
@@ -81,7 +90,7 @@ class AbsoluteRuntimeSearchPathRule:
         for file in artifact.files:
             if file.binary is None:
                 continue
-            for path in file.binary.runtime_search_paths:
+            for path in _runtime_paths(file.binary):
                 if path.startswith("/") and not _is_developer_path(path):
                     findings.append(Finding(
                         rule_id="absolute-runtime-search-path",

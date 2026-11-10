@@ -14,6 +14,14 @@ A finding contains a stable rule ID, configured severity, relative path, human
 message, and an internal identity used for baseline matching. Warnings and
 errors are policy levels; use :doc:`configuration` to adapt them to a product.
 
+For ELF files, both RPATH and RUNPATH declarations participate in the existing
+runtime search path rules. Developer or temporary paths such as
+``/home/build/lib`` produce errors; other absolute paths such as
+``/opt/vendor/lib`` produce warnings by default. Loader-relative paths such as
+``$ORIGIN/../lib`` remain literal and do not trigger these absolute-path
+checks. Repeated paths in one binary are reported once. Configure the existing
+rule severities or targeted ``[[ignore]]`` exceptions as for other formats.
+
 Baseline classification
 -----------------------
 
