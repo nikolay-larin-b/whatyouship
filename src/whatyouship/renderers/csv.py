@@ -36,7 +36,7 @@ def _write_finding(writer: Any, category: str, finding: Finding) -> None:
     """Write one finding in a stable CSV column order.
 
     :param writer: Standard library CSV writer.
-    :param category: Current, new, existing, or resolved.
+    :param category: Current, baseline classification, or suppression category.
     :param finding: Finding to write.
     """
     writer.writerow((
@@ -102,4 +102,8 @@ def render_csv(report: Report) -> str:
             for category in ("new", "existing", "resolved"):
                 for finding in getattr(comparison, category):
                     _write_finding(writer, category, finding)
+        for suppressed in report.suppressed_findings:
+            _write_finding(writer, "suppressed", suppressed.finding)
+        for suppressed in report.baseline_suppressed_findings:
+            _write_finding(writer, "baseline-suppressed", suppressed.finding)
     return stream.getvalue()

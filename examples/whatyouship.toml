@@ -79,3 +79,14 @@ severity = "warning" # Report conflicting installation scope signals.
 [rules.missing-license-agreement]
 enabled = true
 severity = "error" # Report artifacts that omit an embedded license agreement.
+
+# Optional targeted exceptions. Paths are artifact-relative and case-sensitive.
+# [[ignore]]
+# rule = "unsigned-binary"
+# path = "vendor/helper.exe"
+# reason = "Third-party tool distributed without a signature."
+#
+# [[ignore]]
+# rule = "build-artifact-extension"
+# path = "symbols/**/*.pdb"
+# reason = "Debug symbols are intentionally included."

@@ -7,6 +7,10 @@ and version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 
 ## [Unreleased]
 
+### Added
+
+- Added targeted lint exceptions through TOML `[[ignore]]` tables or typed `IgnoreSettings`, with exact paths, portable `*`/`**` patterns, and optional reasons. Suppressed findings remain separately visible in text, JSON, CSV, and Python reports and are excluded from CI gating and baseline classification.
+
 ## [0.1.0b3] - 2026-10-18
 
 ### Added

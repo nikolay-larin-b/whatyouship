@@ -10,6 +10,8 @@ from typing import cast
 
 from whatyouship.lint import LintRule
 from whatyouship.model import Severity
+from whatyouship.rules import RULE_IDS
+from whatyouship.suppressions import IgnoreSettings
 from whatyouship.rules.build_artifacts import DEFAULT_EXTENSIONS, BuildArtifactRule
 from whatyouship.rules.debug_entitlement import DebugEntitlementRule
 from whatyouship.rules.incompatible_binary_architecture import (
@@ -153,6 +155,7 @@ class LintConfiguration:
     :param invalid_artifact_signature: Invalid artifact signature rule settings.
     :param installation_scope: Installation scope rule settings.
     :param license_agreement: Missing license agreement rule settings.
+    :param ignore: Ordered, targeted exceptions applied after lint rules run.
     """
 
     build_artifacts: BuildArtifactSettings = field(default_factory=BuildArtifactSettings)
@@ -200,6 +203,7 @@ class LintConfiguration:
     license_agreement: LicenseAgreementSettings = field(
         default_factory=LicenseAgreementSettings
     )
+    ignore: tuple[IgnoreSettings, ...] = ()
 
     def rules(self) -> list[LintRule]:
         """Create the enabled lint rules in their usual order.
@@ -343,6 +347,27 @@ def _extensions(values: object) -> frozenset[str]:
     return frozenset(value.lower() for value in values)
 
 
+def _ignore_settings(values: object) -> tuple[IgnoreSettings, ...]:
+    """Validate explicit exception tables from a TOML configuration.
+
+    :param values: Parsed root ``ignore`` array.
+    :returns: Validated exceptions in configuration order.
+    :raises ValueError: If the array, a table, or its settings are invalid.
+    """
+    if not isinstance(values, list):
+        raise ValueError("Configuration 'ignore' must be an array of TOML tables")
+    settings = []
+    for index, value in enumerate(values):
+        location = f"ignore[{index}]"
+        if not isinstance(value, dict):
+            raise ValueError(f"{location} must be a TOML table")
+        _validate_keys(value, {"rule", "path", "reason"}, location)
+        if "rule" not in value or "path" not in value:
+            raise ValueError(f"{location} requires 'rule' and 'path'")
+        settings.append(IgnoreSettings(value["rule"], value["path"], value.get("reason")))
+    return tuple(settings)
+
+
 def load_config(path: Path) -> LintConfiguration:
     """Read and validate a TOML lint configuration file.
 
@@ -359,22 +384,12 @@ def load_config(path: Path) -> LintConfiguration:
     except (tomllib.TOMLDecodeError, UnicodeError) as error:
         raise ValueError(f"Invalid TOML in configuration file '{path}': {error}") from error
 
-    _validate_keys(data, {"rules"}, "configuration")
+    _validate_keys(data, {"rules", "ignore"}, "configuration")
+    ignores = _ignore_settings(data.get("ignore", []))
     rules = data.get("rules", {})
     if not isinstance(rules, dict):
         raise ValueError("Configuration 'rules' must be a TOML table")
-    unknown_rules = set(rules) - {
-        "build-artifact-extension", "unsigned-binary", "unsigned-artifact",
-        "untrusted-binary-signature", "invalid-binary-signature",
-        "untrusted-artifact-signature", "invalid-artifact-signature",
-        "inconsistent-installation-scope", "missing-license-agreement",
-        "invalid-app-bundle",
-        "unsigned-app-bundle", "untrusted-app-bundle-signature",
-        "invalid-app-bundle-signature",
-        "incompatible-binary-architecture",
-        "debug-entitlement",
-        "developer-runtime-search-path", "absolute-runtime-search-path",
-    }
+    unknown_rules = set(rules) - RULE_IDS
     if unknown_rules:
         raise ValueError(f"Unknown rule ID: {', '.join(sorted(unknown_rules))}")
 
@@ -474,6 +489,7 @@ def load_config(path: Path) -> LintConfiguration:
         else DEFAULT_EXTENSIONS
     )
     return LintConfiguration(
+        ignore=ignores,
         build_artifacts=BuildArtifactSettings(build_enabled, build_severity, extensions),
         app_bundle=AppBundleSettings(bundle_enabled, bundle_severity),
         unsigned_app_bundle=ArtifactSignatureRuleSettings(

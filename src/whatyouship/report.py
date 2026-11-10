@@ -3,11 +3,12 @@
 
 """Structured results shared by report renderers."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from whatyouship.compare import ComparisonResult
 from whatyouship.lint import BaselineComparison
 from whatyouship.model import Finding, ReleaseArtifact
+from whatyouship.suppressions import SuppressedFinding
 
 
 @dataclass
@@ -25,15 +26,19 @@ class LintReport:
     """Hold current findings and optional baseline results.
 
     :param artifact: Current release artifact.
-    :param findings: Findings from the current artifact.
+    :param findings: Active findings from the current artifact after exceptions.
     :param baseline_artifact: Previous release artifact, when supplied.
     :param baseline_comparison: Categorized findings, when a baseline is supplied.
+    :param suppressed_findings: Current findings suppressed by configured exceptions.
+    :param baseline_suppressed_findings: Suppressed findings from the baseline.
     """
 
     artifact: ReleaseArtifact
     findings: list[Finding]
     baseline_artifact: ReleaseArtifact | None = None
     baseline_comparison: BaselineComparison | None = None
+    suppressed_findings: list[SuppressedFinding] = field(default_factory=list)
+    baseline_suppressed_findings: list[SuppressedFinding] = field(default_factory=list)
 
 
 @dataclass

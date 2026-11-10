@@ -264,6 +264,12 @@ def _render_lint(report: LintReport) -> str:
     :returns: Human-readable lint text.
     """
     notices = []
+    if report.suppressed_findings:
+        notices.append(f"Suppressed findings: {len(report.suppressed_findings)}")
+    if report.baseline_suppressed_findings:
+        notices.append(
+            f"Baseline suppressed findings: {len(report.baseline_suppressed_findings)}"
+        )
     if report.artifact.signature.verification_issue is not None:
         notices.append(
             "Artifact signature verification issue: "

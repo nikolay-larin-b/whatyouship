@@ -12,6 +12,13 @@ list. ``LintConfiguration.rules()`` constructs the enabled built-in rule
 objects with configured severity and extensions; the public operation does not
 accept an arbitrary rule list.
 
+After rules run, ``suppress_findings`` separates active findings from targeted
+exceptions in ``LintConfiguration.ignore``. It retains the first matching
+``IgnoreSettings`` with each ``SuppressedFinding``. This happens independently
+for current and baseline artifacts before baseline matching; exceptions do not
+alter rules, artifact metadata, or binary diagnostics. Matching uses
+case-sensitive POSIX path segments on every host.
+
 Baseline matching uses ``(rule_id, relative_path, identity)``. Identity captures
 the stable cause—such as an extension, entitlement key, runtime path, signature
 state, or bundle issue. Severity and human message are intentionally excluded,

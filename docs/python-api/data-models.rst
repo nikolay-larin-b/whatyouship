@@ -77,6 +77,9 @@ Lint and comparison results
 .. autoclass:: whatyouship.lint.BaselineComparison
    :members:
 
+.. autoclass:: whatyouship.suppressions.SuppressedFinding
+   :members:
+
 .. autoclass:: whatyouship.compare.ComparisonResult
    :members:
 
@@ -106,3 +109,5 @@ IDs documented in :ref:`configuration-reference`.
 .. autoclass:: whatyouship.config.InstallationScopeSettings
 
 .. autoclass:: whatyouship.config.LicenseAgreementSettings
+
+.. autoclass:: whatyouship.suppressions.IgnoreSettings

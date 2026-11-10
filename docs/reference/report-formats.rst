@@ -15,6 +15,9 @@ Text is intended for people. Inspect and lint reports include a binary analysis
 diagnostics section only when diagnostics exist. Compare reports show old and
 new diagnostics separately. Do not parse text as a stable machine protocol.
 
+Lint text includes ``Suppressed findings`` and ``Baseline suppressed findings``
+counts when those lists are non-empty, without printing suppressed details.
+
 .. _json-schema-v2:
 
 JSON schema version 2
@@ -37,6 +40,13 @@ A ``lint`` report contains an artifact reference (``source_path``,
 ``binary_diagnostics``, and optional ``signature_verification_issue``), a
 ``findings`` array, and nullable ``baseline``. A baseline contains its artifact
 reference plus ``new``, ``existing``, and ``resolved`` finding arrays.
+
+Lint reports also include a ``suppressed_findings`` array; a non-null baseline
+has its own ``suppressed_findings`` array. These are additive schema version 2
+fields. Each entry contains the usual finding fields (``rule_id``, ``severity``,
+``relative_path``, and ``message``), plus an ``ignore`` object with the matching
+configured ``path`` and nullable ``reason``. The first matching exception is
+retained. The ordinary finding arrays contain only active findings.
 
 A ``compare`` report contains ``old_artifact`` and ``new_artifact`` references,
 so diagnostics are associated with one side. It also contains ``added``,
@@ -66,6 +76,9 @@ Inspect CSV columns, in order, are ``relative_path``, ``size_bytes``,
 
 Lint CSV columns are ``category``, ``rule_id``, ``severity``,
 ``relative_path``, and ``message``. Category is ``current`` without a baseline,
-or ``new``, ``existing``, and ``resolved`` with one. CSV omits artifact-level
+or ``new``, ``existing``, and ``resolved`` with one. Suppressed findings use
+``suppressed`` for the current artifact and ``baseline-suppressed`` for the
+baseline. CSV retains its existing columns and omits exception paths and reasons;
+use JSON for those details. CSV omits artifact-level
 metadata and binary diagnostics. Compare has no CSV representation; use JSON
 for complete automation data.

@@ -9,6 +9,7 @@ from typing import Any
 from whatyouship import __version__
 from whatyouship.model import AppBundleMetadata, ArtifactFile, Finding, ReleaseArtifact
 from whatyouship.report import CompareReport, InspectReport, LintReport, Report
+from whatyouship.suppressions import SuppressedFinding
 
 
 SCHEMA_VERSION = 2
@@ -169,6 +170,18 @@ def _finding_data(finding: Finding) -> dict[str, Any]:
     }
 
 
+def _suppressed_finding_data(suppressed: SuppressedFinding) -> dict[str, Any]:
+    """Serialize a suppressed finding and the exception that matched it.
+
+    :param suppressed: Finding and matching exception.
+    :returns: Finding fields plus the configured path and optional reason.
+    """
+    return {
+        **_finding_data(suppressed.finding),
+        "ignore": {"path": suppressed.ignore.path, "reason": suppressed.ignore.reason},
+    }
+
+
 def _artifact_reference_data(artifact: ReleaseArtifact) -> dict[str, Any]:
     """Serialize an artifact reference and any environment-specific limitation.
 
@@ -201,6 +214,9 @@ def render_json(report: Report) -> str:
         data["report_type"] = "lint"
         data["artifact"] = _artifact_reference_data(report.artifact)
         data["findings"] = [_finding_data(finding) for finding in report.findings]
+        data["suppressed_findings"] = [
+            _suppressed_finding_data(finding) for finding in report.suppressed_findings
+        ]
         if report.baseline_comparison is not None and report.baseline_artifact is not None:
             comparison = report.baseline_comparison
             data["baseline"] = {
@@ -208,6 +224,10 @@ def render_json(report: Report) -> str:
                 "new": [_finding_data(finding) for finding in comparison.new],
                 "existing": [_finding_data(finding) for finding in comparison.existing],
                 "resolved": [_finding_data(finding) for finding in comparison.resolved],
+                "suppressed_findings": [
+                    _suppressed_finding_data(finding)
+                    for finding in report.baseline_suppressed_findings
+                ],
             }
         else:
             data["baseline"] = None

@@ -21,6 +21,7 @@ from whatyouship.lint import LintEngine, compare_findings
 from whatyouship.model import ReleaseArtifact
 from whatyouship.paths import _operation_cache_scope
 from whatyouship.report import CompareReport, InspectReport, LintReport
+from whatyouship.suppressions import suppress_findings
 
 
 __all__ = ["compare", "inspect", "lint"]
@@ -125,6 +126,8 @@ def lint(
     :class:`whatyouship.config.LintConfiguration` or an explicit TOML
     configuration path. When ``baseline`` is supplied, its findings are
     classified as new, existing, and resolved relative to the current artifact.
+    Configured exceptions are applied to both artifacts before classification;
+    suppressed findings are retained separately on the returned report.
 
     :param source: Directory or supported release artifact to lint.
     :param baseline: Previous artifact used to classify findings.
@@ -140,9 +143,15 @@ def lint(
         )
         configuration = _lint_configuration(config)
         engine = LintEngine(configuration.rules())
-        findings = engine.run(artifact)
+        findings, suppressed = suppress_findings(
+            engine.run(artifact), configuration.ignore
+        )
+        baseline_findings, baseline_suppressed = (
+            suppress_findings(engine.run(baseline_artifact), configuration.ignore)
+            if baseline_artifact is not None else ([], [])
+        )
         baseline_comparison = (
-            compare_findings(engine.run(baseline_artifact), findings)
+            compare_findings(baseline_findings, findings)
             if baseline_artifact is not None
             else None
         )
@@ -151,6 +160,8 @@ def lint(
             findings,
             baseline_artifact,
             baseline_comparison,
+            suppressed,
+            baseline_suppressed,
         )
 
 

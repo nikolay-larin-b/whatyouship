@@ -35,3 +35,42 @@ Python callers may pass a path or build an immutable typed configuration:
 
 The exact TOML contract lives in :ref:`configuration-reference`; typed classes
 are in :doc:`../python-api/data-models`.
+
+Ignoring an expected finding
+----------------------------
+
+Keep a rule enabled for the release while exempting a specific path:
+
+.. code-block:: toml
+
+   [[ignore]]
+   rule = "unsigned-binary"
+   path = "vendor/helper.exe"
+   reason = "Third-party tool distributed without a signature."
+
+The reason is optional. Paths use ``/`` on all platforms; matching is
+case-sensitive and rooted at the artifact. Use ``*`` within one path segment
+or ``**`` as a complete segment to match nested paths. For example,
+``symbols/**/*.pdb`` matches PDB files directly in ``symbols`` and below it.
+Use ``.`` for artifact-level findings. Consult :ref:`configuration-reference`
+for validation and exact matching rules.
+
+The Python equivalent is:
+
+.. code-block:: python
+
+   from whatyouship.config import LintConfiguration
+   from whatyouship.operations import lint
+   from whatyouship.suppressions import IgnoreSettings
+
+   config = LintConfiguration(ignore=(
+       IgnoreSettings("unsigned-binary", "vendor/helper.exe", "Approved tool."),
+   ))
+   report = lint("release.zip", config=config)
+   suppressed = report.suppressed_findings
+
+Only active findings appear in ``report.findings`` or baseline categories.
+Suppressed findings retain their original finding and matching exception.
+Text reports show suppression counts; JSON preserves the exception path and
+reason. CSV uses separate suppression categories. Select a different
+configuration with ``--config`` for release targets with different exceptions.

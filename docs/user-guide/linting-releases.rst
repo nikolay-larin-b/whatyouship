@@ -27,6 +27,10 @@ of rule ID, relative path, and rule-defined identity. Equal keys are
 baseline are ``resolved``. Message wording and configured severity do not form
 the identity.
 
+Configured ``[[ignore]]`` exceptions are applied to both artifacts before
+classification. Suppressed findings are excluded from ``new``, ``existing``,
+and ``resolved`` and retained separately in the report. They never gate CI.
+
 With a baseline, only new findings are supplied to the CLI gate. The default
 ``--fail-on error`` fails for a new error. ``--fail-on warning`` fails for any
 new finding, while ``--fail-on never`` always returns success after a completed
