@@ -52,6 +52,11 @@ PE recognition validates both the DOS and PE signatures. Mach-O uses its magic
 values. ELF uses its magic, identification fields, and complete class-specific
 header. ``ElfInspector`` reads architecture and kind; ET_DYN with PT_INTERP or
 DF_1_PIE is classified as executable, while other ET_DYN files are libraries.
+DT_NEEDED entries populate shared ``BinaryDependency`` records. DT_RPATH maps
+to ``runtime_search_paths`` and DT_RUNPATH to ``runtime_run_paths``; these
+remain distinct rather than modeling host loader policy. PT_INTERP and
+DT_SONAME populate ``interpreter`` and ``library_name``. Strings are read
+statically without token expansion or host dependency resolution.
 MSI payload analysis tries PE followed by ELF. ELF signature metadata remains
 unavailable. Optional signature-tool absence produces unknown/unsupported signature
 state, not a malformed-binary diagnostic. Unexpected exceptions propagate so

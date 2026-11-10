@@ -4,6 +4,7 @@
 """Portable tests for ELF content recognition and basic artifact analysis."""
 
 import contextlib
+import csv
 import io
 import json
 import struct
@@ -17,7 +18,7 @@ from unittest.mock import patch
 from whatyouship.binary.elf import ElfInspector
 from whatyouship.binary.errors import BinaryAnalysisError
 from whatyouship.inspectors.msi import MsiInspector
-from whatyouship.model import ArtifactSignature, InstallationScope
+from whatyouship.model import ArtifactSignature, BinaryDependency, InstallationScope
 from whatyouship.operations import inspect, lint
 from whatyouship.renderers import render_report
 
@@ -28,8 +29,12 @@ def _make_elf(
     *,
     bits: int = 64,
     endian: str = "<",
-    interpreter: bool = False,
+    interpreter: bool | str = False,
     static_pie: bool = False,
+    dependencies: tuple[str, ...] = (),
+    rpath: str | None = None,
+    runpath: str | None = None,
+    soname: str | None = None,
 ) -> bytes:
     """Construct an ELF header and optional loader segments without a compiler.
 
@@ -37,19 +42,42 @@ def _make_elf(
     :param file_type: ELF type, such as executable, shared object, or relocatable.
     :param bits: ELF class, 32 or 64 bits.
     :param endian: Struct byte order, little or big endian.
-    :param interpreter: Whether to include a PT_INTERP segment.
+    :param interpreter: Whether to include PT_INTERP, or its explicit value.
     :param static_pie: Whether to include DF_1_PIE without requiring PT_INTERP.
+    :param dependencies: DT_NEEDED library names in declaration order.
+    :param rpath: Optional DT_RPATH string, including empty path elements.
+    :param runpath: Optional DT_RUNPATH string, including empty path elements.
+    :param soname: Optional DT_SONAME library identity.
     :returns: Serialized ELF bytes suitable for real LIEF parsing on any host.
     """
     identification = b"\x7fELF" + bytes((1 if bits == 32 else 2, 1 if endian == "<" else 2, 1)) + bytes(9)
     header_size, segment_size = (52, 32) if bits == 32 else (64, 56)
-    count = 1 + int(interpreter) + int(static_pie) if interpreter or static_pie else 0
+    strings = bytearray(b"\0")
+    dynamic_entries = []
+    for tag, value in (
+        *((1, name) for name in dependencies),
+        (15, rpath), (29, runpath), (14, soname),
+    ):
+        if value is not None:
+            dynamic_entries.append((tag, len(strings)))
+            strings.extend(value.encode("utf-8") + b"\0")
+    if static_pie:
+        dynamic_entries.append((0x6FFFFFFB, 0x08000000))
+    has_dynamic = bool(dynamic_entries)
+    count = 1 + int(bool(interpreter)) + int(has_dynamic) if interpreter or has_dynamic else 0
     offset = header_size + count * segment_size
-    loader = b"/lib/test-loader.so\0" if interpreter else b""
-    dynamic = (
-        struct.pack(endian + ("IIII" if bits == 32 else "QQQQ"), 0x6FFFFFFB, 0x08000000, 0, 0)
-        if static_pie else b""
+    loader = (
+        (interpreter if isinstance(interpreter, str) else "/lib/test-loader.so").encode("utf-8") + b"\0"
+        if interpreter else b""
     )
+    dynamic = b""
+    if has_dynamic:
+        entry_size = 8 if bits == 32 else 16
+        string_offset = offset + len(loader) + (len(dynamic_entries) + 3) * entry_size
+        dynamic = b"".join(
+            struct.pack(endian + ("II" if bits == 32 else "QQ"), tag, value)
+            for tag, value in [(5, string_offset), (10, len(strings)), *dynamic_entries, (0, 0)]
+        )
     header = struct.pack(
         endian + ("HHIIIIIHHHHHH" if bits == 32 else "HHIQQQIHHHHHH"),
         file_type, machine, 1, 0, header_size if count else 0, 0, 0,
@@ -57,11 +85,11 @@ def _make_elf(
     )
     segments = []
     if count:
-        total_size = offset + len(loader) + len(dynamic)
+        total_size = offset + len(loader) + len(dynamic) + (len(strings) if has_dynamic else 0)
         entries = [(1, 0, total_size)]
         if interpreter:
             entries.append((3, offset, len(loader)))
-        if static_pie:
+        if has_dynamic:
             entries.append((2, offset + len(loader), len(dynamic)))
         for kind, position, size in entries:
             values = (
@@ -69,7 +97,7 @@ def _make_elf(
                 if bits == 32 else (kind, 4, position, position, position, size, size, 1)
             )
             segments.append(struct.pack(endian + ("IIIIIIII" if bits == 32 else "IIQQQQQQ"), *values))
-    return identification + header + b"".join(segments) + loader + dynamic
+    return identification + header + b"".join(segments) + loader + dynamic + (bytes(strings) if has_dynamic else b"")
 
 
 class ElfInspectorTests(unittest.TestCase):
@@ -121,6 +149,85 @@ class ElfInspectorTests(unittest.TestCase):
             expected = ElfInspector().inspect(path)
         self.assertEqual(ElfInspector().inspect(payload), expected)
         self.assertEqual(ElfInspector().inspect(memoryview(payload)), expected)
+
+    def test_loader_metadata_across_classes_and_byte_orders(self) -> None:
+        """Read actual loader declarations without merging paths or expanding tokens."""
+        for bits, machine in ((32, 3), (64, 62)):
+            for endian in ("<", ">"):
+                with self.subTest(bits=bits, endian=endian):
+                    payload = _make_elf(
+                        machine if endian == "<" else (20 if bits == 32 else 21),
+                        bits=bits, endian=endian,
+                        interpreter="/lib/custom-loader.so",
+                        dependencies=("libz.so.1", "libc.so.6", "libz.so.1"),
+                        rpath=":$ORIGIN/../lib::/opt/vendor/lib:",
+                        runpath="${ORIGIN}/lib:$LIB/$PLATFORM:",
+                        soname="libsample.so.2",
+                    )
+                    metadata = ElfInspector().inspect(payload)
+                    assert metadata is not None
+                    self.assertEqual(metadata.dependencies, (
+                        BinaryDependency("libz.so.1"), BinaryDependency("libc.so.6"),
+                        BinaryDependency("libz.so.1"),
+                    ))
+                    self.assertEqual(metadata.runtime_search_paths, ("", "$ORIGIN/../lib", "", "/opt/vendor/lib", ""))
+                    self.assertEqual(metadata.runtime_run_paths, ("${ORIGIN}/lib", "$LIB/$PLATFORM", ""))
+                    self.assertEqual(metadata.interpreter, "/lib/custom-loader.so")
+                    self.assertEqual(metadata.library_name, "libsample.so.2")
+                    with tempfile.TemporaryDirectory() as temporary:
+                        path = Path(temporary) / "program"
+                        path.write_bytes(payload)
+                        self.assertEqual(ElfInspector().inspect(path), metadata)
+                    self.assertEqual(ElfInspector().inspect(memoryview(payload)), metadata)
+
+    def test_absent_and_empty_loader_paths(self) -> None:
+        """Keep absent path tags distinct from present tags containing an empty path."""
+        absent = ElfInspector().inspect(_make_elf())
+        empty = ElfInspector().inspect(_make_elf(rpath="", runpath=""))
+        assert absent is not None and empty is not None
+        self.assertEqual(absent.dependencies, ())
+        self.assertEqual(absent.runtime_search_paths, ())
+        self.assertEqual(absent.runtime_run_paths, ())
+        self.assertIsNone(absent.interpreter)
+        self.assertIsNone(absent.library_name)
+        self.assertEqual(empty.runtime_search_paths, ("",))
+        self.assertEqual(empty.runtime_run_paths, ("",))
+        self.assertIsNone(empty.signature)
+
+    def test_loader_metadata_in_artifact_reports(self) -> None:
+        """Preserve loader metadata in Python, text, JSON, and CSV for directory and ZIP inputs."""
+        payload = _make_elf(
+            dependencies=("libsample.so.2",), interpreter=True,
+            rpath="$ORIGIN/old", runpath="$ORIGIN/new:", soname="libidentity.so.1",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "payload"
+            directory.mkdir()
+            (directory / "program").write_bytes(payload)
+            archive = root / "release.zip"
+            with zipfile.ZipFile(archive, "w") as stream:
+                stream.writestr("program", payload)
+            for source in (directory, archive):
+                with self.subTest(source=source):
+                    report = inspect(source)
+                    text = render_report(report, "text")
+                    self.assertIn("RPATH: $ORIGIN/old", text)
+                    self.assertIn("RUNPATH: $ORIGIN/new", text)
+                    self.assertIn("Interpreter: /lib/test-loader.so", text)
+                    self.assertIn("Library name: libidentity.so.1", text)
+                    self.assertIn("Dependency: libsample.so.2 | required", text)
+                    data = json.loads(render_report(report, "json"))["artifact"]["files"][0]["binary"]
+                    self.assertEqual(data["runtime_search_paths"], ["$ORIGIN/old"])
+                    self.assertEqual(data["runtime_run_paths"], ["$ORIGIN/new", ""])
+                    self.assertEqual(data["interpreter"], "/lib/test-loader.so")
+                    self.assertEqual(data["library_name"], "libidentity.so.1")
+                    rows = list(csv.DictReader(io.StringIO(render_report(report, "csv"))))
+                    self.assertEqual(json.loads(rows[0]["runtime_search_paths"]), data["runtime_search_paths"])
+                    self.assertEqual(json.loads(rows[0]["runtime_run_paths"]), data["runtime_run_paths"])
+                    self.assertEqual(json.loads(rows[0]["dependencies"]), data["dependencies"])
+                    self.assertEqual(rows[0]["interpreter"], data["interpreter"])
+                    self.assertEqual(rows[0]["library_name"], data["library_name"])
 
     def test_non_elf_does_not_call_parser(self) -> None:
         """Do not infer ELF from a filename or an incomplete magic prefix."""

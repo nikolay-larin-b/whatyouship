@@ -53,6 +53,9 @@ def _file_data(file: ArtifactFile) -> dict[str, Any]:
                 for dependency in binary.dependencies
             ],
             "runtime_search_paths": list(binary.runtime_search_paths),
+            "runtime_run_paths": list(binary.runtime_run_paths),
+            "interpreter": binary.interpreter,
+            "library_name": binary.library_name,
             "signature": None if signature is None else {
                 "present": signature.present,
                 "valid": signature.valid,

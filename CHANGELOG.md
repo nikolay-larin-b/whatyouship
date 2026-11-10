@@ -9,6 +9,8 @@ and version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 
 ### Added
 
+- Added ELF loader metadata: required libraries, separate RPATH and RUNPATH lists, interpreter, and SONAME library identity, exposed through Python, text, JSON, and appended CSV columns.
+
 - Added cross-platform basic ELF analysis for artifact contents, including architecture, executable/library classification with PIE support, and diagnostics for recognized parsing failures.
 
 - Added targeted lint exceptions through TOML `[[ignore]]` tables or typed `IgnoreSettings`, with exact paths, portable `*`/`**` patterns, and optional reasons. Suppressed findings remain separately visible in text, JSON, CSV, and Python reports and are excluded from CI gating and baseline classification.

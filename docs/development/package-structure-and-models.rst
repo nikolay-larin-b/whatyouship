@@ -39,6 +39,8 @@ It holds the source path; ``ArtifactFile`` inventory; outer
 shared by PE, Mach-O, and ELF and carries format, architecture, kind, versions,
 dependencies, runtime paths, and optional ``SignatureMetadata``. Unsupported
 metadata remains optional rather than adding backend-specific subclasses.
+Separate ``runtime_run_paths``, ``interpreter``, and ``library_name`` fields
+retain loader declarations without conflating ELF RPATH and RUNPATH.
 
 ``Finding`` is policy output. Its rule ID, relative path, and identity form the
 baseline key; its message and severity explain the current policy result.

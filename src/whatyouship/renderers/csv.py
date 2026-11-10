@@ -19,6 +19,7 @@ INSPECT_COLUMNS = (
     "signature_present", "signature_valid", "signature_trusted", "signature_signer",
     "signature_timestamp", "signature_team_id",
     "signature_type", "hardened_runtime", "entitlements",
+    "runtime_run_paths", "interpreter", "library_name",
 )
 LINT_COLUMNS = ("category", "rule_id", "severity", "relative_path", "message")
 
@@ -91,6 +92,9 @@ def render_csv(report: Report) -> str:
                     }
                     for entitlement in signature.entitlements
                 ]) if signature is not None else "",
+                json.dumps(list(binary.runtime_run_paths)) if binary is not None else "",
+                binary.interpreter if binary is not None else "",
+                binary.library_name if binary is not None else "",
             ))
     else:
         writer.writerow(LINT_COLUMNS)

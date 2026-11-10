@@ -198,6 +198,9 @@ class ReportOutputTests(unittest.TestCase):
                 "minimum_os_version": None,
                 "dependencies": [],
                 "runtime_search_paths": [],
+                "runtime_run_paths": [],
+                "interpreter": None,
+                "library_name": None,
                 "signature": {
                     "present": True, "valid": True,
                     "trusted": True,

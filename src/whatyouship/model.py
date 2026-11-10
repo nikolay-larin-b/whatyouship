@@ -128,7 +128,11 @@ class BinaryMetadata:
     :param minimum_os_version: Minimum operating system version required by
         the binary, when available.
     :param dependencies: Dynamic library dependencies declared by the binary.
-    :param runtime_search_paths: Runtime library search paths.
+    :param runtime_search_paths: Mach-O runtime search paths or ELF DT_RPATH
+        entries, preserving order and empty ELF path elements.
+    :param runtime_run_paths: ELF DT_RUNPATH entries, kept separate from RPATH.
+    :param interpreter: Requested program interpreter, such as ELF PT_INTERP.
+    :param library_name: Runtime shared-library identity, such as ELF DT_SONAME.
     """
 
     format: str
@@ -140,6 +144,9 @@ class BinaryMetadata:
     minimum_os_version: str | None = None
     dependencies: tuple[BinaryDependency, ...] = ()
     runtime_search_paths: tuple[str, ...] = ()
+    runtime_run_paths: tuple[str, ...] = ()
+    interpreter: str | None = None
+    library_name: str | None = None
 
 
 @dataclass

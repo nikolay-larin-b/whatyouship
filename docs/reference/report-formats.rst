@@ -34,7 +34,13 @@ An ``inspect`` report contains a full ``artifact`` object: ``source_path``,
 ``binary_diagnostics``, ``bundles``, ``symbolic_links``, and ``files``. Each
 file carries its path, size, SHA-256, and nullable binary object. Binary data
 contains format, architectures, kind, versions, minimum OS, dependencies,
-runtime search paths, and nullable signature data.
+runtime search paths, and nullable signature data. Binary objects also expose
+``runtime_run_paths`` (an array), ``interpreter`` (nullable string), and
+``library_name`` (nullable string), added to schema version 2. For ELF,
+``runtime_search_paths`` contains DT_RPATH while ``runtime_run_paths`` contains
+DT_RUNPATH; ``interpreter`` is PT_INTERP and ``library_name`` is DT_SONAME.
+These path arrays preserve order, duplicates, empty elements, and literal loader
+tokens. Other binary formats default to empty/null for the new fields.
 
 A ``lint`` report contains an artifact reference (``source_path``,
 ``binary_diagnostics``, and optional ``signature_verification_issue``), a
@@ -72,7 +78,10 @@ Inspect CSV columns, in order, are ``relative_path``, ``size_bytes``,
 ``dependencies``, ``runtime_search_paths``, ``signature_present``,
 ``signature_valid``, ``signature_trusted``, ``signature_signer``,
 ``signature_timestamp``, ``signature_team_id``, ``signature_type``,
-``hardened_runtime``, and ``entitlements``.
+``hardened_runtime``, ``entitlements``, followed by the appended columns
+``runtime_run_paths``, ``interpreter``, and ``library_name``. Both path-list
+columns contain JSON arrays; unavailable interpreter and library names produce
+empty cells.
 
 Lint CSV columns are ``category``, ``rule_id``, ``severity``,
 ``relative_path``, and ``message``. Category is ``current`` without a baseline,

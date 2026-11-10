@@ -102,11 +102,18 @@ trust evaluation; mixed, ad-hoc, and certificate signatures remain distinct.
 ELF recognition uses the ``\\x7fELF`` magic and checks identification and header
 completeness before parsing with LIEF. Analysis is host-independent and exposes
 architecture and executable/library/other kind, including dynamic and static
-PIE identification. ELF payloads are also analyzed inside MSI packages. No
+PIE identification. Loader metadata includes DT_NEEDED dependencies in
+declaration order, separate DT_RPATH and DT_RUNPATH lists, the PT_INTERP
+interpreter, and the DT_SONAME library identity. ELF payloads are also analyzed inside MSI packages. No
 compiler, external Linux tools, or binary execution is required. ELF signature
 verification is unsupported; signature metadata remains unavailable rather
-than unsigned. Loader metadata, ELF-specific lint checks, and loader-metadata
-comparison are not yet implemented.
+than unsigned. Loader tokens such as ``$ORIGIN``, ``${ORIGIN}``, ``$LIB``, and
+``$PLATFORM`` are preserved without host expansion or dependency resolution.
+Path order, duplicate entries, and empty colon-separated elements are retained.
+An absent path tag is an empty tuple/list; a present empty tag contains one
+empty element. Both path tags are reported even when RUNPATH would override
+RPATH at runtime. ELF-specific lint and additional loader-metadata comparison
+are planned separately.
 
 Recognized but malformed PE, Mach-O, or ELF files produce :ref:`binary-diagnostics`
 and do not abort the artifact. A matching ``.exe`` or ``.dll`` extension alone

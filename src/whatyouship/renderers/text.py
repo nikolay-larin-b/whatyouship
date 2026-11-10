@@ -211,9 +211,14 @@ def _render_inspect(report: InspectReport) -> str:
                     f"  Dependency: {dependency.path} | {requirement}"
                 )
             lines.extend(
-                f"  Runtime search path: {path}"
+                f"  {'RPATH' if file.binary.format == 'ELF' else 'Runtime search path'}: {path}"
                 for path in file.binary.runtime_search_paths
             )
+            lines.extend(f"  RUNPATH: {path}" for path in file.binary.runtime_run_paths)
+            if file.binary.interpreter is not None:
+                lines.append(f"  Interpreter: {file.binary.interpreter}")
+            if file.binary.library_name is not None:
+                lines.append(f"  Library name: {file.binary.library_name}")
             if file.binary.signature is not None:
                 signature = file.binary.signature
                 if signature.present is None:

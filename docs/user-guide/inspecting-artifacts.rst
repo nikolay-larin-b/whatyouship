@@ -17,9 +17,12 @@ runtime-path, and signature metadata when available. Artifact-level data can
 include an outer signature, MSI installation scope, DMG license agreement,
 symbolic links, and macOS application bundles.
 
-Recognized ELF files add architecture and executable/library/other kind on
-every supported host. ELF signature and loader metadata are not currently
-analyzed.
+Recognized ELF files add architecture, executable/library/other kind, required
+libraries, separate RPATH and RUNPATH lists, interpreter, and SONAME library
+identity on every supported host. Text labels these as ``Dependency``,
+``RPATH``, ``RUNPATH``, ``Interpreter``, and ``Library name``. Loader tokens
+remain literal and libraries are not resolved against the host filesystem.
+ELF signatures are not currently analyzed.
 
 Unknown is not unsigned
 -----------------------

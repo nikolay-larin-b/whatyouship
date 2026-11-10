@@ -1,14 +1,14 @@
 # Copyright (c) 2026 Nikolay Larin
 # SPDX-License-Identifier: MIT
 
-"""Read basic ELF metadata with LIEF on any supported host platform."""
+"""Read ELF architecture, binary kind, and loader metadata with LIEF."""
 
 from pathlib import Path
 
 import lief
 
 from whatyouship.binary.errors import BinaryAnalysisError
-from whatyouship.model import BinaryMetadata
+from whatyouship.model import BinaryDependency, BinaryMetadata
 
 
 _ARCHITECTURES = {
@@ -21,14 +21,23 @@ _ARCHITECTURES = {
 }
 
 
+def _text(value: str | bytes) -> str:
+    """Convert LIEF strings to reportable text without interpreting loader tokens.
+
+    :param value: Text or raw bytes returned by LIEF.
+    :returns: Text with invalid UTF-8 bytes represented as escape sequences.
+    """
+    return value.decode("utf-8", errors="backslashreplace") if isinstance(value, bytes) else value
+
+
 class ElfInspector:
-    """Identify ELF files and read architecture and binary kind."""
+    """Identify ELF files and read architecture, kind, and loader declarations."""
 
     def inspect(self, source: Path | bytes | memoryview) -> BinaryMetadata | None:
         """Inspect a path or in-memory ELF without executing its contents.
 
         :param source: Path or bytes of a potential ELF file.
-        :returns: Basic ELF metadata, or ``None`` for unrecognized content.
+        :returns: ELF metadata, or ``None`` for unrecognized content.
         :raises BinaryAnalysisError: If recognized ELF content cannot be analyzed.
         :raises OSError: If a source file cannot be read.
         """
@@ -74,6 +83,28 @@ class ElfInspector:
                     lief.ELF.DynamicEntryFlags.FLAG.PIE
                 )
                 kind = "executable" if binary.has_interpreter or pie else "library"
-            return BinaryMetadata(format="ELF", architecture=architecture, kind=kind)
+            dependencies = []
+            rpaths = []
+            runpaths = []
+            library_name = None
+            for entry in binary.dynamic_entries:
+                if isinstance(entry, lief.ELF.DynamicEntryLibrary):
+                    dependencies.append(BinaryDependency(_text(entry.name)))
+                elif isinstance(entry, lief.ELF.DynamicEntryRpath):
+                    rpaths.extend(_text(entry.rpath).split(":"))
+                elif isinstance(entry, lief.ELF.DynamicEntryRunPath):
+                    runpaths.extend(_text(entry.runpath).split(":"))
+                elif isinstance(entry, lief.ELF.DynamicSharedObject) and library_name is None:
+                    library_name = _text(entry.name)
+            return BinaryMetadata(
+                format="ELF",
+                architecture=architecture,
+                kind=kind,
+                dependencies=tuple(dependencies),
+                runtime_search_paths=tuple(rpaths),
+                runtime_run_paths=tuple(runpaths),
+                interpreter=_text(binary.interpreter) if binary.has_interpreter else None,
+                library_name=library_name,
+            )
         except (RuntimeError, ValueError) as error:
             raise BinaryAnalysisError("ELF", str(error) or type(error).__name__) from error
