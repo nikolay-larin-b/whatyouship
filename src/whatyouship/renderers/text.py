@@ -194,6 +194,8 @@ def _render_inspect(report: InspectReport) -> str:
             f"{file.relative_path.as_posix()} | {file.size_bytes} | "
             f"{file.sha256}"
         )
+        if file.posix_mode is not None:
+            lines.append(f"  POSIX mode: {file.posix_mode:04o}")
         if file.binary is not None:
             details = [file.binary.kind, f"Architecture: {file.binary.architecture}"]
             if file.binary.file_version is not None:

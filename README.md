@@ -7,7 +7,7 @@ software package that users actually receive—not the source tree or build
 configuration. Use it to inspect release contents, apply release-quality rules,
 and compare two releases.
 
-Supported top-level artifacts are directories, Windows MSI packages, ZIP
+Supported top-level artifacts are directories, Windows MSI packages, ZIP and TAR
 archives, NSIS installers, Inno Setup installers, and macOS DMG images.
 WhatYouShip also analyzes PE, Mach-O, and ELF binaries and macOS application bundles
 inside those artifacts when the required metadata and platform tools are
@@ -29,6 +29,7 @@ for the platform matrix.
 
 ```console
 whatyouship inspect release.msi
+whatyouship inspect release.tar.xz
 whatyouship lint release.msi
 whatyouship lint release.msi --baseline previous.msi
 whatyouship compare previous.msi release.msi

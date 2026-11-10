@@ -20,6 +20,7 @@ INSPECT_COLUMNS = (
     "signature_timestamp", "signature_team_id",
     "signature_type", "hardened_runtime", "entitlements",
     "runtime_run_paths", "interpreter", "library_name",
+    "posix_mode",
 )
 LINT_COLUMNS = ("category", "rule_id", "severity", "relative_path", "message")
 
@@ -95,6 +96,7 @@ def render_csv(report: Report) -> str:
                 json.dumps(list(binary.runtime_run_paths)) if binary is not None else "",
                 binary.interpreter if binary is not None else "",
                 binary.library_name if binary is not None else "",
+                f"{file.posix_mode:04o}" if file.posix_mode is not None else "",
             ))
     else:
         writer.writerow(LINT_COLUMNS)

@@ -425,6 +425,13 @@ def compare_artifacts(old: ReleaseArtifact, new: ReleaseArtifact) -> ComparisonR
         else:
             result.unchanged.append(path)
         if (
+            earlier.posix_mode is not None and later.posix_mode is not None
+            and earlier.posix_mode != later.posix_mode
+        ):
+            result.semantic_differences.append(SemanticDifference(
+                path, "POSIX mode", f"{earlier.posix_mode:04o}", f"{later.posix_mode:04o}",
+            ))
+        if (
             earlier.binary is not None
             and later.binary is not None
             and earlier.binary.format == later.binary.format

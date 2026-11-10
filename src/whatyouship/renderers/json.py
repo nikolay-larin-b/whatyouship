@@ -78,6 +78,7 @@ def _file_data(file: ArtifactFile) -> dict[str, Any]:
         "relative_path": file.relative_path.as_posix(),
         "size_bytes": file.size_bytes,
         "sha256": file.sha256,
+        "posix_mode": file.posix_mode,
         "binary": binary_data,
     }
 

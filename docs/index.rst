@@ -9,7 +9,7 @@ WhatYouShip is an open-source release artifact linter. It inspects the package
 that users actually receive, runs release-quality rules, and compares finished
 releases. It is not an MSI validator, SBOM generator, or security scanner.
 
-WhatYouShip currently accepts directories, MSI packages, ZIP archives, NSIS
+WhatYouShip currently accepts directories, MSI packages, ZIP and TAR archives, NSIS
 installers, Inno Setup installers, and DMG images. Analysis depth depends on
 the format, host platform, and available external tools; see
 :ref:`artifact-formats` for the exact support matrix.

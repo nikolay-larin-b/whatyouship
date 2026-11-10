@@ -15,13 +15,15 @@ from whatyouship.inspectors.msi import MsiInspector
 from whatyouship.inspectors.nsis import NsisInspector
 from whatyouship.inspectors.nsis_detection import is_nsis_installer
 from whatyouship.inspectors.zip import ZipInspector
+from whatyouship.inspectors.tar import TarInspector
+from whatyouship.inspectors.tar_cache import TAR_SUFFIXES
 from whatyouship.model import ReleaseArtifact
 from whatyouship.paths import _default_cache_scope
 
 
 @_default_cache_scope
 def inspect_artifact(source_path: str | PathLike[str]) -> ReleaseArtifact:
-    """Inspect a directory, DMG, MSI, NSIS, Inno Setup, or ZIP artifact.
+    """Inspect a directory, DMG, MSI, NSIS, Inno Setup, ZIP, or TAR artifact.
 
     :param source_path: String or path-like release artifact path.
     :returns: Files contained in the artifact.
@@ -38,6 +40,8 @@ def inspect_artifact(source_path: str | PathLike[str]) -> ReleaseArtifact:
         return MsiInspector().inspect(artifact_path)
     if artifact_path.is_file() and artifact_path.suffix.lower() == ".zip":
         return ZipInspector().inspect(artifact_path)
+    if artifact_path.is_file() and artifact_path.name.lower().endswith(TAR_SUFFIXES):
+        return TarInspector().inspect(artifact_path)
     if artifact_path.is_file() and artifact_path.suffix.lower() == ".dmg":
         return DmgInspector().inspect(artifact_path)
     if artifact_path.is_file() and artifact_path.suffix.lower() == ".exe":

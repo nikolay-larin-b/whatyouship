@@ -32,7 +32,10 @@ An ``inspect`` report contains a full ``artifact`` object: ``source_path``,
 ``file_count``, ``total_size_bytes``, outer ``signature``, nullable
 ``installation_scope``, nullable ``license_agreement_present``,
 ``binary_diagnostics``, ``bundles``, ``symbolic_links``, and ``files``. Each
-file carries its path, size, SHA-256, and nullable binary object. Binary data
+file carries its path, size, SHA-256, nullable ``posix_mode``, and nullable binary object.
+``posix_mode`` is an integer containing original POSIX permission bits when
+provided by the backend, currently TAR; other inputs use ``null``. This is an
+additive schema version 2 field. Binary data
 contains format, architectures, kind, versions, minimum OS, dependencies,
 runtime search paths, and nullable signature data. Binary objects also expose
 ``runtime_run_paths`` (an array), ``interpreter`` (nullable string), and
@@ -91,6 +94,9 @@ Inspect CSV columns, in order, are ``relative_path``, ``size_bytes``,
 ``runtime_run_paths``, ``interpreter``, and ``library_name``. Both path-list
 columns contain JSON arrays; unavailable interpreter and library names produce
 empty cells.
+
+``posix_mode`` is appended after ``library_name`` and contains octal text such
+as ``0755``, or an empty cell when unavailable.
 
 Lint CSV columns are ``category``, ``rule_id``, ``severity``,
 ``relative_path``, and ``message``. Category is ``current`` without a baseline,

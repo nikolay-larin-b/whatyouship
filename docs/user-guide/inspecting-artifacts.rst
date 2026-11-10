@@ -10,6 +10,7 @@ build directory unless that directory itself is the release.
 .. code-block:: console
 
    $ whatyouship inspect dist/product.zip
+   $ whatyouship inspect dist/product.tar.xz
 
 Every regular file receives a relative path, size, and SHA-256 content hash.
 Recognized PE and Mach-O files add architecture, kind, version, dependency,
@@ -23,6 +24,11 @@ identity on every supported host. Text labels these as ``Dependency``,
 ``RPATH``, ``RUNPATH``, ``Interpreter``, and ``Library name``. Loader tokens
 remain literal and libraries are not resolved against the host filesystem.
 ELF signatures are not currently analyzed.
+
+TAR inputs also expose original regular-file POSIX modes, independently of the
+analysis host. Text and CSV use octal values such as ``0755``; JSON uses an
+integer. Symbolic links are listed as metadata, while archive hard links are
+represented as regular file contents. See :ref:`artifact-formats` for limits.
 
 Unknown is not unsigned
 -----------------------

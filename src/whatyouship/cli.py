@@ -186,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     inspect_parser.add_argument(
         "artifact",
         type=Path,
-        help="Directory, DMG, MSI, NSIS/Inno Setup EXE, or ZIP to inspect.",
+        help="Directory, DMG, MSI, NSIS/Inno Setup EXE, ZIP, or TAR to inspect.",
     )
     inspect_parser.add_argument("-o", "--output", type=Path, help="Write a .txt, .json, or .csv report.")
     _add_cache_argument(inspect_parser)
@@ -194,14 +194,14 @@ def main(argv: list[str] | None = None) -> int:
     lint_parser.add_argument(
         "artifact",
         type=Path,
-        help="Directory, DMG, MSI, NSIS/Inno Setup EXE, or ZIP to lint.",
+        help="Directory, DMG, MSI, NSIS/Inno Setup EXE, ZIP, or TAR to lint.",
     )
     lint_parser.add_argument("-o", "--output", type=Path, help="Write a .txt, .json, or .csv report.")
     lint_parser.add_argument(
         "--baseline",
         type=Path,
         help=(
-            "Previous directory, DMG, MSI, NSIS/Inno Setup EXE, or ZIP for "
+            "Previous directory, DMG, MSI, NSIS/Inno Setup EXE, ZIP, or TAR for "
             "finding comparison."
         ),
     )
@@ -217,12 +217,12 @@ def main(argv: list[str] | None = None) -> int:
     compare_parser.add_argument(
         "old_artifact",
         type=Path,
-        help="Earlier directory, DMG, MSI, NSIS/Inno Setup EXE, or ZIP.",
+        help="Earlier directory, DMG, MSI, NSIS/Inno Setup EXE, ZIP, or TAR.",
     )
     compare_parser.add_argument(
         "new_artifact",
         type=Path,
-        help="Later directory, DMG, MSI, NSIS/Inno Setup EXE, or ZIP.",
+        help="Later directory, DMG, MSI, NSIS/Inno Setup EXE, ZIP, or TAR.",
     )
     compare_parser.add_argument("-o", "--output", type=Path, help="Write a .txt or .json report.")
     _add_cache_argument(compare_parser)

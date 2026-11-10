@@ -21,6 +21,10 @@ Extraction can be reused, but binary metadata, bundle analysis, lint rules,
 and comparisons run again. Cache formats use versioned layouts so incompatible
 extraction behavior need not reuse older entries.
 
+TAR uses ``tar/v1`` for extracted regular files, original file modes, and
+symbolic-link metadata. ``whatyouship cache clear --format tar`` removes only
+that namespace. Temporary caches are still the default for TAR operations.
+
 Native DMGs with an embedded agreement may be converted to a normalized image
 without accepting the agreement on the user's behalf. Before a persistent
 normalized image is published, ``hdiutil verify`` checks it and a manifest

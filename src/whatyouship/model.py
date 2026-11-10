@@ -157,12 +157,14 @@ class ArtifactFile:
     :param size_bytes: File size in bytes.
     :param sha256: SHA-256 digest of the file contents.
     :param binary: Identified binary metadata, when available.
+    :param posix_mode: Original POSIX permission bits, when supplied by a backend.
     """
 
     relative_path: Path
     size_bytes: int
     sha256: str
     binary: BinaryMetadata | None = None
+    posix_mode: int | None = None
 
 
 @dataclass(frozen=True)

@@ -16,7 +16,7 @@ available with ``--help`` and ``--version``. Arguments rejected by
 
    whatyouship inspect ARTIFACT [-o OUTPUT] [--cache]
 
-``ARTIFACT`` is a directory, DMG, MSI, NSIS or Inno Setup executable, or ZIP.
+``ARTIFACT`` is a directory, DMG, MSI, NSIS or Inno Setup executable, ZIP, or TAR.
 Without ``-o``/``--output``, a text report is written to stdout. The output
 extension selects ``.txt``, ``.json``, or ``.csv``. ``--cache`` opts into the
 persistent extraction cache; otherwise a temporary cache is removed after the
@@ -61,7 +61,7 @@ meaning as for other artifact operations.
 
    whatyouship cache info
    whatyouship cache clear --all
-   whatyouship cache clear --format {msi,nsis,inno,zip,dmg} [--format ...]
+   whatyouship cache clear --format {msi,nsis,inno,zip,tar,dmg} [--format ...]
 
 ``info`` reports entry counts and byte usage in the persistent cache.
 ``clear`` requires exactly one selection mode. ``--format`` may be repeated;

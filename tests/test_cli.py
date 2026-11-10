@@ -345,7 +345,7 @@ class CliTests(unittest.TestCase):
     def test_lint_rejects_unsupported_file(self) -> None:
         """Report an unsupported artifact type for linting."""
         with tempfile.TemporaryDirectory() as temporary_directory:
-            source = Path(temporary_directory) / "release.tar"
+            source = Path(temporary_directory) / "release.unsupported"
             source.write_bytes(b"data")
             error_output = io.StringIO()
 

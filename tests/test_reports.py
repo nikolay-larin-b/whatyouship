@@ -192,6 +192,7 @@ class ReportOutputTests(unittest.TestCase):
         ])
         self.assertEqual(data["artifact"]["files"][0], {
             "relative_path": "bin/app.exe", "size_bytes": 42, "sha256": "a" * 64,
+            "posix_mode": None,
             "binary": {
                 "format": "PE", "architecture": "x86_64", "kind": "executable",
                 "file_version": "1.2.3", "product_version": "4.5.6",

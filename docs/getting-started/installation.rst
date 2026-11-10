@@ -15,6 +15,10 @@ The current PyPI release is a prerelease. Use an isolated virtual environment
 for predictable dependency resolution. The Python package supplies the CLI and
 public API; some artifact formats additionally require native tools.
 
+TAR archives and their gzip, xz, and bzip2 variants use Python's standard
+library and require no additional tools. The Python installation must include
+the standard-library decoder for the selected compression.
+
 .. _installation-tools:
 
 External tools

@@ -16,6 +16,7 @@ CACHE_FORMAT_NAMESPACES: dict[str, tuple[str, ...]] = {
     "nsis": ("nsis",),
     "inno": ("inno",),
     "zip": ("zip",),
+    "tar": ("tar",),
     "dmg": ("dmg", "dmg-7zip"),
 }
 

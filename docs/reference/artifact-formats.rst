@@ -21,6 +21,9 @@ Artifact formats
    * - NSIS EXE
      - NSIS markers; extracted by 7-Zip
      - Requires ``7z``/``7zz``; payload paths are approximate
+   * - TAR
+     - TAR suffix; validated and read with the standard library
+     - gzip/xz/bzip2 supported; links and file modes retained as metadata
    * - Inno Setup EXE
      - Inno markers; extracted by ``innoextract``
      - Payload paths are approximate
@@ -30,7 +33,7 @@ Artifact formats
 
 All extracted trees receive shared file hashing, PE/Mach-O/ELF, symbolic-link, and
 macOS application-bundle analysis. Persistent cache namespaces are ``msi/v1``,
-``zip/v1``, ``nsis/v1``, ``inno/v1``, native ``dmg/v1``, and
+``zip/v1``, ``tar/v1``, ``nsis/v1``, ``inno/v1``, native ``dmg/v1``, and
 ``dmg-7zip/v2``. See :ref:`cache-management` for policy.
 
 MSI
@@ -53,6 +56,35 @@ On Windows, the package's Authenticode signature is verified through the
 system API. On Linux and macOS, package verification is unsupported rather
 than interpreted as unsigned. Embedded PE payload files are still analyzed on
 all supported hosts.
+
+TAR
+---
+
+Supported suffixes are ``.tar``, ``.tar.gz``/``.tgz``, ``.tar.xz``/``.txz``,
+and ``.tar.bz2``/``.tbz``/``.tbz2``, matched case-insensitively. Compression
+is identified from the source bytes and the TAR structure is validated while
+reading. USTAR, GNU, and PAX headers are supported. No third-party Python
+packages, native archive tools, or installation steps are required. Zstandard
+is not supported, keeping behavior consistent across Python 3.11 and later.
+
+Regular files receive shared binary analysis. Symbolic links, including
+external or dangling targets, are retained as metadata and are never created
+on the host. Hard links must resolve to regular files inside the archive;
+forward references and chains are supported and normalized to independent
+file contents with the target file's mode. Hard-link identity is not retained.
+
+Original regular-file POSIX permission bits are exposed as ``posix_mode`` on
+every host and compared when both sides provide this metadata. They are not
+applied to temporary files. Ownership, directory permission metadata, ACLs,
+and extended attributes are not restored or reported. Native filesystem mode
+validation for application bundles is not enabled for this extracted tree.
+
+Unsafe paths, conflicting entries, paths through archive links, special files
+such as devices or FIFOs, and unresolved/cyclic hard links are rejected. Names
+that alias Windows devices or cannot be represented portably are rejected on
+all hosts. Leading ``./`` and root directory entries are accepted. Extraction
+does not use ``extractall`` and has the same policy across supported Python
+versions. Compressed streams are read to completion to validate their trailers.
 
 ZIP, NSIS, and Inno Setup
 -------------------------

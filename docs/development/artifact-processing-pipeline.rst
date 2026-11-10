@@ -13,7 +13,7 @@ Routing and normalization
 
 ``inspect_artifact`` normalizes a ``str`` or ``os.PathLike`` once to
 ``pathlib.Path``, validates existence, then dispatches explicitly. Directories
-go to ``DirectoryInspector``. Files are tested for MSI, ZIP, DMG, NSIS, and
+go to ``DirectoryInspector``. Files are tested for MSI, ZIP, TAR, DMG, NSIS, and
 Inno Setup using backend detection logic rather than extensions alone where a
 reliable signature exists. An unmatched file raises
 ``UnsupportedArtifactError``.
@@ -33,7 +33,7 @@ Container flow
                                   v
                             ReleaseArtifact ─> operation report
 
-ZIP, NSIS, Inno, and DMG backends extract or mount content and reuse shared
+ZIP, TAR, NSIS, Inno, and DMG backends extract or mount content and reuse shared
 directory-tree analysis. MSI has specialized table extraction and scope
 analysis, then builds the same file, PE, and ELF models. Paths stored in models are
 relative and portable; hashes cover file content.

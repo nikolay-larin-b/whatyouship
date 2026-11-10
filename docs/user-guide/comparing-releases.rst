@@ -17,6 +17,12 @@ runtime search paths, Hardened Runtime, entitlements and signatures; app-bundle
 metadata and signatures; symbolic-link targets; outer artifact signatures; and
 MSI installation scope.
 
+When both sides expose original POSIX file modes, a permission change appears
+as a ``POSIX mode`` semantic difference with octal old/new values. A mode-only
+change leaves the file in ``unchanged`` because that category compares content
+hashes. Missing permission metadata on another input format is not interpreted
+as a permission change.
+
 ELF comparison includes architecture, executable/library/other kind,
 DT_NEEDED dependencies, separate ``RPATH`` and ``RUNPATH`` fields,
 ``Interpreter`` (PT_INTERP), and ``Library name`` (DT_SONAME). Moving a path

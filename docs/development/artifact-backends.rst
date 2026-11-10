@@ -23,6 +23,13 @@ delegates the resulting tree. ``NsisInspector`` detects NSIS and uses the
 ``innoextract`` executable. Their cache modules wrap a shared content-addressed
 extracted-tree cache.
 
+``TarInspector`` uses ``tarfile`` with explicit copying of validated regular
+members. ``TarExtractionCache`` publishes through ``ExtractionCache`` in
+``tar/v1`` and validates file inventories, sizes, modes, and link metadata.
+Symbolic links are never materialized. Hard links are resolved only against
+regular archive members and copied as file contents. Original regular-file
+permission bits are applied to ``ArtifactFile.posix_mode``, not host files.
+
 ``DmgInspector`` selects ``MacOSDiskImage`` on macOS or the 7-Zip path on other
 hosts. Native handling verifies, normalizes, mounts read-only, captures license
 metadata, and reliably detaches. The fallback has a separate cache version

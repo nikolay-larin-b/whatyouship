@@ -9,6 +9,8 @@ and version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 
 ### Added
 
+- Added cross-platform TAR inspection, linting, and comparison with gzip/xz/bzip2 support, safe extraction, symbolic-link metadata, hard-link payload resolution, and the `tar/v1` cache namespace. Original POSIX file modes are included in reports and compared when available on both inputs.
+
 - Added ELF release comparison for separate RPATH/RUNPATH, interpreter, SONAME, and all binary-kind transitions, with ordered dependency and path values that retain duplicates and empty elements.
 
 - Extended runtime search path lint rules to ELF RUNPATH as well as RPATH, with duplicate paths reported once per binary and stable finding identities across both tags.
